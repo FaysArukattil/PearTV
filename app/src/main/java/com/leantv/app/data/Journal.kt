@@ -4,15 +4,17 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Everything needed to undo what the app did. Stored privately on the TV. */
+/**
+ * CleanYourTV local persistent storage manager.
+ * Stores app launches, recent history, hidden apps, wallpaper themes,
+ * favorites, and debloat rollback ledgers securely on the TV.
+ */
 class Journal(ctx: Context) {
     private val sp = ctx.getSharedPreferences("leantv", Context.MODE_PRIVATE)
 
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
-        set(v) {
-            sp.edit().putBoolean("onboarded", v).apply()
-        }
+        set(v) = sp.edit().putBoolean("onboarded", v).apply()
 
     fun baseline(): Set<String> = HashSet(sp.getStringSet("baseline", emptySet()) ?: emptySet())
 
@@ -75,7 +77,22 @@ class Journal(ctx: Context) {
         sp.edit().remove("tweaks").apply()
     }
 
-    // ---------- Launcher Favorites & Settings ----------
+    // ---------- App Usage Tracking (Frequently Used & Recently Used) ----------
+
+    fun recordAppLaunch(pkg: String) {
+        val count = getLaunchCount(pkg) + 1
+        val now = System.currentTimeMillis()
+        sp.edit()
+            .putInt("launch_count_$pkg", count)
+            .putLong("last_launch_$pkg", now)
+            .apply()
+    }
+
+    fun getLaunchCount(pkg: String): Int = sp.getInt("launch_count_$pkg", 0)
+
+    fun getLastLaunchTime(pkg: String): Long = sp.getLong("last_launch_$pkg", 0L)
+
+    // ---------- Favorites & Pinned Apps ----------
 
     fun favorites(): Set<String> =
         HashSet(sp.getStringSet("favorites", null) ?: emptySet())
@@ -95,7 +112,71 @@ class Journal(ctx: Context) {
 
     fun isFavorite(pkg: String): Boolean = favorites().contains(pkg)
 
+    // ---------- Hidden Apps ----------
+
+    fun hiddenApps(): Set<String> =
+        HashSet(sp.getStringSet("hidden_apps", null) ?: emptySet())
+
+    fun toggleHideApp(pkg: String): Boolean {
+        val current = HashSet(hiddenApps())
+        val hidden = if (current.contains(pkg)) {
+            current.remove(pkg)
+            false
+        } else {
+            current.add(pkg)
+            true
+        }
+        sp.edit().putStringSet("hidden_apps", current).apply()
+        return hidden
+    }
+
+    fun isAppHidden(pkg: String): Boolean = hiddenApps().contains(pkg)
+
+    // ---------- Dock Order ----------
+
+    fun dockApps(): List<String> {
+        val raw = sp.getString("dock_apps", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveDockApps(list: List<String>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(it) }
+        sp.edit().putString("dock_apps", arr.toString()).apply()
+    }
+
+    // ---------- Personalization & Wallpaper ----------
+
+    var wallpaperTheme: String
+        get() = sp.getString("wallpaper_theme", "aurora") ?: "aurora"
+        set(v) = sp.edit().putString("wallpaper_theme", v).apply()
+
+    var customWallpaperUri: String?
+        get() = sp.getString("custom_wallpaper_uri", null)
+        set(v) = sp.edit().putString("custom_wallpaper_uri", v).apply()
+
+    var clockFormat24h: Boolean
+        get() = sp.getBoolean("clock_24h", false)
+        set(v) = sp.edit().putBoolean("clock_24h", v).apply()
+
+    var showGreeting: Boolean
+        get() = sp.getBoolean("show_greeting", true)
+        set(v) = sp.edit().putBoolean("show_greeting", v).apply()
+
+    var gridColumns: Int
+        get() = sp.getInt("grid_columns", 4)
+        set(v) = sp.edit().putInt("grid_columns", v).apply()
+
     var defaultLauncherPromptDismissed: Boolean
         get() = sp.getBoolean("launcher_prompt_dismissed", false)
         set(v) = sp.edit().putBoolean("launcher_prompt_dismissed", v).apply()
+
+    var debloatWizardDismissed: Boolean
+        get() = sp.getBoolean("debloat_wizard_dismissed", false)
+        set(v) = sp.edit().putBoolean("debloat_wizard_dismissed", v).apply()
 }
