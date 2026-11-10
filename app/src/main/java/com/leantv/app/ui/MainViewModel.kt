@@ -237,6 +237,128 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         s.copy(selected = s.apps.filter { it.tier == Tier.RECOMMENDED && !it.disabled }.map { it.pkg }.toSet())
     }
 
+    fun selectTelemetryAndAds() = _state.update { s ->
+        val targets = s.apps.filter { app ->
+            !app.disabled && (
+                app.tier == Tier.RECOMMENDED ||
+                app.pkg.contains("adservice", ignoreCase = true) ||
+                app.pkg.contains("advertise", ignoreCase = true) ||
+                app.pkg.contains("analytics", ignoreCase = true) ||
+                app.pkg.contains("telemetry", ignoreCase = true) ||
+                app.pkg.contains("tracking", ignoreCase = true) ||
+                app.pkg.contains("statistic", ignoreCase = true) ||
+                app.pkg.contains("recommendation", ignoreCase = true) ||
+                app.pkg.contains("feedback", ignoreCase = true)
+            )
+        }.map { it.pkg }.toSet()
+        s.copy(selected = targets)
+    }
+
+    fun selectOemBloat() = _state.update { s ->
+        val targets = s.apps.filter { app ->
+            !app.disabled && (
+                app.pkg.startsWith("com.xiaomi") ||
+                app.pkg.startsWith("com.mitv") ||
+                app.pkg.startsWith("com.tcl.") ||
+                app.pkg.startsWith("com.hisense.") ||
+                app.pkg.startsWith("com.sony.dtv") ||
+                app.pkg.startsWith("com.realme.") ||
+                app.pkg.startsWith("com.oneplus.")
+            )
+        }.map { it.pkg }.toSet()
+        s.copy(selected = targets)
+    }
+
+    fun selectStreaming() = _state.update { s ->
+        val streamingPkgs = setOf(
+            "com.netflix.ninja",
+            "com.amazon.amazonvideo.livingroom",
+            "com.jio.media.ondemand",
+            "com.hotstar.tv",
+            "com.sonyliv.tv",
+            "com.zee5.tv",
+            "com.voot.tv",
+            "com.altbalaji.tv",
+            "com.hungama.tv",
+            "com.erosnow.tv",
+            "com.spottv",
+            "com.google.android.youtube.tvmusic",
+            "com.google.android.youtube.tvunplugged"
+        )
+        s.copy(selected = s.apps.filter { it.pkg in streamingPkgs && !it.disabled }.map { it.pkg }.toSet())
+    }
+
+    fun clearSelection() = _state.update { it.copy(selected = emptySet()) }
+
+    fun requestCleanTvWizard() {
+        _state.update { it.copy(showCleanWizard = true) }
+    }
+
+    fun dismissCleanTvWizard() {
+        _state.update { it.copy(showCleanWizard = false) }
+    }
+
+    fun toggleMajorOption(optionId: String) {
+        _state.update { s ->
+            val updated = s.majorOptions.map { opt ->
+                if (opt.id == optionId) opt.copy(isSelectedForRemoval = !opt.isSelectedForRemoval)
+                else opt
+            }
+            s.copy(majorOptions = updated)
+        }
+    }
+
+    fun executeCleanTvWizard() {
+        dismissCleanTvWizard()
+        val s = _state.value
+        val packagesToKeep = s.majorOptions.filter { !it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+        val packagesToRemove = s.majorOptions.filter { it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+
+        val targets = s.apps.filter { app ->
+            if (app.disabled) return@filter false
+            if (app.pkg in packagesToKeep) return@filter false
+            if (app.pkg in packagesToRemove) return@filter true
+
+            app.tier == Tier.RECOMMENDED ||
+            app.pkg.contains("adservice", ignoreCase = true) ||
+            app.pkg.contains("advertise", ignoreCase = true) ||
+            app.pkg.contains("analytics", ignoreCase = true) ||
+            app.pkg.contains("telemetry", ignoreCase = true) ||
+            app.pkg.contains("tracking", ignoreCase = true) ||
+            app.pkg.contains("statistic", ignoreCase = true) ||
+            app.pkg.contains("recommendation", ignoreCase = true) ||
+            app.pkg.contains("feedback", ignoreCase = true) ||
+            app.pkg.startsWith("com.xiaomi.mitv.advertise") ||
+            app.pkg.startsWith("com.mitv.tvhome") ||
+            app.pkg.startsWith("com.tcl.waterfall") ||
+            app.pkg.startsWith("com.tcl.commercial")
+        }
+
+        if (targets.isEmpty()) {
+            toast("No bloatware or telemetry found to clean.")
+            return
+        }
+
+        _state.update {
+            it.copy(
+                selected = targets.map { t -> t.pkg }.toSet(),
+                method = RemovalMethod.DISABLE
+            )
+        }
+        confirmRemove()
+        setAnimations(true)
+        setDns(true)
+    }
+
+    /**
+     * 1-Click CleanYourTV Auto Preset:
+     * Disables telemetry, ad services, sponsored rows, and preinstalled bloat,
+     * enables 0.5x speed animations and AdGuard DNS for complete TV optimization.
+     */
+    fun applyCleanYourTvPreset() {
+        requestCleanTvWizard()
+    }
+
     // ---------- removal ----------
 
     fun requestRemove() {

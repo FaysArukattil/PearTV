@@ -70,7 +70,14 @@ data class DeviceProfile(
 
 enum class Screen { Welcome, Setup, Dashboard, InstalledApps, Debloat, Tweaks, Restore }
 
-enum class Filter { RECOMMENDED, REVIEW, ALL }
+enum class Filter(val label: String) {
+    RECOMMENDED("Suggested"),
+    TELEMETRY_ADS("Ads & Trackers"),
+    OEM_BLOAT("OEM Bloat"),
+    STREAMING("Streaming"),
+    REVIEW("Review"),
+    ALL("All"),
+}
 
 sealed interface Conn {
     data object Idle : Conn
@@ -82,6 +89,78 @@ sealed interface Conn {
 data class TweakStates(val animations: Boolean = false, val dns: Boolean = false)
 
 data class ConfirmInfo(val title: String, val body: String, val action: String)
+
+data class MajorDebloatOption(
+    val id: String,
+    val title: String,
+    val description: String,
+    val packages: List<String>,
+    val isSelectedForRemoval: Boolean,
+)
+
+object DebloatPresets {
+    fun defaultMajorOptions(): List<MajorDebloatOption> = listOf(
+        MajorDebloatOption(
+            id = "miracast",
+            title = "Screen Mirroring / Miracast & Chromecast",
+            description = "Keep if you mirror your phone, tablet, or PC screen to this TV.",
+            packages = listOf(
+                "com.google.android.apps.mediashell",
+                "com.xiaomi.mitv.smartshare",
+                "com.mitv.smartshare",
+                "com.tcl.miracast",
+                "com.hisense.tv.miracast",
+                "com.sony.dtv.braviamiracast"
+            ),
+            isSelectedForRemoval = false // Keep by default
+        ),
+        MajorDebloatOption(
+            id = "assistant",
+            title = "Google Voice Assistant",
+            description = "Keep if you use the microphone button on your remote for voice commands.",
+            packages = listOf("com.google.android.katniss", "com.xiaomi.voicecontrol"),
+            isSelectedForRemoval = false // Keep by default
+        ),
+        MajorDebloatOption(
+            id = "netflix",
+            title = "Netflix",
+            description = "Preinstalled Netflix TV streaming application.",
+            packages = listOf("com.netflix.ninja"),
+            isSelectedForRemoval = false // Keep by default
+        ),
+        MajorDebloatOption(
+            id = "prime",
+            title = "Amazon Prime Video",
+            description = "Preinstalled Prime Video streaming application.",
+            packages = listOf("com.amazon.amazonvideo.livingroom"),
+            isSelectedForRemoval = false // Keep by default
+        ),
+        MajorDebloatOption(
+            id = "launcher",
+            title = "Stock TV Home Launcher (PatchWall / ATV)",
+            description = "Manufacturer ad-heavy home screen. LeanTV replaces this with a clean home screen.",
+            packages = listOf(
+                "com.mitv.tvhome.atv",
+                "com.mitv.tvhome",
+                "com.google.android.tvlauncher",
+                "com.google.android.tvrecommendations"
+            ),
+            isSelectedForRemoval = true // Remove by default
+        ),
+        MajorDebloatOption(
+            id = "oem_media",
+            title = "OEM Video Player & Gallery",
+            description = "Preinstalled manufacturer media players with promo recommendations.",
+            packages = listOf(
+                "com.mitv.videoplayer",
+                "com.mitv.gallery",
+                "com.xiaomi.mitv.tvplayer",
+                "com.xiaomi.mitv.audioplayer"
+            ),
+            isSelectedForRemoval = true // Remove by default
+        ),
+    )
+}
 
 data class UiState(
     val screen: Screen,
@@ -104,4 +183,6 @@ data class UiState(
     val appTypeFilter: AppTypeFilter = AppTypeFilter.ALL,
     val appSortOrder: AppSortOrder = AppSortOrder.NAME,
     val appSearchQuery: String = "",
+    val showCleanWizard: Boolean = false,
+    val majorOptions: List<MajorDebloatOption> = DebloatPresets.defaultMajorOptions(),
 )

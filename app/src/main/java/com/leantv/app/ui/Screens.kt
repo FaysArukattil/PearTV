@@ -8,6 +8,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,23 +78,37 @@ fun WelcomeScreen(vm: MainViewModel) {
                 .weight(1.2f)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Lean TV", style = Ty.Heading.copy(color = Pal.Amber))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("CleanYourTV • LeanTV", style = Ty.Heading.copy(color = Pal.Amber, fontSize = 20.sp))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Pal.Mint.copy(alpha = 0.2f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text("1-CLICK TRANSFORMATION", style = Ty.Small.copy(color = Pal.Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                }
+            }
+
             Spacer(Modifier.height(14.dp))
-            Text("A faster TV, without the clutter.", style = Ty.Display)
+            Text("Transform Your TV Into a Pure Apple TV Experience.", style = Ty.Display.copy(fontSize = 38.sp, lineHeight = 44.sp))
             Spacer(Modifier.height(18.dp))
             Text(
-                "Lean TV removes preinstalled apps you don't use, switches off background trackers, " +
-                    "and keeps every change reversible.",
+                "Strip all manufacturer ads, PatchWall, sponsored channel feeds, and telemetry in 1 click. Accelerate remote responsiveness by 2x with zero risk to core hardware.",
                 style = Ty.Dim,
             )
             Spacer(Modifier.height(22.dp))
-            Fact("Every change is logged and can be undone.")
-            Fact("A safety list protects your remote, inputs and home screen.")
-            Fact("No account needed. The app sends nothing anywhere.")
+            Fact("⚡ Single-click debloating with custom choice for Miracast, Assistant, Netflix & Prime.")
+            Fact("🔒 100% safe & reversible. Full restore journal saved on-device.")
+            Fact("📺 Apple TV-style home launcher with TV inputs, Quick Share & Google Account switcher.")
+            Fact("🛡️ Network-wide smart TV ad blocking via AdGuard Private DNS.")
             Spacer(Modifier.height(28.dp))
-            TvButton("Get started", onClick = vm::begin, modifier = Modifier.focusRequester(fr))
+            TvButton("⚡ Start Transformation", onClick = vm::begin, modifier = Modifier.focusRequester(fr), primary = true)
             Spacer(Modifier.height(12.dp))
-            Text("Use the arrow keys and OK on your remote.", style = Ty.Small)
+            Text("Navigate with arrow keys and press OK on your TV remote.", style = Ty.Small)
         }
         Spacer(Modifier.width(32.dp))
         Box(Modifier.weight(0.8f), contentAlignment = Alignment.Center) { OrbitArt() }
@@ -253,36 +269,136 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
             .verticalScroll(rememberScrollState())
             .padding(ContentPad)
     ) {
-        Text(d.displayName, style = Ty.Display.copy(fontSize = 42.sp, lineHeight = 48.sp))
-        Spacer(Modifier.height(4.dp))
-        Text("Model ${d.model}, Android ${d.android}", style = Ty.Dim)
-        Spacer(Modifier.height(22.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-            Column(Modifier.width(230.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Gauge(frac, "${(frac * 100).roundToInt()}%", "memory in use")
-                Spacer(Modifier.height(10.dp))
-                Text("${gb(used)} of ${gb(d.ramTotalMb)}", style = Ty.Body)
-                Spacer(Modifier.height(8.dp))
-                Text(d.advice, style = Ty.Small)
+        // Device Title Header
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(d.displayName, style = Ty.Display.copy(fontSize = 38.sp, lineHeight = 44.sp))
+                Spacer(Modifier.height(4.dp))
+                Text("Model ${d.model} • Android ${d.android} (API ${d.sdk})", style = Ty.Dim)
             }
-            Column(Modifier.weight(1f)) {
-                Spec("Chipset", d.hardware.ifBlank { "Unknown" })
-                Spec("Processor", "${d.cores} cores, ${d.abi}")
-                Spec("Storage free", "%.1f of %.1f GB".format(d.storageFreeGb, d.storageTotalGb))
-                Spec("Screen", d.resolution)
-                Spec("Android", "${d.android} (API ${d.sdk})")
-                Spec("Security patch", d.patch.ifBlank { "Unknown" })
-                Spec("Running for", "${d.uptimeHours} hours")
+
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Pal.Mint.copy(alpha = 0.18f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text("TV CONNECTED & READY", style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.Bold))
             }
         }
+
+        Spacer(Modifier.height(18.dp))
+
+        // ⚡ CleanYourTV 1-Click Transformation Hero Card
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF1E4359), Color(0xFF122C3B))
+                    )
+                )
+                .border(2.dp, Pal.Amber, RoundedCornerShape(22.dp))
+                .padding(24.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(60.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Pal.Amber.copy(alpha = 0.22f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("⚡", fontSize = 32.sp)
+                    }
+
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "CLEANYOURTV AUTO PRESET",
+                                style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            )
+                            Pill("RECOMMENDED", Pal.Mint)
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Text(
+                            "Clean Your TV in One Single Click",
+                            style = Ty.Heading.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        )
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Text(
+                            "Safely strip all ad-serving feeds, PatchWall, telemetry & bloatware. Enables 2x animation speeds and AdGuard DNS.",
+                            style = Ty.Small.copy(color = Pal.Dim, fontSize = 14.sp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(20.dp))
+
+                TvButton(
+                    text = "⚡ Clean TV Now",
+                    onClick = vm::requestCleanTvWizard,
+                    primary = true,
+                    modifier = Modifier.focusRequester(fr)
+                )
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
+
+        // Hardware Specs and Live RAM Gauge
+        Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+            Column(Modifier.width(240.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Gauge(frac, "${(frac * 100).roundToInt()}%", "memory in use")
+                Spacer(Modifier.height(10.dp))
+                Text("${gb(used)} of ${gb(d.ramTotalMb)}", style = Ty.Body.copy(fontWeight = FontWeight.SemiBold))
+                Spacer(Modifier.height(6.dp))
+                Text(d.advice, style = Ty.Small, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+
+            Column(Modifier.weight(1f)) {
+                Spec("Chipset & Hardware", d.hardware.ifBlank { "Unknown" })
+                Spec("Processor & Cores", "${d.cores} cores, ${d.abi}")
+                Spec("Storage free", "%.1f of %.1f GB free".format(d.storageFreeGb, d.storageTotalGb))
+                Spec("Display Resolution", d.resolution)
+                Spec("Security Patch", d.patch.ifBlank { "Unknown" })
+                Spec("System Uptime", "${d.uptimeHours} hours")
+            }
+        }
+
+        Spacer(Modifier.height(26.dp))
+
+        // Navigation shortcuts
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             TvButton(
-                "Review $reviewable app${if (reviewable == 1) "" else "s"}",
+                "Review Debloat Catalog ($reviewable)",
                 onClick = { vm.go(Screen.Debloat) },
-                modifier = Modifier.focusRequester(fr),
+                primary = false
             )
-            TvButton("Speed tweaks", onClick = { vm.go(Screen.Tweaks) }, primary = false)
+            TvButton("Installed Apps", onClick = { vm.go(Screen.InstalledApps) }, primary = false)
+            TvButton("Speed & DNS Tweaks", onClick = { vm.go(Screen.Tweaks) }, primary = false)
+            TvButton("Safety Restore Journal", onClick = { vm.go(Screen.Restore) }, primary = false)
         }
     }
 }

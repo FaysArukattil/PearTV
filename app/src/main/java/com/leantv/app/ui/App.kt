@@ -39,8 +39,12 @@ fun LeanTvApp(vm: MainViewModel) {
 private fun AppContent(vm: MainViewModel) {
     val s by vm.state.collectAsState()
 
-    BackHandler(enabled = s.screen in listOf(Screen.InstalledApps, Screen.Debloat, Screen.Tweaks, Screen.Restore)) {
-        vm.go(Screen.Dashboard)
+    BackHandler(enabled = s.showCleanWizard || s.screen in listOf(Screen.InstalledApps, Screen.Debloat, Screen.Tweaks, Screen.Restore)) {
+        if (s.showCleanWizard) {
+            vm.dismissCleanTvWizard()
+        } else {
+            vm.go(Screen.Dashboard)
+        }
     }
 
     Backdrop {
@@ -70,6 +74,16 @@ private fun AppContent(vm: MainViewModel) {
                         }
                     }
                 }
+            }
+
+            // ⚡ CleanYourTV 1-Click Wizard
+            if (s.showCleanWizard) {
+                CleanTvWizardDialog(
+                    majorOptions = s.majorOptions,
+                    onToggleOption = vm::toggleMajorOption,
+                    onConfirm = vm::executeCleanTvWizard,
+                    onDismiss = vm::dismissCleanTvWizard
+                )
             }
 
             s.confirm?.let { c ->
