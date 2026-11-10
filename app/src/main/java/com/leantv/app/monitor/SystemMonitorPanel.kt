@@ -237,7 +237,7 @@ private fun RunningProcessRow(
     onKill: () -> Unit,
 ) {
     val context = LocalContext.current
-    var iconBitmap by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
+    var iconBitmap by remember(app.packageName) { mutableStateOf(IconCache.getIcon(app.packageName)) }
 
     LaunchedEffect(app.packageName) {
         if (iconBitmap == null) {

@@ -28,6 +28,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.media.tv.TvContract
+import java.util.Calendar
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import com.leantv.app.adb.AdbClient
@@ -62,8 +63,11 @@ data class LauncherState(
     val favoriteApps: List<InstalledAppInfo> = emptyList(),
     val allApps: List<InstalledAppInfo> = emptyList(),
     val focusedApp: InstalledAppInfo? = null,
+    val greetingText: String = "GOOD AFTERNOON",
     val timeText: String = "",
     val dateText: String = "",
+    val networkLabel: String = "Wi-Fi",
+    val networkIsConnected: Boolean = true,
     val isLoading: Boolean = true,
     val showDefaultPrompt: Boolean = false,
     val actionMenuApp: InstalledAppInfo? = null,
@@ -125,14 +129,70 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             while (isActive) {
                 val now = Date()
+                val cal = Calendar.getInstance()
+                val hour = cal.get(Calendar.HOUR_OF_DAY)
+                val greeting = when (hour) {
+                    in 4..11 -> "GOOD MORNING"
+                    in 12..16 -> "GOOD AFTERNOON"
+                    else -> "GOOD EVENING"
+                }
+                val timeStr = timeFormat.format(now).uppercase()
+                val dateStr = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH).format(now).uppercase()
+                val (netLabel, netConnected) = getNetworkStatus()
+
                 _state.update {
                     it.copy(
-                        timeText = timeFormat.format(now),
-                        dateText = dateFormat.format(now),
+                        greetingText = greeting,
+                        timeText = timeStr,
+                        dateText = dateStr,
+                        networkLabel = netLabel,
+                        networkIsConnected = netConnected
                     )
                 }
                 delay(1000)
             }
+        }
+    }
+
+    private fun getNetworkStatus(): Pair<String, Boolean> {
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val active = cm?.activeNetwork ?: return Pair("No Network", false)
+            val caps = cm.getNetworkCapabilities(active) ?: return Pair("No Network", false)
+            when {
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> Pair("Ethernet", true)
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> {
+                    val wifiMgr = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                    val info = wifiMgr?.connectionInfo
+                    val ssid = info?.ssid?.removeSurrounding("\"")
+                    if (!ssid.isNullOrEmpty() && ssid != "<unknown ssid>") {
+                        Pair(ssid, true)
+                    } else {
+                        Pair("Wi-Fi", true)
+                    }
+                }
+                else -> Pair("Connected", true)
+            }
+        } catch (_: Exception) {
+            Pair("Wi-Fi", true)
+        }
+    }
+
+    fun openNetworkSettings() {
+        val intents = listOf(
+            Intent("android.settings.WIFI_SETTINGS"),
+            Intent(Settings.ACTION_WIFI_SETTINGS),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(ctx.packageManager) != null) {
+                    ctx.startActivity(intent)
+                    return
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -271,9 +331,54 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Top Right Controls: Inputs, Profile, Quick Share Hub ----------
 
+    /**
+     * Opens the TV's native system input menu.
+     * 1) Tries known OEM / Android TV intents (Xiaomi, TCL, Sony, Google TV).
+     * 2) Tries pressing KEYCODE_TV_INPUT (178) via on-device ADB shell.
+     * 3) Last resort: displays LeanTV's Apple TV-styled Inputs switcher.
+     */
     fun openInputs() {
         loadTvInputs()
-        _state.update { it.copy(showInputsDialog = true) }
+        if (startFirstResolvable(nativeInputIntents())) return
+        viewModelScope.launch {
+            if (!pressRemoteKey(178)) { // 178 = KEYCODE_TV_INPUT
+                _state.update { it.copy(showInputsDialog = true) }
+            }
+        }
+    }
+
+    private fun nativeInputIntents(): List<Intent> = listOf(
+        Intent().setComponent(android.content.ComponentName("com.mitv.tvcustomsettings", "com.mitv.tvcustomsettings.InputSourceActivity")),
+        Intent().setComponent(android.content.ComponentName("com.xiaomi.mitv.setupwizard", "com.xiaomi.mitv.setupwizard.inputsource.InputActivity")),
+        Intent().setComponent(android.content.ComponentName("com.tcl.tvmanager", "com.tcl.tvmanager.input.InputActivity")),
+        Intent().setComponent(android.content.ComponentName("com.google.android.tv.inputpicker", "com.google.android.tv.inputpicker.InputPickerActivity")),
+        Intent("com.sony.dtv.intent.action.VIEW_INPUT_LIST"),
+        Intent("android.media.tv.action.VIEW_INPUTS"),
+        Intent("com.android.tv.action.VIEW_INPUTS")
+    )
+
+    private suspend fun pressRemoteKey(keyCode: Int): Boolean {
+        return try {
+            if (!adb.isConnected) adb.connect()
+            val res = adb.shell("input keyevent $keyCode")
+            res.code == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun startFirstResolvable(intents: List<Intent>): Boolean {
+        val pm = ctx.packageManager
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(pm) != null) {
+                    ctx.startActivity(intent)
+                    return true
+                }
+            } catch (_: Exception) {}
+        }
+        return false
     }
 
     fun closeInputs() {
@@ -353,6 +458,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openProfile() {
         loadGoogleAccounts()
+        val accountIntents = listOf(
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.accounts.AccountsActivity")),
+            Intent().setComponent(android.content.ComponentName("com.google.android.apps.tv.launcherx", "com.google.android.apps.tv.launcherx.settings.AccountsActivity")),
+            Intent("android.settings.SYNC_SETTINGS"),
+            Intent(Settings.ACTION_SYNC_SETTINGS),
+            Intent("com.google.android.gms.accountsettings.ACCOUNT_SETTINGS"),
+            Intent(Settings.ACTION_ADD_ACCOUNT).apply {
+                putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
+            }
+        )
+        if (startFirstResolvable(accountIntents)) return
         _state.update { it.copy(showProfileDialog = true) }
     }
 
@@ -767,10 +883,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openSystemSettings() {
-        try {
-            ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (_: Exception) {
-            toast("Couldn't open Settings.")
+        val settingsIntents = listOf(
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
+            Intent("android.settings.SETTINGS"),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        if (startFirstResolvable(settingsIntents)) return
+        viewModelScope.launch {
+            if (!pressRemoteKey(176)) { // 176 = KEYCODE_SETTINGS
+                toast("Couldn't open Settings.")
+            }
         }
     }
 

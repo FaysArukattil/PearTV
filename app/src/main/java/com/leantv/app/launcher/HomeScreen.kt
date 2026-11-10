@@ -2,13 +2,10 @@ package com.leantv.app.launcher
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,19 +13,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +45,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.leantv.app.data.AppVisuals
 import com.leantv.app.data.IconCache
 import com.leantv.app.data.InstalledAppInfo
 import com.leantv.app.monitor.SystemMonitorPanel
@@ -101,42 +95,55 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     TvCanvas {
-        HomeBackdrop(s.focusedApp) {
+        CleanTvBackdrop(s.focusedApp ?: s.favoriteApps.firstOrNull()) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = Safe.H, vertical = Safe.V),
+                    .padding(horizontal = 48.dp, vertical = 28.dp),
             ) {
-                // Apple TV Control Center & Navigation Top Bar
-                AppleTvTopBar(
+                // 1. CleanYourTV Top Bar: Kicker + Clock + Frosted Action Capsules
+                CleanTvTopBar(
+                    greeting = s.greetingText,
                     timeText = s.timeText,
                     dateText = s.dateText,
+                    networkLabel = s.networkLabel,
                     currentAccountName = s.currentAccountName,
                     onOpenInputs = vm::openInputs,
+                    onOpenNetwork = vm::openNetworkSettings,
                     onOpenQuickShare = vm::handleQuickShareClick,
                     onOpenProfile = vm::openProfile,
                     onOpenSettings = vm::openSystemSettings,
-                    onOpenTools = vm::openLeanTvOptimizer,
-                    onOpenMonitor = vm::openSystemMonitor,
+                    onOpenCleanTv = vm::requestCleanTv,
                 )
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(30.dp))
 
-                // ⚡ CleanYourTV Transformation Hero Banner
-                CleanTvHeroBanner(
-                    isDebloating = s.isDebloating,
-                    progressText = s.debloatProgress,
-                    onClick = vm::requestCleanTv
+                // 2. Top Shelf Hero Name (CleanYourTV 48sp app title)
+                val heroName = s.focusedApp?.appName
+                    ?: s.favoriteApps.firstOrNull()?.appName
+                    ?: ""
+
+                Text(
+                    text = heroName,
+                    style = Ty.Display.copy(
+                        color = Color.White,
+                        fontSize = 46.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 4.dp).height(56.dp)
                 )
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(14.dp))
 
                 if (s.isLoading) {
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(380.dp),
+                            .height(280.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -144,52 +151,62 @@ fun HomeScreen(vm: LauncherViewModel) {
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             Spinner()
-                            Text("Loading your apps...", style = Ty.Heading)
+                            Text("Loading your apps...", style = Ty.Body.copy(color = Color(0x99FFFFFF)))
                         }
                     }
                 } else {
-                    // Apple TV Top Shelf (Featured Row)
-                    if (s.featuredApps.isNotEmpty()) {
-                        SectionTitle("Top Shelf")
-                        Spacer(Modifier.height(14.dp))
-                        FeaturedAppsRow(
-                            apps = s.featuredApps,
-                            onFocus = vm::setFocusedApp,
-                            onClick = vm::launch,
-                            onLongClick = vm::showActionMenu,
-                        )
-                        Spacer(Modifier.height(32.dp))
+                    // 3. The Dock Row (First 4 pinned favorite apps)
+                    val dockApps = if (s.favoriteApps.isNotEmpty()) s.favoriteApps.take(4) else s.allApps.take(4)
+                    if (dockApps.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                        ) {
+                            dockApps.forEach { app ->
+                                CleanTvAppTile(
+                                    app = app,
+                                    isDock = true,
+                                    onFocus = { vm.setFocusedApp(app) },
+                                    onClick = { vm.launch(app) },
+                                    onLongClick = { vm.showActionMenu(app) }
+                                )
+                            }
+                        }
                     }
 
-                    // Favorites Row
-                    if (s.favoriteApps.isNotEmpty()) {
-                        SectionTitle("Favorites")
-                        Spacer(Modifier.height(14.dp))
-                        AppRow(
-                            apps = s.favoriteApps,
-                            onFocus = vm::setFocusedApp,
-                            onClick = vm::launch,
-                            onLongClick = vm::showActionMenu,
-                        )
-                        Spacer(Modifier.height(32.dp))
-                    }
+                    Spacer(Modifier.height(26.dp))
 
-                    // All Applications Row
-                    if (s.allApps.isNotEmpty()) {
-                        SectionTitle("All Applications (${s.allApps.size})")
-                        Spacer(Modifier.height(14.dp))
-                        AppRow(
-                            apps = s.allApps,
-                            onFocus = vm::setFocusedApp,
-                            onClick = vm::launch,
-                            onLongClick = vm::showActionMenu,
-                        )
+                    // 4. The Grid (All remaining apps in 4-column rows)
+                    val dockPkgSet = dockApps.map { it.packageName }.toSet()
+                    val gridApps = s.allApps.filter { it.packageName !in dockPkgSet }
+
+                    if (gridApps.isNotEmpty()) {
+                        val gridRows = remember(gridApps) { gridApps.chunked(4) }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            gridRows.forEach { rowApps ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                                ) {
+                                    rowApps.forEach { app ->
+                                        CleanTvAppTile(
+                                            app = app,
+                                            isDock = false,
+                                            onFocus = { vm.setFocusedApp(app) },
+                                            onClick = { vm.launch(app) },
+                                            onLongClick = { vm.showActionMenu(app) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(48.dp))
                     }
                 }
             }
 
-            // ⚡ CleanYourTV Wizard Modal (Pick what to keep/remove)
+            // CleanYourTV 1-Click Wizard Dialog
             if (s.showCleanTvWizard) {
                 CleanTvWizardDialog(
                     majorOptions = s.majorOptions,
@@ -199,7 +216,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // ⚡ CleanYourTV Success Celebratory Modal
+            // CleanYourTV Success Modal
             s.debloatSuccessSummary?.let { summary ->
                 CleanTvSuccessDialog(
                     summary = summary,
@@ -216,7 +233,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Profile & Google Account Switcher Modal
+            // Google Accounts Modal
             if (s.showProfileDialog) {
                 ProfileAccountsDialog(
                     currentAccount = s.currentAccountName,
@@ -314,10 +331,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                 ) {
                     Text(
                         msg,
-                        style = Ty.Body,
+                        style = Ty.Body.copy(color = Color.White),
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(Pal.SurfaceHi)
+                            .background(Color(0xE61F232B))
                             .padding(horizontal = 28.dp, vertical = 14.dp)
                     )
                 }
@@ -326,142 +343,398 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 }
 
+/**
+ * CleanYourTV Top Bar:
+ * Left: "GOOD AFTERNOON" + "1:13 PM | SATURDAY 17 OCTOBER"
+ * Right: Inputs, Wi-Fi, Quick Share, Profile, Settings, CleanTV frosted capsules.
+ */
 @Composable
-private fun CleanTvHeroBanner(
-    isDebloating: Boolean,
-    progressText: String?,
-    onClick: () -> Unit,
+private fun CleanTvTopBar(
+    greeting: String,
+    timeText: String,
+    dateText: String,
+    networkLabel: String,
+    currentAccountName: String,
+    onOpenInputs: () -> Unit,
+    onOpenNetwork: () -> Unit,
+    onOpenQuickShare: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenCleanTv: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        if (focused) 1.02f else 1f,
-        tween(180, easing = FastOutSlowInEasing),
-        label = "heroScale"
-    )
-    val ringColor by animateColorAsState(
-        if (focused) Pal.Amber else Color(0x22FFFFFF),
-        tween(180),
-        label = "heroRing"
-    )
-    val bgBrush = Brush.horizontalGradient(
-        if (focused) listOf(Color(0xFF264E66), Color(0xFF17384A))
-        else listOf(Color(0xFF1A384B), Color(0xFF0E2330))
-    )
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(RoundedCornerShape(22.dp))
-            .background(bgBrush)
-            .border(if (focused) 2.5.dp else 1.dp, ringColor, RoundedCornerShape(22.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(enabled = !isDebloating, onClick = onClick)
-            .padding(horizontal = 26.dp, vertical = 20.dp)
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        // Left: Kicker + Clock + Date
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = greeting.uppercase(),
+                style = Ty.Small.copy(
+                    color = Color(0xB3FFFFFF),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 2.2.sp
+                )
+            )
+
             Row(
-                Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Glowing Icon Badge
+                Text(
+                    text = timeText,
+                    style = Ty.Display.copy(
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.Light,
+                        color = Color.White
+                    )
+                )
+
                 Box(
                     Modifier
-                        .size(62.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Pal.Amber.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("⚡", fontSize = 32.sp)
-                }
+                        .width(1.dp)
+                        .height(24.dp)
+                        .background(Color(0x33FFFFFF))
+                )
 
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            "CLEANYOURTV OPTIMIZER",
-                            style = Ty.Small.copy(
-                                color = Pal.Amber,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                letterSpacing = 1.sp
-                            )
-                        )
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Pal.Mint.copy(alpha = 0.2f))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text("100% REVERSIBLE", style = Ty.Small.copy(color = Pal.Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold))
-                        }
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-
-                    Text(
-                        "Transform Your TV into a Clean Apple TV Experience",
-                        style = Ty.Heading.copy(
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (focused) Pal.Amber else Pal.Text
-                        )
+                Text(
+                    text = dateText.uppercase(),
+                    style = Ty.Small.copy(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 1.sp,
+                        color = Color(0x99FFFFFF)
                     )
-
-                    Spacer(Modifier.height(4.dp))
-
-                    Text(
-                        "Disable manufacturer ads, PatchWall, telemetry & bloatware • 2x remote responsiveness • AdGuard DNS",
-                        style = Ty.Small.copy(color = Pal.Dim, fontSize = 14.sp)
-                    )
-                }
+                )
             }
+        }
 
-            Spacer(Modifier.width(16.dp))
-
-            // Action Pill / Progress Indicator
-            if (isDebloating) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Spinner(Modifier.size(28.dp))
-                    Text(
-                        progressText ?: "Optimizing TV...",
-                        style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
-                    )
-                }
-            } else {
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (focused) Pal.Amber else Color(0x33FFFFFF))
-                        .padding(horizontal = 22.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        "⚡ Transform My TV ➔",
-                        style = Ty.Button.copy(
-                            color = if (focused) Pal.OnAmber else Pal.Text,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
+        // Right: Frosted Action Capsules
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CleanTvTopCapsule(icon = "📺", label = "Inputs", onClick = onOpenInputs)
+            val netIcon = if (networkLabel.contains("Ethernet", ignoreCase = true)) "🌐" else "📶"
+            CleanTvTopCapsule(icon = netIcon, label = networkLabel, onClick = onOpenNetwork)
+            CleanTvTopCapsule(icon = "⚡", label = "Quick Share", onClick = onOpenQuickShare)
+            val shortAccount = remember(currentAccountName) {
+                if (currentAccountName.contains("@")) currentAccountName.substringBefore("@") else currentAccountName
             }
+            CleanTvTopCapsule(icon = "👤", label = shortAccount, onClick = onOpenProfile)
+            CleanTvTopCapsule(icon = "⚙", label = "Settings", onClick = onOpenSettings)
+            CleanTvTopCapsule(icon = "✨", label = "CleanTV", onClick = onOpenCleanTv)
         }
     }
 }
 
+@Composable
+private fun CleanTvTopCapsule(
+    icon: String,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Focusable(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        idle = Color(0x33222222),
+        scaleOnFocus = 1.08f,
+        idleOutline = false
+    ) { focused ->
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(if (focused) Color(0xFF333333) else Color(0x33222222))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) Color.White else Color(0x2BFFFFFF),
+                    shape = RoundedCornerShape(50)
+                )
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(icon, fontSize = 14.sp, color = if (focused) Color.White else Color(0xCCFFFFFF))
+            Text(
+                text = label,
+                style = Ty.Small.copy(
+                    color = if (focused) Color.White else Color(0xCCFFFFFF),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp
+                )
+            )
+        }
+    }
+}
+
+/**
+ * CleanYourTV exact tile implementation:
+ * - 180dp x 101dp aspect ratio
+ * - If app has a 16:9 banner: banner fills card completely with CenterCrop
+ * - If app has no banner: tinted gradient plate + centered 46dp icon + bottom title
+ * - On focus: 1.10x scale, glass specular highlight, 2.5dp crisp white rim
+ * - In grid: shows tile name underneath (14sp, #F2FFFFFF) when focused
+ */
+@Composable
+private fun CleanTvAppTile(
+    app: InstalledAppInfo,
+    isDock: Boolean,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    var visuals by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
+
+    LaunchedEffect(app.packageName) {
+        if (visuals == null) {
+            visuals = IconCache.loadVisuals(context, app.packageName)
+        }
+    }
+
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        if (focused) 1.10f else 1f,
+        tween(150, easing = FastOutSlowInEasing),
+        label = "tileScale"
+    )
+    val elevation by animateFloatAsState(
+        if (focused) -4f else 0f,
+        tween(150),
+        label = "tileElevation"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(180.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(180.dp)
+                .height(101.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationY = elevation
+                }
+                .clip(RoundedCornerShape(18.dp))
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocus()
+                }
+                .onPreviewKeyEvent { event ->
+                    if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU && event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                        onLongClick()
+                        true
+                    } else false
+                }
+                .clickable(onClick = onClick)
+        ) {
+            val v = visuals
+            if (v != null && v.isBanner) {
+                // 1. Widescreen 16:9 TV Banner (Netflix, Prime Video, YouTube, Hotstar, etc.)
+                Image(
+                    bitmap = v.bitmap,
+                    contentDescription = app.appName,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else if (v != null) {
+                // 2. Tinted gradient plate with centered icon + bottom label
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(listOf(v.topColor, v.bottomColor))
+                        )
+                ) {
+                    Image(
+                        bitmap = v.bitmap,
+                        contentDescription = app.appName,
+                        modifier = Modifier
+                            .size(46.dp)
+                            .align(Alignment.Center)
+                            .padding(bottom = 12.dp),
+                        contentScale = ContentScale.Fit
+                    )
+
+                    Text(
+                        text = app.appName,
+                        style = Ty.Small.copy(
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
+            } else {
+                // Placeholder while loading
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF15202B)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = app.appName.take(1).uppercase(),
+                        style = Ty.Title.copy(color = Color.White, fontSize = 24.sp)
+                    )
+                }
+            }
+
+            // 3. CleanYourTV Floating Glass Highlight (Specular sheen + crisp white rim)
+            if (focused) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color(0x3DFFFFFF), Color(0x12FFFFFF)),
+                                startY = 0f,
+                                endY = 101f
+                            )
+                        )
+                )
+
+                // Top 45% specular shine
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(45.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x66FFFFFF), Color(0x00FFFFFF))
+                            )
+                        )
+                )
+
+                // Crisp White Glass Rim
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.5.dp, Color.White, RoundedCornerShape(18.dp))
+                )
+            } else {
+                // Unfocused subtle border
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(18.dp))
+                )
+            }
+        }
+
+        // CleanYourTV Name label under tile in grid (14sp, #F2FFFFFF, appears when focused)
+        if (!isDock) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (focused) app.appName else "",
+                style = Ty.Small.copy(
+                    color = Color(0xF2FFFFFF),
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    letterSpacing = 0.3.sp
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .width(180.dp)
+                    .height(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * CleanYourTV Cinematic Backdrop:
+ * Pitch-black background with dynamic saturated ambient radial glow matching focused app.
+ */
+@Composable
+private fun CleanTvBackdrop(focusedApp: InstalledAppInfo?, content: @Composable () -> Unit) {
+    val targetAmbient = remember(focusedApp?.packageName, focusedApp?.appName) {
+        getAppAmbientColor(focusedApp)
+    }
+
+    val ambientColor by animateColorAsState(
+        targetValue = targetAmbient,
+        animationSpec = tween(350, easing = FastOutSlowInEasing),
+        label = "ambientGlow"
+    )
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF000000))
+            .drawBehind {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            ambientColor.copy(alpha = 0.46f),
+                            ambientColor.copy(alpha = 0.16f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.32f, size.height * 0.30f),
+                        radius = size.width * 0.50f
+                    )
+                )
+            }
+    ) {
+        content()
+    }
+}
+
+/**
+ * Ambient brand color resolution.
+ */
+private fun getAppAmbientColor(app: InstalledAppInfo?): Color {
+    if (app == null) return Color(0xFF1E1E1E)
+    val name = app.appName.lowercase()
+    val pkg = app.packageName.lowercase()
+    return when {
+        name.contains("netflix") || pkg.contains("netflix") -> Color(0xFFE50914)
+        name.contains("youtube") || pkg.contains("youtube") -> Color(0xFFFF0000)
+        name.contains("prime") || pkg.contains("amazonvideo") -> Color(0xFF00A8E1)
+        name.contains("hotstar") || pkg.contains("hotstar") -> Color(0xFF1F44E5)
+        name.contains("fancode") || pkg.contains("fancode") -> Color(0xFFFF5200)
+        name.contains("iptv") || name.contains("smart iptv") -> Color(0xFF007AFF)
+        name.contains("apple") || pkg.contains("appletv") -> Color(0xFF64D2FF)
+        name.contains("play") || pkg.contains("vending") -> Color(0xFF00C853)
+        name.contains("xstream") || name.contains("airtel") -> Color(0xFFE50000)
+        name.contains("spotify") || pkg.contains("spotify") -> Color(0xFF1DB954)
+        name.contains("plex") || pkg.contains("plex") -> Color(0xFFE5A00D)
+        name.contains("kodi") || pkg.contains("kodi") -> Color(0xFF17B2E7)
+        name.contains("twitch") || pkg.contains("twitch") -> Color(0xFF9146FF)
+        name.contains("disney") || pkg.contains("disney") -> Color(0xFF113CCF)
+        name.contains("jio") || pkg.contains("jio") -> Color(0xFF0A38B8)
+        name.contains("sony") || pkg.contains("sonyliv") -> Color(0xFF00E5FF)
+        name.contains("zee") || pkg.contains("zee5") -> Color(0xFF8E24AA)
+        else -> {
+            val hash = Math.abs(pkg.hashCode())
+            val hues = listOf(
+                Color(0xFF3B82F6),
+                Color(0xFFEF4444),
+                Color(0xFF10B981),
+                Color(0xFFF59E0B),
+                Color(0xFF8B5CF6),
+                Color(0xFFEC4899),
+                Color(0xFF06B6D4)
+            )
+            hues[hash % hues.size]
+        }
+    }
+}
+
+/** CleanYourTV Success Celebratory Modal */
 @Composable
 private fun CleanTvSuccessDialog(
     summary: String,
@@ -472,7 +745,7 @@ private fun CleanTvSuccessDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xD9000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -480,8 +753,8 @@ private fun CleanTvSuccessDialog(
             Modifier
                 .width(540.dp)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Pal.Surface)
-                .border(2.dp, Pal.Mint, RoundedCornerShape(26.dp))
+                .background(Color(0xFF15181E))
+                .border(2.dp, Color.White, RoundedCornerShape(26.dp))
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -490,24 +763,24 @@ private fun CleanTvSuccessDialog(
                 Modifier
                     .size(68.dp)
                     .clip(CircleShape)
-                    .background(Pal.Mint.copy(alpha = 0.2f)),
+                    .background(Color(0x3300C853)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✓", style = Ty.Display.copy(color = Pal.Mint, fontSize = 38.sp))
+                Text("✓", style = Ty.Display.copy(color = Color(0xFF00C853), fontSize = 38.sp))
             }
 
-            Text("Your TV is Transformed!", style = Ty.Title.copy(fontSize = 28.sp))
+            Text("Your TV is Transformed!", style = Ty.Title.copy(color = Color.White, fontSize = 28.sp))
 
             Text(
                 summary,
-                style = Ty.Body,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                style = Ty.Body.copy(color = Color(0xCCFFFFFF)),
+                textAlign = TextAlign.Center
             )
 
             Text(
-                "Telemetry daemons and background ads are now disabled. All original packages are saved in the restore journal and can be re-enabled anytime.",
-                style = Ty.Small.copy(color = Pal.Dim),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                "Telemetry daemons and background ads are now disabled. 0.5x animation scales applied. 100% reversible anytime.",
+                style = Ty.Small.copy(color = Color(0x99FFFFFF)),
+                textAlign = TextAlign.Center
             )
 
             Spacer(Modifier.height(6.dp))
@@ -516,412 +789,9 @@ private fun CleanTvSuccessDialog(
                 text = "Enjoy CleanTV ➔",
                 onClick = onDismiss,
                 primary = true,
-                modifier = Modifier.fillMaxWidth().focusRequester(autoFocus)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = Ty.Heading.copy(
-            color = Pal.Text,
-            fontWeight = FontWeight.Bold,
-            fontSize = 24.sp
-        ),
-        modifier = Modifier.padding(start = 4.dp)
-    )
-}
-
-/**
- * Apple TV-styled navigation and Control Center bar.
- * Contains Top Right main controls: Inputs, Quick Share, Google Account Profile, and System Settings.
- */
-@Composable
-private fun AppleTvTopBar(
-    timeText: String,
-    dateText: String,
-    currentAccountName: String,
-    onOpenInputs: () -> Unit,
-    onOpenQuickShare: () -> Unit,
-    onOpenProfile: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenMonitor: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // Left Side: Sleek Apple TV-style Brand Logo & Utility Pills
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF1E3A4A), Color(0xFF132833))))
-                    .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("📺", fontSize = 18.sp)
-                    Text(
-                        "LeanTV",
-                        style = Ty.Display.copy(
-                            color = Pal.Amber,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 22.sp
-                        )
-                    )
-                }
-            }
-
-            TvPillButton(text = "⚡ CleanYourTV", onClick = onOpenTools)
-            TvPillButton(text = "📊 Monitor", onClick = onOpenMonitor)
-        }
-
-        // Right Side: Quick Action Pills & Clock
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // 1. Inputs Quick Switcher
-            TvTopControlPill(
-                icon = "📺",
-                label = "Inputs",
-                onClick = onOpenInputs
-            )
-
-            // 2. Quick Share (Google Quick Share / Nearby Share)
-            TvTopControlPill(
-                icon = "⚡",
-                label = "Quick Share",
-                onClick = onOpenQuickShare
-            )
-
-            // 3. Profile / Google Account Switcher
-            val shortAccount = remember(currentAccountName) {
-                if (currentAccountName.contains("@")) {
-                    currentAccountName.substringBefore("@")
-                } else {
-                    currentAccountName
-                }
-            }
-            TvTopControlPill(
-                icon = "👤",
-                label = shortAccount,
-                onClick = onOpenProfile
-            )
-
-            // 4. System Settings
-            TvTopControlPill(
-                icon = "⚙",
-                label = "Settings",
-                onClick = onOpenSettings
-            )
-
-            Spacer(Modifier.width(8.dp))
-
-            // Time & Date Display
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = timeText,
-                    style = Ty.Title.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        color = Pal.Text
-                    )
-                )
-                Text(
-                    text = dateText,
-                    style = Ty.Small.copy(color = Pal.Dim, fontSize = 13.sp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvTopControlPill(
-    icon: String,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Focusable(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        idle = Color(0x2BFFFFFF),
-        scaleOnFocus = 1.08f
-    ) { focused ->
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(icon, fontSize = 16.sp)
-            Text(
-                text = label,
-                style = Ty.Small.copy(
-                    color = if (focused) Pal.Amber else Pal.Text,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    letterSpacing = 0.3.sp
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvPillButton(text: String, onClick: () -> Unit) {
-    Focusable(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        idle = Color(0x22FFFFFF),
-        scaleOnFocus = 1.05f
-    ) { focused ->
-        Text(
-            text = text,
-            style = Ty.Small.copy(
-                color = if (focused) Pal.Amber else Pal.Text,
-                fontWeight = FontWeight.SemiBold
-            ),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-    }
-}
-
-/** Featured apps carousel: large banner-style cards with butter-smooth focus scale & glow. */
-@Composable
-private fun FeaturedAppsRow(
-    apps: List<InstalledAppInfo>,
-    onFocus: (InstalledAppInfo?) -> Unit,
-    onClick: (InstalledAppInfo) -> Unit,
-    onLongClick: (InstalledAppInfo) -> Unit,
-) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(22.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp)
-    ) {
-        items(apps, key = { it.packageName }) { app ->
-            FeaturedAppCard(
-                app = app,
-                onFocus = { onFocus(app) },
-                onClick = { onClick(app) },
-                onLongClick = { onLongClick(app) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun FeaturedAppCard(
-    app: InstalledAppInfo,
-    onFocus: () -> Unit,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    var iconBitmap by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
-
-    LaunchedEffect(app.packageName) {
-        if (iconBitmap == null) {
-            iconBitmap = IconCache.loadIcon(context, app.packageName)
-        }
-    }
-
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        if (focused) 1.08f else 1f,
-        tween(200, easing = FastOutSlowInEasing),
-        label = "featScale"
-    )
-    val borderRing by animateColorAsState(
-        if (focused) Pal.Amber else Color(0x1FFFFFFF),
-        tween(200),
-        label = "featRing"
-    )
-    val cardBg by animateColorAsState(
-        if (focused) Color(0x4D24566C) else Color(0x2617394A),
-        tween(200),
-        label = "featBg"
-    )
-
-    Box(
-        Modifier
-            .width(280.dp)
-            .height(160.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(RoundedCornerShape(22.dp))
-            .background(cardBg)
-            .border(if (focused) 3.dp else 1.dp, borderRing, RoundedCornerShape(22.dp))
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocus()
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU && event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    onLongClick()
-                    true
-                } else false
-            }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Box(
-                Modifier
-                    .size(68.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0x33000000)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (iconBitmap != null) {
-                    Image(bitmap = iconBitmap!!, contentDescription = app.appName, modifier = Modifier.size(54.dp))
-                } else {
-                    Box(Modifier.size(32.dp).clip(CircleShape).background(Pal.Amber.copy(alpha = 0.4f)))
-                }
-            }
-
-            Text(
-                text = app.appName,
-                style = Ty.Heading.copy(
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (focused) Pal.Amber else Pal.Text
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-/** Standard shelf row for Favorites & All Applications. */
-@Composable
-private fun AppRow(
-    apps: List<InstalledAppInfo>,
-    onFocus: (InstalledAppInfo?) -> Unit,
-    onClick: (InstalledAppInfo) -> Unit,
-    onLongClick: (InstalledAppInfo) -> Unit,
-) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
-    ) {
-        items(apps, key = { it.packageName }) { app ->
-            StandardAppCard(
-                app = app,
-                onFocus = { onFocus(app) },
-                onClick = { onClick(app) },
-                onLongClick = { onLongClick(app) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun StandardAppCard(
-    app: InstalledAppInfo,
-    onFocus: () -> Unit,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    var iconBitmap by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
-
-    LaunchedEffect(app.packageName) {
-        if (iconBitmap == null) {
-            iconBitmap = IconCache.loadIcon(context, app.packageName)
-        }
-    }
-
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        if (focused) 1.09f else 1f,
-        tween(180, easing = FastOutSlowInEasing),
-        label = "appScale"
-    )
-    val ring by animateColorAsState(
-        if (focused) Pal.Amber else Color(0x1AFFFFFF),
-        tween(180),
-        label = "appRing"
-    )
-    val bg by animateColorAsState(
-        if (focused) Color(0x5924566C) else Color(0x3317394A),
-        tween(180),
-        label = "appBg"
-    )
-
-    Box(
-        Modifier
-            .width(170.dp)
-            .height(130.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(RoundedCornerShape(18.dp))
-            .background(bg)
-            .border(if (focused) 3.dp else 1.dp, ring, RoundedCornerShape(18.dp))
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocus()
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU && event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    onLongClick()
-                    true
-                } else false
-            }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Box(
-                Modifier
-                    .size(54.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0x2B000000)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (iconBitmap != null) {
-                    Image(bitmap = iconBitmap!!, contentDescription = app.appName, modifier = Modifier.size(44.dp))
-                } else {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(Pal.Amber.copy(alpha = 0.3f)))
-                }
-            }
-
-            Text(
-                text = app.appName,
-                style = Ty.Body.copy(
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (focused) Pal.Amber else Pal.Text
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(autoFocus)
             )
         }
     }
@@ -939,7 +809,7 @@ private fun InputsSwitcherDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xD9000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -947,13 +817,13 @@ private fun InputsSwitcherDialog(
             Modifier
                 .width(480.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Pal.Surface)
-                .border(1.dp, Pal.Line, RoundedCornerShape(24.dp))
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("TV Inputs", style = Ty.Title.copy(fontSize = 26.sp))
+            Text("TV Inputs", style = Ty.Title.copy(color = Color.White, fontSize = 26.sp))
             Text("Switch to external devices connected to this TV", style = Ty.Dim.copy(fontSize = 14.sp))
 
             Spacer(Modifier.height(6.dp))
@@ -966,9 +836,11 @@ private fun InputsSwitcherDialog(
                     TvButton(
                         text = "📺  ${input.name} (${input.type})",
                         onClick = { onSelectInput(input) },
-                        modifier = Modifier.fillMaxWidth().let {
-                            if (index == 0) it.focusRequester(autoFocus) else it
-                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .let {
+                                if (index == 0) it.focusRequester(autoFocus) else it
+                            },
                         primary = index == 0
                     )
                 }
@@ -998,7 +870,7 @@ private fun ProfileAccountsDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xD9000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -1006,18 +878,17 @@ private fun ProfileAccountsDialog(
             Modifier
                 .width(520.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Pal.Surface)
-                .border(1.dp, Pal.Line, RoundedCornerShape(24.dp))
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Google Accounts & Profile", style = Ty.Title.copy(fontSize = 26.sp))
+            Text("Google Accounts & Profile", style = Ty.Title.copy(color = Color.White, fontSize = 26.sp))
             Text("Manage accounts linked to this Android TV system", style = Ty.Dim.copy(fontSize = 14.sp))
 
             Spacer(Modifier.height(4.dp))
 
-            // Display accounts
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -1026,14 +897,14 @@ private fun ProfileAccountsDialog(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Currently Active:", style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold))
-                Text(currentAccount, style = Ty.Heading.copy(fontSize = 18.sp))
+                Text("Currently Active:", style = Ty.Small.copy(color = Color(0xFF64D2FF), fontWeight = FontWeight.Bold))
+                Text(currentAccount, style = Ty.Heading.copy(color = Color.White, fontSize = 18.sp))
 
                 if (accounts.size > 1) {
                     Spacer(Modifier.height(4.dp))
                     Text("All Synced Accounts (${accounts.size}):", style = Ty.Small.copy(color = Pal.Dim))
                     accounts.forEach { acc ->
-                        Text("• ${acc.name}", style = Ty.Body.copy(fontSize = 15.sp))
+                        Text("• ${acc.name}", style = Ty.Body.copy(color = Color.White, fontSize = 15.sp))
                     }
                 }
             }
@@ -1047,7 +918,9 @@ private fun ProfileAccountsDialog(
                 TvButton(
                     text = "➕ Add or Switch Google Account",
                     onClick = onAddAccount,
-                    modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(autoFocus),
                     primary = true
                 )
 
@@ -1083,7 +956,7 @@ private fun QuickShareHubDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xD9000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -1091,13 +964,13 @@ private fun QuickShareHubDialog(
             Modifier
                 .width(540.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Pal.Surface)
-                .border(1.dp, Pal.Line, RoundedCornerShape(24.dp))
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Quick Share Hub", style = Ty.Title.copy(fontSize = 28.sp))
+            Text("Quick Share Hub", style = Ty.Title.copy(color = Color.White, fontSize = 28.sp))
             Text(
                 "Send files, APKs, videos, and links to your TV from any Android, iPhone, iPad, Mac, or PC.",
                 style = Ty.Dim.copy(fontSize = 14.sp),
@@ -1113,7 +986,9 @@ private fun QuickShareHubDialog(
                 TvButton(
                     text = "🌐  Universal Wi-Fi AirShare (iPhone & Android - No App Needed)",
                     onClick = onLaunchUniversalAirShare,
-                    modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(autoFocus),
                     primary = true
                 )
 
@@ -1163,7 +1038,7 @@ private fun LauncherActionDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xCC050E14)),
+            .background(Color(0xD9000000)),
         contentAlignment = Alignment.Center
     ) {
         val cancelFocus = rememberAutoFocus(app.packageName)
@@ -1171,12 +1046,13 @@ private fun LauncherActionDialog(
             Modifier
                 .width(480.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Pal.Surface)
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
                 .padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(app.appName, style = Ty.Title)
-            Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace))
+            Text(app.appName, style = Ty.Title.copy(color = Color.White))
+            Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace, color = Color(0x99FFFFFF)))
 
             Spacer(Modifier.height(8.dp))
 
@@ -1208,7 +1084,7 @@ private fun DefaultLauncherDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14)),
+            .background(Color(0xD9000000)),
         contentAlignment = Alignment.Center
     ) {
         val focusRequester = rememberAutoFocus()
@@ -1216,11 +1092,12 @@ private fun DefaultLauncherDialog(
             Modifier
                 .width(580.dp)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Pal.Surface)
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
                 .padding(36.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Set LeanTV as Default Home?", style = Ty.Title)
+            Text("Set LeanTV as Default Home?", style = Ty.Title.copy(color = Color.White))
             Text(
                 "Enjoy this fast, clean, Apple TV-style home launcher every time you turn on your TV or press the Home button on your remote.\n\nAndroid will prompt you to select LeanTV as the default Home app in system settings.",
                 style = Ty.Dim
@@ -1246,7 +1123,7 @@ private fun LauncherUninstallDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14)),
+            .background(Color(0xD9000000)),
         contentAlignment = Alignment.Center
     ) {
         val cancelFocus = rememberAutoFocus(app.packageName)
@@ -1254,11 +1131,12 @@ private fun LauncherUninstallDialog(
             Modifier
                 .width(540.dp)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Pal.Surface)
+                .background(Color(0xFF15181E))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
                 .padding(36.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Uninstall ${app.appName}?", style = Ty.Title)
+            Text("Uninstall ${app.appName}?", style = Ty.Title.copy(color = Color.White))
             Text(
                 "LeanTV will open the Android TV uninstaller for ${app.packageName}.\nConfirm the prompt to remove the application.",
                 style = Ty.Dim
@@ -1271,36 +1149,5 @@ private fun LauncherUninstallDialog(
                 TvButton("Uninstall", onClick = onConfirm, primary = true)
             }
         }
-    }
-}
-
-/** Apple tvOS-inspired ambient backdrop with subtle shifting glow. */
-@Composable
-private fun HomeBackdrop(focusedApp: InstalledAppInfo?, content: @Composable () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF07141E),
-                        Color(0xFF030A0F)
-                    )
-                )
-            )
-            .drawBehind {
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Pal.Amber.copy(alpha = if (focusedApp != null) 0.14f else 0.07f),
-                            Color.Transparent
-                        ),
-                        center = Offset(size.width * 0.5f, size.height * 0.25f),
-                        radius = size.width * 0.65f
-                    )
-                )
-            }
-    ) {
-        content()
     }
 }
