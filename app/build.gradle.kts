@@ -10,19 +10,27 @@ android {
 
     defaultConfig {
         applicationId = "com.leantv.app"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "1.0.0"
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
         release {
-            // If R8 ever complains, set isMinifyEnabled = false and rebuild.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload-friendly: signs with the debug key so `assembleRelease` installs directly.
+            // Sideload-friendly: signs with debug key so release APK installs directly on any TV
             signingConfig = signingConfigs.getByName("debug")
         }
     }
