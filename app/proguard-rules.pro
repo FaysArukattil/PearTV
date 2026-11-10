@@ -1,0 +1,4 @@
+-dontwarn okio.**
+-dontwarn javax.**
+-dontwarn org.bouncycastle.**
+-dontwarn kotlin.**

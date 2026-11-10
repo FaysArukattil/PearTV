@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "entries": [
+    { "pkg": "com.google.android.videos", "name": "Google Play Movies & TV", "tier": "RECOMMENDED",
+      "why": "Store app for buying films. Your streaming apps already cover this." },
+    { "pkg": "com.google.android.play.games", "name": "Google Play Games", "tier": "RECOMMENDED",
+      "why": "Games hub that runs in the background. Not needed for normal viewing." },
+    { "pkg": "com.google.android.feedback", "name": "Google Feedback", "tier": "RECOMMENDED",
+      "why": "Sends feedback and crash reports to Google." },
+    { "pkg": "com.google.android.youtube.tvmusic", "name": "YouTube Music", "tier": "OPTIONAL",
+      "why": "Remove it if you don't listen to music on this TV." },
+    { "pkg": "com.google.android.partnersetup", "name": "Google Partner Setup", "tier": "OPTIONAL",
+      "why": "Setup helper for preinstalled partner apps. Not used day to day." },
+    { "pkg": "com.google.android.onetimeinitializer", "name": "One-time initializer", "tier": "OPTIONAL",
+      "why": "Setup helper that already did its job." },
+    { "pkg": "com.netflix.ninja", "name": "Netflix", "tier": "OPTIONAL",
+      "why": "Remove only if you never use it. The Netflix button on the remote stops working." },
+    { "pkg": "com.amazon.amazonvideo.livingroom", "name": "Prime Video", "tier": "OPTIONAL",
+      "why": "Remove only if you never use it. The Prime button on the remote stops working." },
+    { "pkg": "com.mitv.tvhome.atv", "name": "PatchWall (Mi home screen)", "tier": "ADVANCED",
+      "why": "Mi's home screen, where promotions and ads live. Removing it falls back to the standard Android TV home." }
+  ],
+  "hints": [
+    { "contains": "analytics", "why": "Name suggests analytics. Review before removing." },
+    { "contains": "telemetry", "why": "Name suggests telemetry. Review before removing." },
+    { "contains": "tracking", "why": "Name suggests tracking. Review before removing." },
+    { "contains": "adservice", "why": "Name suggests an ad service. Review before removing." },
+    { "contains": "advert", "why": "Name suggests advertising. Review before removing." },
+    { "contains": "promo", "why": "Name suggests promotions. Review before removing." },
+    { "contains": "marketing", "why": "Name suggests marketing. Review before removing." }
+  ]
+}
