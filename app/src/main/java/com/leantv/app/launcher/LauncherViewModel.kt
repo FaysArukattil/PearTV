@@ -10,13 +10,29 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.leantv.app.MainActivity
+import com.leantv.app.account.TvAccountHelper
+import com.leantv.app.account.TvProfile
+import com.leantv.app.adb.AdbClient
+import com.leantv.app.adb.ConnResult
+import com.leantv.app.data.Catalog
+import com.leantv.app.data.DebloatPresets
+import com.leantv.app.data.DeviceProbe
 import com.leantv.app.data.InstalledAppInfo
 import com.leantv.app.data.InstalledAppsScanner
 import com.leantv.app.data.Journal
+import com.leantv.app.data.MajorDebloatOption
+import com.leantv.app.data.RemovalMethod
+import com.leantv.app.data.Removed
+import com.leantv.app.data.Scanner
+import com.leantv.app.data.Tier
+import com.leantv.app.data.TweakEngine
+import com.leantv.app.inputs.TvInputHelper
+import com.leantv.app.inputs.TvPort
 import com.leantv.app.monitor.CpuSnapshot
 import com.leantv.app.monitor.RamSnapshot
 import com.leantv.app.monitor.RunningAppItem
 import com.leantv.app.monitor.SystemMonitor
+import com.leantv.app.storage.StorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -27,40 +43,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.media.tv.TvContract
-import java.util.Calendar
-import android.media.tv.TvInputInfo
-import android.media.tv.TvInputManager
-import com.leantv.app.adb.AdbClient
-import com.leantv.app.adb.ConnResult
-import com.leantv.app.data.Catalog
-import com.leantv.app.data.RemovalMethod
-import com.leantv.app.data.Removed
-import com.leantv.app.data.Scanner
-import com.leantv.app.data.Tier
-import com.leantv.app.data.TweakEngine
-import com.leantv.app.data.DebloatPresets
-import com.leantv.app.data.MajorDebloatOption
 import java.text.DateFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
-data class TvInputItem(
-    val id: String,
-    val name: String,
-    val type: String,
-    val isConnected: Boolean = true,
-)
-
-data class GoogleAccountItem(
-    val name: String,
-    val type: String,
-)
 
 data class LauncherState(
     val featuredApps: List<InstalledAppInfo> = emptyList(),
     val favoriteApps: List<InstalledAppInfo> = emptyList(),
+    val frequentApps: List<InstalledAppInfo> = emptyList(),
+    val recentApps: List<InstalledAppInfo> = emptyList(),
+    val dockApps: List<InstalledAppInfo> = emptyList(),
     val allApps: List<InstalledAppInfo> = emptyList(),
     val focusedApp: InstalledAppInfo? = null,
     val greetingText: String = "GOOD AFTERNOON",
@@ -73,13 +67,34 @@ data class LauncherState(
     val actionMenuApp: InstalledAppInfo? = null,
     val uninstallConfirmApp: InstalledAppInfo? = null,
     val toastMessage: String? = null,
-    // Top Right Controls
+
+    // Live TV Hardware Inputs
     val showInputsDialog: Boolean = false,
-    val tvInputs: List<TvInputItem> = emptyList(),
+    val tvPorts: List<TvPort> = emptyList(),
+
+    // Google Account Profile
     val showProfileDialog: Boolean = false,
-    val googleAccounts: List<GoogleAccountItem> = emptyList(),
+    val tvProfile: TvProfile = TvProfile(null, "Profile", "👤", emptyList()),
     val currentAccountName: String = "Google Account",
+
+    // Quick Share Hub & Panel
     val showQuickShareHub: Boolean = false,
+    val showQuickShare: Boolean = false,
+    val quickShareState: com.leantv.app.share.QuickShareState = com.leantv.app.share.QuickShareState(),
+
+    // Storage Manager Screen (Samsung Device Care style)
+    val showStorageManager: Boolean = false,
+
+    // File Manager Screen (Samsung My Files style)
+    val showFileManager: Boolean = false,
+
+    // Personalization & Wallpapers
+    val showPersonalization: Boolean = false,
+    val wallpaperTheme: String = "aurora",
+    val customWallpaperUri: String? = null,
+    val is24hClock: Boolean = false,
+    val showGreeting: Boolean = true,
+
     // 1-Click Auto Debloater Wizard
     val isDebloating: Boolean = false,
     val debloatProgress: String? = null,
@@ -87,23 +102,22 @@ data class LauncherState(
     val showCleanTvWizard: Boolean = false,
     val majorOptions: List<MajorDebloatOption> = DebloatPresets.defaultMajorOptions(),
     val debloatSuccessSummary: String? = null,
+    val detectedDeviceLabel: String = "Android TV",
+
     // System Monitor
     val showMonitorPanel: Boolean = false,
     val ramSnapshot: RamSnapshot? = null,
     val cpuSnapshot: CpuSnapshot? = null,
     val runningApps: List<RunningAppItem> = emptyList(),
     val isCleaning: Boolean = false,
-    // Quick Share
-    val showQuickShare: Boolean = false,
-    val quickShareState: com.leantv.app.share.QuickShareState = com.leantv.app.share.QuickShareState(),
 )
 
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private val ctx = app.applicationContext
-    private val journal = Journal(ctx)
+    val journal = Journal(ctx)
     private val systemMonitor = SystemMonitor(ctx)
-    private val adb = AdbClient(ctx.filesDir)
+    val adb = AdbClient(ctx.filesDir)
     private val catalog = Catalog.load(ctx)
     private val scanner = Scanner(ctx, catalog)
     private val tweaks = TweakEngine(adb, journal)
@@ -111,18 +125,42 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var monitorJob: Job? = null
     private var shareServer: com.leantv.app.share.QuickShareServer? = null
 
-    private val _state = MutableStateFlow(LauncherState())
+    private val _state = MutableStateFlow(
+        LauncherState(
+            wallpaperTheme = journal.wallpaperTheme,
+            customWallpaperUri = journal.customWallpaperUri,
+            is24hClock = journal.clockFormat24h,
+            showGreeting = journal.showGreeting
+        )
+    )
     val state: StateFlow<LauncherState> = _state.asStateFlow()
 
-    private val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-    private val dateFormat = DateFormat.getDateInstance(DateFormat.FULL)
-
     init {
+        detectDevice()
         startTimeTicker()
         loadApps()
-        loadTvInputs()
-        loadGoogleAccounts()
+        startObservingTvInputs()
+        loadProfile()
         checkDefaultLauncherPrompt()
+        checkFirstRunDebloat()
+    }
+
+    private fun detectDevice() {
+        val profile = DeviceProbe.read(ctx)
+        val brand = profile.brand.replaceFirstChar { it.uppercase() }
+        val model = profile.model
+        _state.update {
+            it.copy(detectedDeviceLabel = if (model.contains(brand, ignoreCase = true)) model else "$brand $model")
+        }
+    }
+
+    private fun checkFirstRunDebloat() {
+        if (!journal.debloatWizardDismissed) {
+            viewModelScope.launch {
+                delay(1200)
+                _state.update { it.copy(showCleanTvWizard = true) }
+            }
+        }
     }
 
     private fun startTimeTicker() {
@@ -136,7 +174,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     in 12..16 -> "GOOD AFTERNOON"
                     else -> "GOOD EVENING"
                 }
-                val timeStr = timeFormat.format(now).uppercase()
+
+                val pattern = if (journal.clockFormat24h) "HH:mm" else "h:mm a"
+                val timeStr = SimpleDateFormat(pattern, Locale.getDefault()).format(now).uppercase()
                 val dateStr = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH).format(now).uppercase()
                 val (netLabel, netConnected) = getNetworkStatus()
 
@@ -198,6 +238,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onResume() {
         loadApps(silent = true)
+        loadProfile()
         if (_state.value.showMonitorPanel) {
             startMonitorPolling()
         }
@@ -210,265 +251,202 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         adb.close()
     }
 
-    // ---------- ⚡ CleanYourTV 1-Click Auto Debloater & Speed Engine ----------
+    // ---------- App Organization: Frequently Used, Recently Used, Dock, All Apps ----------
 
-    fun requestCleanTv() {
-        _state.update { it.copy(showCleanTvWizard = true) }
-    }
-
-    fun dismissCleanTvWizard() {
-        _state.update { it.copy(showCleanTvWizard = false) }
-    }
-
-    fun toggleMajorOption(optionId: String) {
-        _state.update { s ->
-            val updated = s.majorOptions.map { opt ->
-                if (opt.id == optionId) opt.copy(isSelectedForRemoval = !opt.isSelectedForRemoval)
-                else opt
-            }
-            s.copy(majorOptions = updated)
-        }
-    }
-
-    fun dismissDebloatSummary() {
-        _state.update { it.copy(debloatSuccessSummary = null) }
-    }
-
-    fun executeOneClickCleanTv() {
-        dismissCleanTvWizard()
-        val majorOpts = _state.value.majorOptions
-        val packagesToExplicitlyKeep = majorOpts.filter { !it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
-        val packagesToExplicitlyRemove = majorOpts.filter { it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
-
-        _state.update { it.copy(isDebloating = true, debloatProgress = "Connecting to TV system...") }
+    fun loadApps(silent: Boolean = false) {
+        if (!silent) _state.update { it.copy(isLoading = true) }
         viewModelScope.launch {
-            try {
-                // 1. Connect ADB if needed
-                if (!adb.isConnected) {
-                    val res = adb.connect()
-                    if (res !is ConnResult.Ok) {
-                        _state.update {
-                            it.copy(
-                                isDebloating = false,
-                                debloatProgress = null,
-                                toastMessage = "USB Debugging required. Open Settings -> Developer Options -> Turn ON USB Debugging."
-                            )
-                        }
-                        try {
-                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        } catch (_: Exception) {}
-                        return@launch
-                    }
-                }
+            val allInstalled = withContext(Dispatchers.IO) {
+                InstalledAppsScanner.scan(ctx)
+            }
 
-                // 2. Scan and find all telemetry, ads, recommendations, and bloat packages
-                _state.update { it.copy(debloatProgress = "Analyzing TV bloatware and trackers...") }
-                val scan = withContext(Dispatchers.Default) { scanner.scan() }
-                journal.saveBaselineIfMissing(scan.allSystem)
+            val hiddenSet = journal.hiddenApps()
 
-                val targets = scan.apps.filter { app ->
-                    if (app.disabled) return@filter false
-                    // If the user explicitly chose to KEEP this major app (e.g. Miracast), do NOT touch it!
-                    if (app.pkg in packagesToExplicitlyKeep) return@filter false
+            // Keep launchable apps, excluding LeanTV itself and hidden apps
+            val launchable = allInstalled.filter {
+                it.launchIntentAvailable && it.packageName != ctx.packageName && it.packageName !in hiddenSet
+            }
 
-                    // If user explicitly chose to remove this major app
-                    if (app.pkg in packagesToExplicitlyRemove) return@filter true
+            val favPackages = journal.favorites()
+            val favorites = launchable.filter { it.packageName in favPackages }
 
-                    // Otherwise include pure telemetry, ads, trackers, background analytics
-                    app.tier == Tier.RECOMMENDED ||
-                    app.pkg.contains("adservice", ignoreCase = true) ||
-                    app.pkg.contains("advertise", ignoreCase = true) ||
-                    app.pkg.contains("analytics", ignoreCase = true) ||
-                    app.pkg.contains("telemetry", ignoreCase = true) ||
-                    app.pkg.contains("tracking", ignoreCase = true) ||
-                    app.pkg.contains("statistic", ignoreCase = true) ||
-                    app.pkg.contains("recommendation", ignoreCase = true) ||
-                    app.pkg.contains("feedback", ignoreCase = true) ||
-                    app.pkg.startsWith("com.xiaomi.mitv.advertise") ||
-                    app.pkg.startsWith("com.mitv.tvhome") ||
-                    app.pkg.startsWith("com.tcl.waterfall") ||
-                    app.pkg.startsWith("com.tcl.commercial")
-                }
+            // Dock apps: first 4 favorites or top launchable
+            val dock = if (favorites.isNotEmpty()) {
+                favorites.take(4)
+            } else {
+                launchable.filter { !it.isSystemApp }.take(4).ifEmpty { launchable.take(4) }
+            }
 
-                // 3. Disable bloatware packages safely
-                var disabledCount = 0
-                for ((i, app) in targets.withIndex()) {
-                    _state.update { it.copy(debloatProgress = "Disabling bloat (${i + 1}/${targets.size}): ${app.label}") }
-                    val r = adb.shell("pm disable-user --user 0 ${app.pkg}")
-                    if (r.out.contains("new state: disabled") || r.out.contains("Success")) {
-                        journal.addRemoved(Removed(app.pkg, app.label, RemovalMethod.DISABLE, System.currentTimeMillis()))
-                        disabledCount++
-                    }
-                }
+            // Frequently Used: ranked by launch count > 0
+            val frequent = launchable
+                .filter { journal.getLaunchCount(it.packageName) > 0 }
+                .sortedByDescending { journal.getLaunchCount(it.packageName) }
+                .take(6)
 
-                // 4. Apply speed tweaks (0.5x animations) & AdGuard DNS
-                _state.update { it.copy(debloatProgress = "Applying 2x animation speed & AdGuard DNS...") }
-                tweaks.setAnimations(true)
-                tweaks.setPrivateDns(true)
+            // Recently Used: ranked by last launch timestamp > 0
+            val recent = launchable
+                .filter { journal.getLastLaunchTime(it.packageName) > 0L }
+                .sortedByDescending { journal.getLastLaunchTime(it.packageName) }
+                .take(6)
 
-                // 5. Done!
-                val summary = "Disabled $disabledCount bloatware & ad packages. 2x animation speed & AdGuard DNS active."
-                _state.update {
-                    it.copy(
-                        isDebloating = false,
-                        debloatProgress = null,
-                        debloatSuccessSummary = summary,
-                        toastMessage = "✅ TV Cleaned: $summary"
-                    )
-                }
-                loadApps(silent = true)
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        isDebloating = false,
-                        debloatProgress = null,
-                        toastMessage = "Error during cleanup: ${e.message}"
-                    )
-                }
+            val sortedAll = launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
+
+            _state.update {
+                it.copy(
+                    featuredApps = favorites.take(5),
+                    favoriteApps = favorites,
+                    dockApps = dock,
+                    frequentApps = frequent,
+                    recentApps = recent,
+                    allApps = sortedAll,
+                    isLoading = false,
+                )
             }
         }
     }
 
-    // ---------- Top Right Controls: Inputs, Profile, Quick Share Hub ----------
+    fun launch(app: InstalledAppInfo) {
+        // Record launch count and timestamp
+        journal.recordAppLaunch(app.packageName)
+        loadApps(silent = true)
 
-    /**
-     * Opens the TV's native system input menu.
-     * 1) Tries known OEM / Android TV intents (Xiaomi, TCL, Sony, Google TV).
-     * 2) Tries pressing KEYCODE_TV_INPUT (178) via on-device ADB shell.
-     * 3) Last resort: displays LeanTV's Apple TV-styled Inputs switcher.
-     */
-    fun openInputs() {
-        loadTvInputs()
-        if (startFirstResolvable(nativeInputIntents())) return
-        viewModelScope.launch {
-            if (!pressRemoteKey(178)) { // 178 = KEYCODE_TV_INPUT
-                _state.update { it.copy(showInputsDialog = true) }
-            }
-        }
-    }
-
-    private fun nativeInputIntents(): List<Intent> = listOf(
-        Intent().setComponent(android.content.ComponentName("com.mitv.tvcustomsettings", "com.mitv.tvcustomsettings.InputSourceActivity")),
-        Intent().setComponent(android.content.ComponentName("com.xiaomi.mitv.setupwizard", "com.xiaomi.mitv.setupwizard.inputsource.InputActivity")),
-        Intent().setComponent(android.content.ComponentName("com.tcl.tvmanager", "com.tcl.tvmanager.input.InputActivity")),
-        Intent().setComponent(android.content.ComponentName("com.google.android.tv.inputpicker", "com.google.android.tv.inputpicker.InputPickerActivity")),
-        Intent("com.sony.dtv.intent.action.VIEW_INPUT_LIST"),
-        Intent("android.media.tv.action.VIEW_INPUTS"),
-        Intent("com.android.tv.action.VIEW_INPUTS")
-    )
-
-    private suspend fun pressRemoteKey(keyCode: Int): Boolean {
-        return try {
-            if (!adb.isConnected) adb.connect()
-            val res = adb.shell("input keyevent $keyCode")
-            res.code == 0
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun startFirstResolvable(intents: List<Intent>): Boolean {
         val pm = ctx.packageManager
-        for (intent in intents) {
+        val intent = pm.getLeanbackLaunchIntentForPackage(app.packageName)
+            ?: pm.getLaunchIntentForPackage(app.packageName)
+
+        if (intent != null) {
             try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(pm) != null) {
-                    ctx.startActivity(intent)
-                    return true
-                }
-            } catch (_: Exception) {}
+                ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) {
+                toast("Couldn't open app: ${e.message}")
+            }
+        } else {
+            toast("No launchable TV activity found for ${app.appName}")
         }
-        return false
+    }
+
+    fun setFocusedApp(app: InstalledAppInfo?) {
+        _state.update { it.copy(focusedApp = app) }
+    }
+
+    // ---------- Context Action Menu ----------
+
+    fun showActionMenu(app: InstalledAppInfo) {
+        _state.update { it.copy(actionMenuApp = app) }
+    }
+
+    fun dismissActionMenu() {
+        _state.update { it.copy(actionMenuApp = null) }
+    }
+
+    fun toggleFavorite(app: InstalledAppInfo) {
+        val nowFavorite = journal.toggleFavorite(app.packageName)
+        loadApps(silent = true)
+        _state.update {
+            it.copy(
+                actionMenuApp = null,
+                toastMessage = if (nowFavorite) "Pinned ${app.appName} to Favorites" else "Unpinned ${app.appName}"
+            )
+        }
+    }
+
+    fun isFavorite(pkg: String): Boolean = journal.isFavorite(pkg)
+
+    fun toggleHideApp(app: InstalledAppInfo) {
+        val nowHidden = journal.toggleHideApp(app.packageName)
+        loadApps(silent = true)
+        _state.update {
+            it.copy(
+                actionMenuApp = null,
+                toastMessage = if (nowHidden) "Hidden ${app.appName} from launcher" else "Restored ${app.appName}"
+            )
+        }
+    }
+
+    fun clearAppDataAction(app: InstalledAppInfo) {
+        dismissActionMenu()
+        viewModelScope.launch {
+            val ok = StorageHelper.clearAppData(ctx, adb, app.packageName)
+            if (ok) {
+                toast("Cleared data for ${app.appName}")
+            }
+        }
+    }
+
+    fun clearAppCacheAction(app: InstalledAppInfo) {
+        dismissActionMenu()
+        viewModelScope.launch {
+            StorageHelper.cleanAllAccessibleCaches(ctx)
+            toast("Cleared cache for ${app.appName}")
+        }
+    }
+
+    fun openAppDetails(app: InstalledAppInfo) {
+        dismissActionMenu()
+        StorageHelper.openAppDetails(ctx, app.packageName)
+    }
+
+    fun requestUninstall(app: InstalledAppInfo) {
+        _state.update {
+            it.copy(
+                actionMenuApp = null,
+                uninstallConfirmApp = app,
+            )
+        }
+    }
+
+    fun dismissUninstallConfirm() {
+        _state.update { it.copy(uninstallConfirmApp = null) }
+    }
+
+    fun confirmUninstall(app: InstalledAppInfo) {
+        dismissUninstallConfirm()
+        StorageHelper.requestUninstall(ctx, app.packageName)
+    }
+
+    // ---------- Hardware TV Input Switcher (Feature #3) ----------
+
+    private fun startObservingTvInputs() {
+        viewModelScope.launch {
+            TvInputHelper.observeInputs(ctx).collect { ports ->
+                _state.update { it.copy(tvPorts = ports) }
+            }
+        }
+    }
+
+    fun openInputs() {
+        val ports = TvInputHelper.queryHardwareInputs(ctx)
+        _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
     }
 
     fun closeInputs() {
         _state.update { it.copy(showInputsDialog = false) }
     }
 
-    fun loadTvInputs() {
-        val inputs = ArrayList<TvInputItem>()
-        try {
-            val tvManager = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager
-            val list = tvManager?.tvInputList ?: emptyList()
-            for (info in list) {
-                val label = try {
-                    info.loadLabel(ctx)?.toString() ?: info.id
-                } catch (_: Exception) {
-                    info.id
-                }
-                val typeStr = when (info.type) {
-                    TvInputInfo.TYPE_HDMI -> "HDMI"
-                    TvInputInfo.TYPE_TUNER -> "Live TV / Antenna"
-                    TvInputInfo.TYPE_COMPOSITE -> "AV / Composite"
-                    TvInputInfo.TYPE_COMPONENT -> "Component"
-                    TvInputInfo.TYPE_DISPLAY_PORT -> "DisplayPort"
-                    else -> "TV Input"
-                }
-                inputs.add(TvInputItem(id = info.id, name = label, type = typeStr))
-            }
-        } catch (_: Exception) {}
-
-        if (inputs.isEmpty()) {
-            inputs.add(TvInputItem("hdmi1", "HDMI 1", "HDMI"))
-            inputs.add(TvInputItem("hdmi2", "HDMI 2", "HDMI"))
-            inputs.add(TvInputItem("hdmi3", "HDMI 3", "HDMI"))
-            inputs.add(TvInputItem("av", "AV / Composite", "Composite"))
-            inputs.add(TvInputItem("tv", "Live TV / Antenna", "Tuner"))
+    fun switchToPort(port: TvPort) {
+        closeInputs()
+        val switched = TvInputHelper.switchToPort(ctx, port)
+        if (switched) {
+            toast("Switched to ${port.label}")
+        } else {
+            toast("Unable to switch directly to ${port.label}")
         }
-
-        _state.update { it.copy(tvInputs = inputs) }
     }
 
-    fun switchToInput(input: TvInputItem) {
-        closeInputs()
-        // Try direct passthrough Uri first
-        try {
-            val uri = TvContract.buildChannelUriForPassthroughInput(input.id)
-            if (uri != null) {
-                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                ctx.startActivity(intent)
-                return
-            }
-        } catch (_: Exception) {}
+    // ---------- Google Account Profile (Feature #6) ----------
 
-        // OEM fallbacks (Xiaomi, TCL, Sony, generic TV input chooser)
-        val oemIntents = listOf(
-            Intent().setComponent(android.content.ComponentName("com.mitv.tvcustomsettings", "com.mitv.tvcustomsettings.InputSourceActivity")),
-            Intent().setComponent(android.content.ComponentName("com.xiaomi.mitv.setupwizard", "com.xiaomi.mitv.setupwizard.inputsource.InputActivity")),
-            Intent().setComponent(android.content.ComponentName("com.tcl.tvmanager", "com.tcl.tvmanager.input.InputActivity")),
-            Intent("com.sony.dtv.intent.action.VIEW_INPUT_LIST"),
-            Intent("android.media.tv.action.VIEW_INPUTS"),
-            Intent("com.android.tv.action.VIEW_INPUTS"),
-        )
-
-        for (intent in oemIntents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(ctx.packageManager) != null) {
-                    ctx.startActivity(intent)
-                    return
-                }
-            } catch (_: Exception) {}
+    fun loadProfile() {
+        val profile = TvAccountHelper.getConnectedProfile(ctx)
+        _state.update {
+            it.copy(
+                tvProfile = profile,
+                currentAccountName = profile.displayName
+            )
         }
-
-        toast("Switched to ${input.name}")
     }
 
     fun openProfile() {
-        loadGoogleAccounts()
-        val accountIntents = listOf(
-            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.accounts.AccountsActivity")),
-            Intent().setComponent(android.content.ComponentName("com.google.android.apps.tv.launcherx", "com.google.android.apps.tv.launcherx.settings.AccountsActivity")),
-            Intent("android.settings.SYNC_SETTINGS"),
-            Intent(Settings.ACTION_SYNC_SETTINGS),
-            Intent("com.google.android.gms.accountsettings.ACCOUNT_SETTINGS"),
-            Intent(Settings.ACTION_ADD_ACCOUNT).apply {
-                putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
-            }
-        )
-        if (startFirstResolvable(accountIntents)) return
+        loadProfile()
         _state.update { it.copy(showProfileDialog = true) }
     }
 
@@ -476,52 +454,81 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(showProfileDialog = false) }
     }
 
-    fun loadGoogleAccounts() {
-        try {
-            val am = android.accounts.AccountManager.get(ctx)
-            val accounts = am.getAccountsByType("com.google")
-            val items = accounts.map { GoogleAccountItem(it.name, it.type) }
-            val primary = items.firstOrNull()?.name ?: "Google Account"
-            _state.update {
-                it.copy(
-                    googleAccounts = items,
-                    currentAccountName = primary
-                )
-            }
-        } catch (_: Exception) {
-            _state.update { it.copy(currentAccountName = "Account") }
-        }
-    }
-
     fun openAddGoogleAccount() {
         closeProfile()
-        try {
-            val intent = Intent(Settings.ACTION_ADD_ACCOUNT).apply {
-                putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            ctx.startActivity(intent)
-        } catch (_: Exception) {
-            openSystemAccountsSettings()
-        }
+        val ok = TvAccountHelper.openAddAccount(ctx)
+        if (!ok) toast("Please add Google Account in TV Settings -> Accounts.")
     }
 
     fun openSystemAccountsSettings() {
         closeProfile()
-        val intents = listOf(
-            Intent("android.settings.SYNC_SETTINGS"),
-            Intent(Settings.ACTION_SYNC_SETTINGS),
-            Intent("com.google.android.gms.accountsettings.ACCOUNT_SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
-        )
-        for (intent in intents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(ctx.packageManager) != null) {
-                    ctx.startActivity(intent)
-                    return
-                }
-            } catch (_: Exception) {}
+        val ok = TvAccountHelper.openAccountSettings(ctx)
+        if (!ok) toast("Please manage Accounts in TV Settings.")
+    }
+
+    // ---------- Storage Manager Screen (Samsung Device Care - Feature #4) ----------
+
+    fun openStorageManager() {
+        _state.update { it.copy(showStorageManager = true) }
+    }
+
+    fun closeStorageManager() {
+        _state.update { it.copy(showStorageManager = false) }
+        loadApps(silent = true)
+    }
+
+    // ---------- TV File Manager Screen (Samsung My Files - Feature #7) ----------
+
+    fun openFileManager() {
+        _state.update { it.copy(showFileManager = true) }
+    }
+
+    fun closeFileManager() {
+        _state.update { it.copy(showFileManager = false) }
+    }
+
+    // ---------- Personalization & Wallpapers (Feature #12) ----------
+
+    fun openPersonalization() {
+        _state.update { it.copy(showPersonalization = true) }
+    }
+
+    fun closePersonalization() {
+        _state.update { it.copy(showPersonalization = false) }
+    }
+
+    fun setWallpaperTheme(themeId: String) {
+        journal.wallpaperTheme = themeId
+        journal.customWallpaperUri = null
+        _state.update { it.copy(wallpaperTheme = themeId, customWallpaperUri = null) }
+        toast("Applied $themeId theme")
+    }
+
+    fun setCustomWallpaper(uri: String) {
+        journal.wallpaperTheme = "custom"
+        journal.customWallpaperUri = uri
+        _state.update { it.copy(wallpaperTheme = "custom", customWallpaperUri = uri) }
+        toast("Applied custom wallpaper")
+    }
+
+    fun toggleClockFormat() {
+        val newFormat = !journal.clockFormat24h
+        journal.clockFormat24h = newFormat
+        _state.update { it.copy(is24hClock = newFormat) }
+    }
+
+    fun toggleGreeting() {
+        val newGreeting = !journal.showGreeting
+        journal.showGreeting = newGreeting
+        _state.update { it.copy(showGreeting = newGreeting) }
+    }
+
+    // ---------- Quick Share Dual-Mode (Feature #8) ----------
+
+    fun handleQuickShareClick() {
+        val launched = launchNativeGoogleQuickShareDirect()
+        if (!launched) {
+            _state.update { it.copy(showQuickShareHub = true) }
         }
     }
 
@@ -533,22 +540,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(showQuickShareHub = false) }
     }
 
-    /**
-     * Handles Quick Share click: Directly launches Google's original Quick Share (Nearby Share)
-     * from Google Play Services. If not available on this TV, opens the Quick Share Hub.
-     */
-    fun handleQuickShareClick() {
-        val launched = launchNativeGoogleQuickShareDirect()
-        if (!launched) {
-            _state.update { it.copy(showQuickShareHub = true) }
-        }
-    }
-
     fun launchNativeQuickShare() {
         closeQuickShareHub()
         val launched = launchNativeGoogleQuickShareDirect()
         if (!launched) {
-            toast("Google Quick Share not preinstalled on this TV. Opening Universal AirShare...")
+            toast("Google Quick Share not preinstalled on this TV. Opening Universal Wi-Fi AirShare...")
             openQuickShare()
         }
     }
@@ -568,10 +564,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             Intent().setComponent(android.content.ComponentName("com.samsung.android.app.share", "com.samsung.android.app.share.ShareActivity"))
         )
 
+        val pm = ctx.packageManager
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(ctx.packageManager) != null) {
+                if (intent.resolveActivity(pm) != null) {
                     ctx.startActivity(intent)
                     toast("Opening Google Quick Share...")
                     return true
@@ -617,8 +614,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    // ---------- Phase 4: Quick Share Methods ----------
 
     fun openQuickShare() {
         if (_state.value.showQuickShare) return
@@ -689,7 +684,161 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---------- Phase 3: System Monitor Methods ----------
+    // ---------- Native TV Settings (Feature #5) ----------
+
+    fun openSystemSettings() {
+        val settingsIntents = listOf(
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
+            Intent("android.settings.SETTINGS"),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        val pm = ctx.packageManager
+        for (intent in settingsIntents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(pm) != null) {
+                    ctx.startActivity(intent)
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+
+        viewModelScope.launch {
+            if (!pressRemoteKey(176)) { // 176 = KEYCODE_SETTINGS
+                toast("Couldn't open Settings.")
+            }
+        }
+    }
+
+    private suspend fun pressRemoteKey(keyCode: Int): Boolean {
+        return try {
+            if (!adb.isConnected) adb.connect()
+            val res = adb.shell("input keyevent $keyCode")
+            res.code == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // ---------- ⚡ CleanYourTV 1-Click Auto Debloater Wizard (Feature #9) ----------
+
+    fun requestCleanTv() {
+        _state.update { it.copy(showCleanTvWizard = true) }
+    }
+
+    fun dismissCleanTvWizard() {
+        journal.debloatWizardDismissed = true
+        _state.update { it.copy(showCleanTvWizard = false) }
+    }
+
+    fun toggleMajorOption(optionId: String) {
+        _state.update { s ->
+            val updated = s.majorOptions.map { opt ->
+                if (opt.id == optionId) opt.copy(isSelectedForRemoval = !opt.isSelectedForRemoval)
+                else opt
+            }
+            s.copy(majorOptions = updated)
+        }
+    }
+
+    fun dismissDebloatSummary() {
+        _state.update { it.copy(debloatSuccessSummary = null) }
+    }
+
+    fun executeOneClickCleanTv() {
+        journal.debloatWizardDismissed = true
+        _state.update { it.copy(showCleanTvWizard = false) }
+
+        val majorOpts = _state.value.majorOptions
+        val packagesToExplicitlyKeep = majorOpts.filter { !it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+        val packagesToExplicitlyRemove = majorOpts.filter { it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+
+        _state.update { it.copy(isDebloating = true, debloatProgress = "Connecting to TV system...") }
+        viewModelScope.launch {
+            try {
+                // 1. Connect ADB if needed
+                if (!adb.isConnected) {
+                    val res = adb.connect()
+                    if (res !is ConnResult.Ok) {
+                        _state.update {
+                            it.copy(
+                                isDebloating = false,
+                                debloatProgress = null,
+                                toastMessage = "USB Debugging required. Open Settings -> Developer Options -> Turn ON USB Debugging."
+                            )
+                        }
+                        try {
+                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (_: Exception) {}
+                        return@launch
+                    }
+                }
+
+                // 2. Scan and find all telemetry, ads, recommendations, and bloat packages
+                _state.update { it.copy(debloatProgress = "Analyzing TV bloatware and trackers...") }
+                val scan = withContext(Dispatchers.Default) { scanner.scan() }
+                journal.saveBaselineIfMissing(scan.allSystem)
+
+                val targets = scan.apps.filter { app ->
+                    if (app.disabled) return@filter false
+                    if (app.pkg in packagesToExplicitlyKeep) return@filter false
+                    if (app.pkg in packagesToExplicitlyRemove) return@filter true
+
+                    app.tier == Tier.RECOMMENDED ||
+                    app.pkg.contains("adservice", ignoreCase = true) ||
+                    app.pkg.contains("advertise", ignoreCase = true) ||
+                    app.pkg.contains("analytics", ignoreCase = true) ||
+                    app.pkg.contains("telemetry", ignoreCase = true) ||
+                    app.pkg.contains("tracking", ignoreCase = true) ||
+                    app.pkg.contains("statistic", ignoreCase = true) ||
+                    app.pkg.contains("recommendation", ignoreCase = true) ||
+                    app.pkg.contains("feedback", ignoreCase = true) ||
+                    app.pkg.startsWith("com.xiaomi.mitv.advertise") ||
+                    app.pkg.startsWith("com.mitv.tvhome") ||
+                    app.pkg.startsWith("com.tcl.waterfall") ||
+                    app.pkg.startsWith("com.tcl.commercial")
+                }
+
+                // 3. Disable bloatware packages safely
+                var disabledCount = 0
+                for ((i, app) in targets.withIndex()) {
+                    _state.update { it.copy(debloatProgress = "Disabling bloat (${i + 1}/${targets.size}): ${app.label}") }
+                    val r = adb.shell("pm disable-user --user 0 ${app.pkg}")
+                    if (r.out.contains("new state: disabled") || r.out.contains("Success")) {
+                        journal.addRemoved(Removed(app.pkg, app.label, RemovalMethod.DISABLE, System.currentTimeMillis()))
+                        disabledCount++
+                    }
+                }
+
+                // 4. Apply speed tweaks (0.5x animations) & AdGuard DNS
+                _state.update { it.copy(debloatProgress = "Applying 2x animation speed & AdGuard DNS...") }
+                tweaks.setAnimations(true)
+                tweaks.setPrivateDns(true)
+
+                val summary = "Disabled $disabledCount bloatware & ad packages. 2x animation speed & AdGuard DNS active."
+                _state.update {
+                    it.copy(
+                        isDebloating = false,
+                        debloatProgress = null,
+                        debloatSuccessSummary = summary,
+                        toastMessage = "✅ TV Cleaned: $summary"
+                    )
+                }
+                loadApps(silent = true)
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        isDebloating = false,
+                        debloatProgress = null,
+                        toastMessage = "Error during cleanup: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    // ---------- System Monitor ----------
 
     fun openSystemMonitor() {
         _state.update { it.copy(showMonitorPanel = true) }
@@ -747,7 +896,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(isCleaning = true) }
         viewModelScope.launch {
             systemMonitor.killAllBackgroundProcesses(targets)
-            delay(500) // Brief delay to let system reclaim memory
+            delay(500)
             val ram = systemMonitor.sampleRam()
             val running = systemMonitor.sampleRunningApps()
             _state.update {
@@ -758,153 +907,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     toastMessage = "Cleaned background processes. Reclaimed memory."
                 )
             }
-        }
-    }
-
-    fun loadApps(silent: Boolean = false) {
-        if (!silent) _state.update { it.copy(isLoading = true) }
-        viewModelScope.launch {
-            val allInstalled = withContext(Dispatchers.IO) {
-                InstalledAppsScanner.scan(ctx)
-            }
-
-            // Keep launchable apps, excluding LeanTV itself from the grid
-            val launchable = allInstalled.filter {
-                it.launchIntentAvailable && it.packageName != ctx.packageName
-            }
-
-            val favPackages = journal.favorites()
-            val favorites = launchable.filter { it.packageName in favPackages }
-
-            // If user has no favorites yet, default to top launchable user apps or first 5
-            val effectiveFavorites = if (favorites.isNotEmpty()) {
-                favorites
-            } else {
-                launchable.filter { !it.isSystemApp }.take(6).ifEmpty { launchable.take(6) }
-            }
-
-            // Featured apps: up to 5 top items (favorites or first launchable)
-            val featured = effectiveFavorites.take(5)
-
-            _state.update {
-                it.copy(
-                    featuredApps = featured,
-                    favoriteApps = effectiveFavorites,
-                    allApps = launchable.sortedBy { a -> a.appName.lowercase() },
-                    isLoading = false,
-                )
-            }
-        }
-    }
-
-    fun setFocusedApp(app: InstalledAppInfo?) {
-        _state.update { it.copy(focusedApp = app) }
-    }
-
-    fun showActionMenu(app: InstalledAppInfo) {
-        _state.update { it.copy(actionMenuApp = app) }
-    }
-
-    fun dismissActionMenu() {
-        _state.update { it.copy(actionMenuApp = null) }
-    }
-
-    fun requestUninstall(app: InstalledAppInfo) {
-        _state.update {
-            it.copy(
-                actionMenuApp = null,
-                uninstallConfirmApp = app,
-            )
-        }
-    }
-
-    fun dismissUninstallConfirm() {
-        _state.update { it.copy(uninstallConfirmApp = null) }
-    }
-
-    fun toggleFavorite(app: InstalledAppInfo) {
-        val nowFavorite = journal.toggleFavorite(app.packageName)
-        val favPackages = journal.favorites()
-        val updatedFavorites = _state.value.allApps.filter { it.packageName in favPackages }
-        _state.update {
-            it.copy(
-                favoriteApps = updatedFavorites,
-                actionMenuApp = null,
-                toastMessage = if (nowFavorite) "Added ${app.appName} to Favorites" else "Removed ${app.appName} from Favorites"
-            )
-        }
-    }
-
-    fun isFavorite(pkg: String): Boolean = journal.isFavorite(pkg)
-
-    fun launch(app: InstalledAppInfo) {
-        val pm = ctx.packageManager
-        val intent = pm.getLeanbackLaunchIntentForPackage(app.packageName)
-            ?: pm.getLaunchIntentForPackage(app.packageName)
-
-        if (intent != null) {
-            try {
-                ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (e: Exception) {
-                toast("Couldn't open app: ${e.message}")
-            }
-        } else {
-            toast("No launchable TV activity found for ${app.appName}")
-        }
-    }
-
-    fun openAppDetails(app: InstalledAppInfo) {
-        try {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${app.packageName}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            ctx.startActivity(intent)
-        } catch (_: Exception) {
-            toast("Couldn't open app settings.")
-        }
-    }
-
-    fun confirmUninstall(app: InstalledAppInfo) {
-        dismissUninstallConfirm()
-        if (!app.canUninstall) {
-            toast("${app.appName} is a protected system app.")
-            return
-        }
-        try {
-            val uri = Uri.parse("package:${app.packageName}")
-            val intent = Intent(Intent.ACTION_DELETE, uri).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            ctx.startActivity(intent)
-        } catch (_: Exception) {
-            toast("Couldn't start uninstaller.")
-        }
-    }
-
-    fun openSystemSettings() {
-        val settingsIntents = listOf(
-            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
-            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
-            Intent("android.settings.SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
-        )
-        if (startFirstResolvable(settingsIntents)) return
-        viewModelScope.launch {
-            if (!pressRemoteKey(176)) { // 176 = KEYCODE_SETTINGS
-                toast("Couldn't open Settings.")
-            }
-        }
-    }
-
-    fun openLeanTvOptimizer() {
-        try {
-            val intent = Intent(ctx, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            ctx.startActivity(intent)
-        } catch (_: Exception) {
-            toast("Couldn't open LeanTV Tools.")
         }
     }
 
@@ -949,9 +951,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     return
                 }
             }
-        } catch (_: Exception) {
-            // Fall through to standard home settings
-        }
+        } catch (_: Exception) {}
 
         try {
             val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
@@ -960,14 +960,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             ctx.startActivity(homeSettingsIntent)
         } catch (_: Exception) {
             try {
-                // Generic settings fallback
                 val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 ctx.startActivity(settingsIntent)
-                toast("Go to Apps -> Default Apps -> Home app to set LeanTV as default.")
+                toast("Go to Apps -> Default Apps -> Home app to set CleanYourTV as default.")
             } catch (_: Exception) {
-                toast("Please set LeanTV as default in TV Settings -> Home app.")
+                toast("Please set CleanYourTV as default in TV Settings -> Home app.")
             }
         }
     }
