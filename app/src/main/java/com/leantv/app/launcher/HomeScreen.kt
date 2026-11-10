@@ -295,8 +295,10 @@ fun HomeScreen(vm: LauncherViewModel) {
             // CleanYourTV 1-Click Wizard Dialog
             if (s.showCleanTvWizard) {
                 CleanTvWizardDialog(
+                    deviceLabel = s.detectedDeviceLabel,
                     majorOptions = s.majorOptions,
                     onToggleOption = vm::toggleMajorOption,
+                    onOpenDeveloperOptions = vm::openDeveloperOptions,
                     onConfirm = vm::executeOneClickCleanTv,
                     onDismiss = vm::dismissCleanTvWizard
                 )

@@ -838,6 +838,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun openDeveloperOptions() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+        } catch (_: Exception) {
+            openSystemSettings()
+        }
+    }
+
     // ---------- System Monitor ----------
 
     fun openSystemMonitor() {
