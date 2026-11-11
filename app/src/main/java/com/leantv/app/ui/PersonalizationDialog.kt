@@ -45,9 +45,9 @@ data class ThemePreset(
 val WALLPAPER_THEMES = listOf(
     ThemePreset(
         id = "aurora",
-        name = "Aurora Glow",
-        gradientColors = listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)),
-        description = "Cosmic emerald and deep cyan ambient gradients."
+        name = "Graphite",
+        gradientColors = listOf(Color(0xFF050507), Color(0xFF101014), Color(0xFF1A1A21)),
+        description = "Calm neutral graphite, like a premium streaming box."
     ),
     ThemePreset(
         id = "pitch_black",
@@ -90,6 +90,7 @@ fun PersonalizationDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xD905070A))
+            .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {

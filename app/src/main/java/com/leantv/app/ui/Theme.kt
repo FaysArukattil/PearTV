@@ -17,26 +17,42 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import com.leantv.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Outfit (SIL OFL), the same variable font the reference launcher uses. */
+@OptIn(ExperimentalTextApi::class)
+val Outfit = FontFamily(
+    Font(R.font.outfit, FontWeight.ExtraLight, variationSettings = FontVariation.Settings(FontVariation.weight(200))),
+    Font(R.font.outfit, FontWeight.Light, variationSettings = FontVariation.Settings(FontVariation.weight(300))),
+    Font(R.font.outfit, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.outfit, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.outfit, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.outfit, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+)
+
 object Pal {
-    val Bg = Color(0xFF0B1B26)
-    val BgDeep = Color(0xFF07131B)
-    val Surface = Color(0xFF17394A)
-    val SurfaceHi = Color(0xFF24566C)
-    val Line = Color(0x33FFFFFF)
-    val Text = Color(0xFFF2F8F7)
-    val Dim = Color(0xFFA9C6CA)
-    val Amber = Color(0xFFFFC15E)
-    val AmberDeep = Color(0xFFF0A02E)
-    val OnAmber = Color(0xFF2B1A00)
-    val Mint = Color(0xFF5FD6A4)
-    val Sky = Color(0xFF7FB4FF)
-    val Coral = Color(0xFFFF7A6B)
+    val Bg = Color(0xFF000000)
+    val BgDeep = Color(0xFF0A0A0D)
+    val Surface = Color(0xFF1C1C1E)
+    val SurfaceHi = Color(0xFF3A3A3C)
+    val Line = Color(0x1FFFFFFF)
+    val Text = Color(0xFFFFFFFF)
+    val Dim = Color(0xFF9A9AA2)
+    // "Amber" names kept so every screen picks up the new accent (Apple blue) automatically.
+    val Amber = Color(0xFF0A84FF)
+    val AmberDeep = Color(0xFF0A84FF)
+    val OnAmber = Color(0xFFFFFFFF)
+    val Mint = Color(0xFF30D158)
+    val Sky = Color(0xFF64D2FF)
+    val Coral = Color(0xFFFF453A)
 }
 
 /** TV-safe margins (about 5% of a 1280 x 720 canvas) so nothing hides under overscan. */
@@ -50,18 +66,18 @@ val ContentPad = PaddingValues(start = 40.dp, end = Safe.H, top = Safe.V, bottom
 
 object Ty {
     val Display = TextStyle(
-        fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold,
-        fontSize = 48.sp, lineHeight = 54.sp, color = Pal.Text,
+        fontFamily = Outfit, fontWeight = FontWeight.Light, letterSpacing = (-1).sp,
+        fontSize = 52.sp, lineHeight = 58.sp, color = Pal.Text,
     )
     val Title = TextStyle(
-        fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold,
+        fontFamily = Outfit, fontWeight = FontWeight.Medium, letterSpacing = (-0.3).sp,
         fontSize = 34.sp, lineHeight = 40.sp, color = Pal.Text,
     )
-    val Heading = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 28.sp, color = Pal.Text)
-    val Body = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, color = Pal.Text)
-    val Dim = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, color = Pal.Dim)
-    val Small = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, color = Pal.Dim)
-    val Button = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+    val Heading = TextStyle(fontFamily = Outfit, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 28.sp, color = Pal.Text)
+    val Body = TextStyle(fontFamily = Outfit, fontSize = 20.sp, lineHeight = 28.sp, color = Pal.Text)
+    val Dim = TextStyle(fontFamily = Outfit, fontSize = 20.sp, lineHeight = 28.sp, color = Pal.Dim)
+    val Small = TextStyle(fontFamily = Outfit, fontSize = 17.sp, lineHeight = 23.sp, color = Pal.Dim)
+    val Button = TextStyle(fontFamily = Outfit, fontWeight = FontWeight.Medium, fontSize = 20.sp)
 }
 
 /**

@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,9 +28,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -67,17 +75,17 @@ fun tierColor(t: Tier): Color = when (t) {
 fun Focusable(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(18.dp),
+    shape: Shape = RoundedCornerShape(22.dp),
     idle: Color = Pal.Surface,
     enabled: Boolean = true,
-    scaleOnFocus: Float = 1.03f,
-    idleOutline: Boolean = true,
+    scaleOnFocus: Float = 1.07f,
+    idleOutline: Boolean = false,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, tween(150), label = "scale")
+    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, spring(dampingRatio = 0.75f, stiffness = 400f), label = "scale")
     val ring by animateColorAsState(
-        if (focused) Pal.Amber else if (idleOutline) Pal.Line else Color.Transparent,
+        if (focused) Color.White else if (idleOutline) Pal.Line else Color.Transparent,
         tween(150), label = "ring",
     )
     val bg by animateColorAsState(if (focused) Pal.SurfaceHi else idle, tween(150), label = "bg")
@@ -87,9 +95,10 @@ fun Focusable(
                 scaleX = scale
                 scaleY = scale
             }
+            .shadow(if (focused) 22.dp else 0.dp, shape, clip = false, ambientColor = Color.White, spotColor = Color.White)
             .clip(shape)
             .background(bg)
-            .border(if (focused) 3.dp else 1.dp, ring, shape)
+            .border(if (focused) 3.dp else 0.dp, ring, shape)
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick),
     ) {
@@ -106,36 +115,36 @@ fun TvButton(
     enabled: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, tween(140), label = "btn")
-    val shape = RoundedCornerShape(14.dp)
-    val bg = when {
-        !enabled -> Pal.Surface
-        primary && focused -> Pal.Amber
-        primary -> Pal.AmberDeep
-        focused -> Pal.SurfaceHi
-        else -> Pal.Surface
-    }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.75f, stiffness = 400f), label = "btn")
+    val shape = RoundedCornerShape(50)
+    val bg by animateColorAsState(
+        when {
+            !enabled -> Pal.Surface
+            focused -> Color.White
+            primary -> Pal.Amber
+            else -> Color(0x26FFFFFF)
+        }, tween(140), label = "btnbg",
+    )
     val fg = when {
         !enabled -> Pal.Dim
-        primary -> Pal.OnAmber
-        else -> Pal.Text
+        focused -> Color.Black
+        else -> Color.White
     }
-    val ring = if (focused) (if (primary) Pal.Text else Pal.Amber) else Color.Transparent
     Box(
         modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
+            .shadow(if (focused) 20.dp else 0.dp, shape, clip = false, ambientColor = Color.White, spotColor = Color.White)
             .clip(shape)
             .background(bg)
-            .border(3.dp, ring, shape)
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 28.dp, vertical = 14.dp),
+            .padding(horizontal = 24.dp, vertical = 15.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = Ty.Button.copy(color = fg))
+        Text(text, style = Ty.Button.copy(color = fg), maxLines = 1)
     }
 }
 
@@ -262,4 +271,22 @@ fun Gauge(fraction: Float, centerText: String, caption: String, modifier: Modifi
             Text(caption, style = Ty.Small)
         }
     }
+}
+
+/**
+ * Put on the scrim of every popup. Focus is pulled into the popup when it opens and can never
+ * leave it with the D-pad, so the remote can no longer drive the screen underneath.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun Modifier.modalTrap(): Modifier {
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { fr.requestFocus() }
+    }
+    return this
+        .focusRequester(fr)
+        .focusProperties { exit = { FocusRequester.Cancel } }
+        .focusGroup()
 }

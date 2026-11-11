@@ -17,6 +17,8 @@ data class AppVisuals(
     val isBanner: Boolean,
     val topColor: Color = Color(0xFF1E2832),
     val bottomColor: Color = Color(0xFF10161C),
+    /** Vivid colour of the artwork, used for the ambient glow behind the home screen. */
+    val glow: Color = Color(0xFF3A4A5A),
 )
 
 object IconCache {
@@ -56,6 +58,7 @@ object IconCache {
                         val visuals = AppVisuals(
                             bitmap = bannerBmp,
                             isBanner = true,
+                            glow = vividColor(bannerDrawable),
                         )
                         visualsCache.put(packageName, visuals)
                         return@withContext visuals
@@ -73,6 +76,7 @@ object IconCache {
                         isBanner = false,
                         topColor = topCol,
                         bottomColor = botCol,
+                        glow = vividColor(appDrawable),
                     )
                     visualsCache.put(packageName, visuals)
                     visuals
@@ -81,6 +85,42 @@ object IconCache {
                 null
             }
         }
+    }
+
+    /** Saturation-weighted average colour of the artwork, pushed to a vivid value. Grey if the art is neutral. */
+    private fun vividColor(drawable: Drawable): Color = try {
+        val bmp = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        drawable.setBounds(0, 0, 24, 24)
+        drawable.draw(canvas)
+        val hsv = FloatArray(3)
+        var r = 0.0; var g = 0.0; var b = 0.0; var total = 0.0
+        for (x in 0 until 24) for (y in 0 until 24) {
+            val p = bmp.getPixel(x, y)
+            if (((p ushr 24) and 0xFF) < 100) continue
+            android.graphics.Color.colorToHSV(p, hsv)
+            if (hsv[2] < 0.15f) continue
+            val w = (hsv[1] * hsv[2]).toDouble().let { it * it } + 0.001
+            r += ((p shr 16) and 0xFF) * w
+            g += ((p shr 8) and 0xFF) * w
+            b += (p and 0xFF) * w
+            total += w
+        }
+        if (total <= 0.0) {
+            Color(0xFF6E6E73)
+        } else {
+            val avg = android.graphics.Color.rgb((r / total).toInt(), (g / total).toInt(), (b / total).toInt())
+            android.graphics.Color.colorToHSV(avg, hsv)
+            if (hsv[1] < 0.12f) {
+                Color(0xFF6E6E73)
+            } else {
+                hsv[1] = hsv[1].coerceIn(0.55f, 1f)
+                hsv[2] = hsv[2].coerceIn(0.75f, 1f)
+                Color(android.graphics.Color.HSVToColor(hsv))
+            }
+        }
+    } catch (_: Throwable) {
+        Color(0xFF6E6E73)
     }
 
     private fun isBannerShaped(width: Int, height: Int): Boolean {

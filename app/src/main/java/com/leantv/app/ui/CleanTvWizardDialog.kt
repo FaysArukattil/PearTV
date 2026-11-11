@@ -58,6 +58,7 @@ fun CleanTvWizardDialog(
         Modifier
             .fillMaxSize()
             .background(Color(0xD905080E))
+            .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
