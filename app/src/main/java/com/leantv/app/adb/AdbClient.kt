@@ -12,7 +12,7 @@ import java.net.NetworkInterface
 import java.net.Socket
 
 sealed interface ConnResult {
-    data class Ok(val host: String) : ConnResult
+    data class Ok(val host: String, val port: Int) : ConnResult
     data object PortClosed : ConnResult
     data class Failed(val reason: String) : ConnResult
 }
@@ -22,8 +22,8 @@ data class Shell(val code: Int, val out: String) {
 }
 
 /**
- * Talks to the TV's own ADB daemon (adbd) over TCP, from the TV itself.
- * Requires "USB debugging" to be on; the TV shows a one-time authorization prompt.
+ * On-Device TV ADB Client.
+ * Connects directly to localhost or LAN ADB daemon on the TV.
  */
 class AdbClient(private val keyDir: File) {
 
@@ -31,6 +31,8 @@ class AdbClient(private val keyDir: File) {
     private var dadb: Dadb? = null
 
     val isConnected: Boolean get() = dadb != null
+    var connectedPort: Int = ADB_PORT
+        private set
 
     private fun keys(): AdbKeyPair {
         val priv = File(keyDir, "adbkey")
@@ -39,7 +41,7 @@ class AdbClient(private val keyDir: File) {
         return AdbKeyPair.read(priv, pub)
     }
 
-    private fun probe(host: String, port: Int = ADB_PORT, timeoutMs: Int = 1500): Boolean = try {
+    private fun probe(host: String, port: Int, timeoutMs: Int = 1200): Boolean = try {
         Socket().use { it.connect(InetSocketAddress(host, port), timeoutMs) }
         true
     } catch (_: IOException) {
@@ -56,20 +58,27 @@ class AdbClient(private val keyDir: File) {
         null
     }
 
-    suspend fun connect(): ConnResult = withContext(Dispatchers.IO) {
+    /**
+     * Connects to the TV's ADB daemon on the given port (default 5555),
+     * or probes 127.0.0.1 and LAN IP.
+     */
+    suspend fun connect(targetPort: Int = ADB_PORT, specificHost: String? = null): ConnResult = withContext(Dispatchers.IO) {
         close()
-        val host = listOfNotNull("127.0.0.1", lanIp()).firstOrNull { probe(it) }
+        val hosts = if (specificHost != null) listOf(specificHost) else listOfNotNull("127.0.0.1", lanIp())
+        val host = hosts.firstOrNull { probe(it, targetPort) }
+
         if (host == null) {
             ConnResult.PortClosed
         } else {
             try {
-                val d = Dadb.create(host, ADB_PORT, keys())
-                val reply = d.shell("echo leantv").output.trim()
-                if (reply == "leantv") {
+                val d = Dadb.create(host, targetPort, keys())
+                val reply = d.shell("echo cleanyourtv").output.trim()
+                if (reply == "cleanyourtv") {
                     dadb = d
-                    ConnResult.Ok(host)
+                    connectedPort = targetPort
+                    ConnResult.Ok(host, targetPort)
                 } else {
-                    ConnResult.Failed("Unexpected reply from the TV: $reply")
+                    ConnResult.Failed("Unexpected response from TV adbd: $reply")
                 }
             } catch (t: Throwable) {
                 ConnResult.Failed(t.message ?: t.javaClass.simpleName)
@@ -80,7 +89,7 @@ class AdbClient(private val keyDir: File) {
     suspend fun shell(cmd: String): Shell = withContext(Dispatchers.IO) {
         val d = dadb
         if (d == null) {
-            Shell(-1, "Not connected")
+            Shell(-1, "Not connected to ADB")
         } else {
             try {
                 val r = d.shell(cmd)
@@ -95,8 +104,7 @@ class AdbClient(private val keyDir: File) {
     fun close() {
         try {
             dadb?.close()
-        } catch (_: Throwable) {
-        }
+        } catch (_: Throwable) {}
         dadb = null
     }
 

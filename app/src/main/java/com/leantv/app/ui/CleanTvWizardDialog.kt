@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,19 +32,23 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.leantv.app.data.MajorDebloatOption
 
 /**
- * Interactive Decision Wizard for 1-Click Clean TV.
- * Lets users decide whether to keep or remove major apps (Miracast, Assistant, Netflix, Prime, etc.)
- * while ensuring core system framework is never bricked.
+ * CleanYourTV On-Device Remote-First Debloat Decision Wizard.
+ * Recognizes TV make/model, displays detected telemetry and bloatware,
+ * guides USB/Wireless debugging pairing with the remote,
+ * and allows granular KEEP/REMOVE choices for major streaming apps and tools.
  */
 @Composable
 fun CleanTvWizardDialog(
+    deviceLabel: String = "Android TV",
     majorOptions: List<MajorDebloatOption>,
     onToggleOption: (String) -> Unit,
+    onOpenDeveloperOptions: () -> Unit = {},
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -52,29 +57,47 @@ fun CleanTvWizardDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xD905080E))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(680.dp)
+                .width(720.dp)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Pal.Surface)
-                .border(1.dp, Pal.Line, RoundedCornerShape(26.dp))
-                .padding(28.dp),
+                .background(Color(0xFF13171F))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
+                .clickable(enabled = false) {}
+                .padding(30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Header
+            // Header with Device Recognition
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0x3364B5F6))
+                    .padding(horizontal = 14.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = "📺 RECOGNIZED: $deviceLabel",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF90CAF9),
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             Text(
-                "⚡ CleanYourTV Auto Debloater",
-                style = Ty.Title.copy(color = Pal.Amber, fontSize = 28.sp)
+                "⚡ CleanYourTV System Debloater",
+                style = Ty.Title.copy(color = Color.White, fontSize = 28.sp)
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "All ads, telemetry, and background tracking will be disabled. Choose which major apps you wish to KEEP or REMOVE:",
-                style = Ty.Dim.copy(fontSize = 14.sp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                "Telemetry daemons, manufacturer ads, and background trackers will be safely removed. Choose which features to KEEP or REMOVE:",
+                style = Ty.Dim.copy(fontSize = 13.sp),
+                textAlign = TextAlign.Center
             )
 
             Spacer(Modifier.height(14.dp))
@@ -83,7 +106,7 @@ fun CleanTvWizardDialog(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(290.dp),
+                    .height(260.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(majorOptions, key = { it.id }) { opt ->
@@ -91,6 +114,47 @@ fun CleanTvWizardDialog(
                         option = opt,
                         onToggle = { onToggleOption(opt.id) }
                     )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Remote Pairing Tip Card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x18FFFFFF))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "One-Time Remote Authorization:",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Ensure 'USB debugging' is ON in Developer Options, then accept prompt.",
+                            color = Color(0x99FFFFFF),
+                            fontSize = 11.sp
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x33FFFFFF))
+                            .clickable(onClick = onOpenDeveloperOptions)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text("Open Developer Options", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -103,7 +167,7 @@ fun CleanTvWizardDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TvButton(
-                    text = "Cancel",
+                    text = "Skip for Now",
                     onClick = onDismiss,
                     primary = false,
                     modifier = Modifier.weight(1f)
@@ -113,7 +177,7 @@ fun CleanTvWizardDialog(
                     text = "⚡ Clean TV Now",
                     onClick = onConfirm,
                     primary = true,
-                    modifier = Modifier.weight(1.5f).focusRequester(autoFocus)
+                    modifier = Modifier.weight(1.6f).focusRequester(autoFocus)
                 )
             }
         }
@@ -130,14 +194,14 @@ private fun MajorOptionRow(
 
     val cardBg by animateColorAsState(
         when {
-            focused -> Pal.SurfaceHi
-            isRemoving -> Pal.Coral.copy(alpha = 0.12f)
-            else -> Pal.Mint.copy(alpha = 0.10f)
+            focused -> Color(0x38FFFFFF)
+            isRemoving -> Color(0x24FF5252)
+            else -> Color(0x184CAF50)
         },
         tween(140), label = "wizCardBg"
     )
     val ringColor by animateColorAsState(
-        if (focused) Pal.Amber else Color.Transparent,
+        if (focused) Color.White else Color(0x22FFFFFF),
         tween(140), label = "wizCardRing"
     )
 
@@ -160,15 +224,15 @@ private fun MajorOptionRow(
                 Text(
                     option.title,
                     style = Ty.Heading.copy(
-                        color = if (focused) Pal.Amber else Pal.Text,
-                        fontSize = 17.sp,
+                        color = Color.White,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     option.description,
-                    style = Ty.Small.copy(fontSize = 13.sp, color = Pal.Dim)
+                    style = Ty.Small.copy(fontSize = 12.sp, color = Color(0xAAFFFFFF))
                 )
             }
 
@@ -178,19 +242,18 @@ private fun MajorOptionRow(
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (isRemoving) Pal.Coral else Pal.Mint)
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .background(if (isRemoving) Color(0xFFFF5252) else Color(0xFF4CAF50))
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Text(
                     text = if (isRemoving) "REMOVE ✕" else "KEEP ✓",
                     style = Ty.Small.copy(
-                        color = Color.Black,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
                 )
             }
         }
     }
 }
-

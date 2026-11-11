@@ -10,6 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -53,34 +59,45 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.leantv.app.account.TvProfile
 import com.leantv.app.data.AppVisuals
 import com.leantv.app.data.IconCache
 import com.leantv.app.data.InstalledAppInfo
+import com.leantv.app.inputs.TvPort
 import com.leantv.app.monitor.SystemMonitorPanel
 import com.leantv.app.share.QuickSharePanel
 import com.leantv.app.ui.CleanTvWizardDialog
+import com.leantv.app.ui.FileManagerScreen
 import com.leantv.app.ui.Focusable
 import com.leantv.app.ui.Pal
+import com.leantv.app.ui.PersonalizationDialog
 import com.leantv.app.ui.Safe
 import com.leantv.app.ui.Spinner
+import com.leantv.app.ui.StorageManagerScreen
 import com.leantv.app.ui.TvButton
 import com.leantv.app.ui.TvCanvas
 import com.leantv.app.ui.Ty
+import com.leantv.app.ui.WALLPAPER_THEMES
 import com.leantv.app.ui.rememberAutoFocus
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @Composable
 fun HomeScreen(vm: LauncherViewModel) {
     val s by vm.state.collectAsState()
 
-    // Handle Back key: close any open dialog/panel first, never exit launcher
+    // Handle Back key: close any open dialog/screen first, never exit launcher
     BackHandler(
-        enabled = s.showQuickShare || s.showQuickShareHub || s.showInputsDialog ||
-            s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
-            s.debloatSuccessSummary != null || s.actionMenuApp != null ||
-            s.uninstallConfirmApp != null || s.showDefaultPrompt
+        enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
+                s.showQuickShare || s.showQuickShareHub || s.showInputsDialog ||
+                s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
+                s.debloatSuccessSummary != null || s.actionMenuApp != null ||
+                s.uninstallConfirmApp != null || s.showDefaultPrompt
     ) {
         when {
+            s.showStorageManager -> vm.closeStorageManager()
+            s.showFileManager -> vm.closeFileManager()
+            s.showPersonalization -> vm.closePersonalization()
             s.showQuickShare -> vm.closeQuickShare()
             s.showQuickShareHub -> vm.closeQuickShareHub()
             s.showInputsDialog -> vm.closeInputs()
@@ -94,34 +111,58 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 
+    // Fullscreen Overlay Screens
+    if (s.showStorageManager) {
+        StorageManagerScreen(
+            adbClient = vm.adb,
+            onClose = vm::closeStorageManager
+        )
+        return
+    }
+
+    if (s.showFileManager) {
+        FileManagerScreen(
+            onClose = vm::closeFileManager
+        )
+        return
+    }
+
     TvCanvas {
-        CleanTvBackdrop(s.focusedApp ?: s.favoriteApps.firstOrNull()) {
+        CleanTvBackdrop(
+            themeId = s.wallpaperTheme,
+            focusedApp = s.focusedApp ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull()
+        ) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 48.dp, vertical = 28.dp),
+                    .padding(horizontal = 48.dp, vertical = 26.dp),
             ) {
                 // 1. CleanYourTV Top Bar: Kicker + Clock + Frosted Action Capsules
                 CleanTvTopBar(
-                    greeting = s.greetingText,
+                    greeting = if (s.showGreeting) s.greetingText else "",
                     timeText = s.timeText,
                     dateText = s.dateText,
                     networkLabel = s.networkLabel,
-                    currentAccountName = s.currentAccountName,
+                    profile = s.tvProfile,
+                    connectedInputsCount = s.tvPorts.count { it.isConnected },
                     onOpenInputs = vm::openInputs,
                     onOpenNetwork = vm::openNetworkSettings,
                     onOpenQuickShare = vm::handleQuickShareClick,
+                    onOpenStorage = vm::openStorageManager,
+                    onOpenFiles = vm::openFileManager,
                     onOpenProfile = vm::openProfile,
+                    onOpenPersonalization = vm::openPersonalization,
                     onOpenSettings = vm::openSystemSettings,
                     onOpenCleanTv = vm::requestCleanTv,
                 )
 
-                Spacer(Modifier.height(30.dp))
+                Spacer(Modifier.height(26.dp))
 
-                // 2. Top Shelf Hero Name (CleanYourTV 48sp app title)
+                // 2. Top Shelf Hero Name (CleanYourTV 46sp bold app title)
                 val heroName = s.focusedApp?.appName
-                    ?: s.favoriteApps.firstOrNull()?.appName
+                    ?: s.dockApps.firstOrNull()?.appName
+                    ?: s.allApps.firstOrNull()?.appName
                     ?: ""
 
                 Text(
@@ -155,14 +196,14 @@ fun HomeScreen(vm: LauncherViewModel) {
                         }
                     }
                 } else {
-                    // 3. The Dock Row (First 4 pinned favorite apps)
-                    val dockApps = if (s.favoriteApps.isNotEmpty()) s.favoriteApps.take(4) else s.allApps.take(4)
-                    if (dockApps.isNotEmpty()) {
+                    // 3. The Dock Row (Pinned Favorites or Top Apps)
+                    val dock = s.dockApps.ifEmpty { s.allApps.take(4) }
+                    if (dock.isNotEmpty()) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
                         ) {
-                            dockApps.forEach { app ->
+                            dock.forEach { app ->
                                 CleanTvAppTile(
                                     app = app,
                                     isDock = true,
@@ -174,16 +215,61 @@ fun HomeScreen(vm: LauncherViewModel) {
                         }
                     }
 
-                    Spacer(Modifier.height(26.dp))
+                    // 4. Frequently Opened Apps Section (Feature #6)
+                    val dockPkgSet = dock.map { it.packageName }.toSet()
+                    val frequent = s.frequentApps.filter { it.packageName !in dockPkgSet }
+                    if (frequent.isNotEmpty()) {
+                        Spacer(Modifier.height(22.dp))
+                        AppSectionHeader("Frequently Used")
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                        ) {
+                            frequent.take(4).forEach { app ->
+                                CleanTvAppTile(
+                                    app = app,
+                                    isDock = false,
+                                    badgeText = "${vm.journal.getLaunchCount(app.packageName)}x",
+                                    onFocus = { vm.setFocusedApp(app) },
+                                    onClick = { vm.launch(app) },
+                                    onLongClick = { vm.showActionMenu(app) }
+                                )
+                            }
+                        }
+                    }
 
-                    // 4. The Grid (All remaining apps in 4-column rows)
-                    val dockPkgSet = dockApps.map { it.packageName }.toSet()
+                    // 5. Recently Opened Apps Section (Feature #6)
+                    val recent = s.recentApps.filter { it.packageName !in dockPkgSet && it !in frequent }
+                    if (recent.isNotEmpty()) {
+                        Spacer(Modifier.height(22.dp))
+                        AppSectionHeader("Recently Used")
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                        ) {
+                            recent.take(4).forEach { app ->
+                                CleanTvAppTile(
+                                    app = app,
+                                    isDock = false,
+                                    onFocus = { vm.setFocusedApp(app) },
+                                    onClick = { vm.launch(app) },
+                                    onLongClick = { vm.showActionMenu(app) }
+                                )
+                            }
+                        }
+                    }
+
+                    // 6. The Grid: All Installed Applications (4-column rows)
                     val gridApps = s.allApps.filter { it.packageName !in dockPkgSet }
-
                     if (gridApps.isNotEmpty()) {
-                        val gridRows = remember(gridApps) { gridApps.chunked(4) }
+                        Spacer(Modifier.height(26.dp))
+                        AppSectionHeader("All Applications (${s.allApps.size})")
+                        Spacer(Modifier.height(12.dp))
 
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val gridRows = remember(gridApps) { gridApps.chunked(4) }
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             gridRows.forEach { rowApps ->
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -209,8 +295,10 @@ fun HomeScreen(vm: LauncherViewModel) {
             // CleanYourTV 1-Click Wizard Dialog
             if (s.showCleanTvWizard) {
                 CleanTvWizardDialog(
+                    deviceLabel = s.detectedDeviceLabel,
                     majorOptions = s.majorOptions,
                     onToggleOption = vm::toggleMajorOption,
+                    onOpenDeveloperOptions = vm::openDeveloperOptions,
                     onConfirm = vm::executeOneClickCleanTv,
                     onDismiss = vm::dismissCleanTvWizard
                 )
@@ -224,11 +312,11 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Inputs Switcher Modal
+            // Inputs Switcher Modal (Live physical hardware ports only)
             if (s.showInputsDialog) {
                 InputsSwitcherDialog(
-                    inputs = s.tvInputs,
-                    onSelectInput = vm::switchToInput,
+                    ports = s.tvPorts,
+                    onSelectPort = vm::switchToPort,
                     onDismiss = vm::closeInputs
                 )
             }
@@ -236,8 +324,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             // Google Accounts Modal
             if (s.showProfileDialog) {
                 ProfileAccountsDialog(
-                    currentAccount = s.currentAccountName,
-                    accounts = s.googleAccounts,
+                    profile = s.tvProfile,
                     onAddAccount = vm::openAddGoogleAccount,
                     onManageSettings = vm::openSystemAccountsSettings,
                     onDismiss = vm::closeProfile
@@ -267,6 +354,23 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
+            // Personalization & Wallpapers Dialog
+            if (s.showPersonalization) {
+                PersonalizationDialog(
+                    currentTheme = s.wallpaperTheme,
+                    is24h = s.is24hClock,
+                    showGreeting = s.showGreeting,
+                    onSelectTheme = vm::setWallpaperTheme,
+                    onToggle24h = vm::toggleClockFormat,
+                    onToggleGreeting = vm::toggleGreeting,
+                    onOpenFileManagerForWallpaper = {
+                        vm.closePersonalization()
+                        vm.openFileManager()
+                    },
+                    onDismiss = vm::closePersonalization
+                )
+            }
+
             // Default Launcher Prompt
             if (s.showDefaultPrompt) {
                 DefaultLauncherDialog(
@@ -287,11 +391,11 @@ fun HomeScreen(vm: LauncherViewModel) {
                         vm.launch(app)
                     },
                     onToggleFavorite = { vm.toggleFavorite(app) },
+                    onClearData = { vm.clearAppDataAction(app) },
+                    onClearCache = { vm.clearAppCacheAction(app) },
+                    onHideApp = { vm.toggleHideApp(app) },
                     onUninstall = { vm.requestUninstall(app) },
-                    onDetails = {
-                        vm.dismissActionMenu()
-                        vm.openAppDetails(app)
-                    }
+                    onDetails = { vm.openAppDetails(app) }
                 )
             }
 
@@ -343,10 +447,24 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 }
 
+@Composable
+private fun AppSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = Ty.Heading.copy(
+            color = Color(0xCCFFFFFF),
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp
+        ),
+        modifier = Modifier.padding(start = 4.dp)
+    )
+}
+
 /**
  * CleanYourTV Top Bar:
  * Left: "GOOD AFTERNOON" + "1:13 PM | SATURDAY 17 OCTOBER"
- * Right: Inputs, Wi-Fi, Quick Share, Profile, Settings, CleanTV frosted capsules.
+ * Right: Inputs, Wi-Fi, Quick Share, Storage, Files, Profile, Themes, Settings, CleanTV.
  */
 @Composable
 private fun CleanTvTopBar(
@@ -354,11 +472,15 @@ private fun CleanTvTopBar(
     timeText: String,
     dateText: String,
     networkLabel: String,
-    currentAccountName: String,
+    profile: TvProfile,
+    connectedInputsCount: Int,
     onOpenInputs: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenQuickShare: () -> Unit,
+    onOpenStorage: () -> Unit,
+    onOpenFiles: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenPersonalization: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCleanTv: () -> Unit,
 ) {
@@ -369,15 +491,17 @@ private fun CleanTvTopBar(
     ) {
         // Left: Kicker + Clock + Date
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = greeting.uppercase(),
-                style = Ty.Small.copy(
-                    color = Color(0xB3FFFFFF),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 2.2.sp
+            if (greeting.isNotBlank()) {
+                Text(
+                    text = greeting.uppercase(),
+                    style = Ty.Small.copy(
+                        color = Color(0xB3FFFFFF),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 2.2.sp
+                    )
                 )
-            )
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -411,19 +535,22 @@ private fun CleanTvTopBar(
             }
         }
 
-        // Right: Frosted Action Capsules
+        // Right: Frosted Action Capsules (Apple TV style)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            CleanTvTopCapsule(icon = "📺", label = "Inputs", onClick = onOpenInputs)
+            val inputLabel = if (connectedInputsCount > 0) "Inputs ($connectedInputsCount)" else "Inputs"
+            CleanTvTopCapsule(icon = "📺", label = inputLabel, onClick = onOpenInputs)
+
             val netIcon = if (networkLabel.contains("Ethernet", ignoreCase = true)) "🌐" else "📶"
             CleanTvTopCapsule(icon = netIcon, label = networkLabel, onClick = onOpenNetwork)
+
             CleanTvTopCapsule(icon = "⚡", label = "Quick Share", onClick = onOpenQuickShare)
-            val shortAccount = remember(currentAccountName) {
-                if (currentAccountName.contains("@")) currentAccountName.substringBefore("@") else currentAccountName
-            }
-            CleanTvTopCapsule(icon = "👤", label = shortAccount, onClick = onOpenProfile)
+            CleanTvTopCapsule(icon = "💾", label = "Storage", onClick = onOpenStorage)
+            CleanTvTopCapsule(icon = "📁", label = "Files", onClick = onOpenFiles)
+            CleanTvTopCapsule(icon = profile.initial, label = profile.displayName, onClick = onOpenProfile)
+            CleanTvTopCapsule(icon = "🎨", label = "Theme", onClick = onOpenPersonalization)
             CleanTvTopCapsule(icon = "⚙", label = "Settings", onClick = onOpenSettings)
             CleanTvTopCapsule(icon = "✨", label = "CleanTV", onClick = onOpenCleanTv)
         }
@@ -452,18 +579,19 @@ private fun CleanTvTopCapsule(
                     color = if (focused) Color.White else Color(0x2BFFFFFF),
                     shape = RoundedCornerShape(50)
                 )
-                .padding(horizontal = 14.dp, vertical = 7.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Text(icon, fontSize = 14.sp, color = if (focused) Color.White else Color(0xCCFFFFFF))
+            Text(icon, fontSize = 13.sp, color = if (focused) Color.White else Color(0xCCFFFFFF))
             Text(
                 text = label,
                 style = Ty.Small.copy(
                     color = if (focused) Color.White else Color(0xCCFFFFFF),
                     fontWeight = FontWeight.Medium,
-                    fontSize = 13.sp
-                )
+                    fontSize = 12.sp
+                ),
+                maxLines = 1
             )
         }
     }
@@ -471,7 +599,7 @@ private fun CleanTvTopCapsule(
 
 /**
  * CleanYourTV exact tile implementation:
- * - 180dp x 101dp aspect ratio
+ * - 180dp x 101dp aspect ratio (16:9)
  * - If app has a 16:9 banner: banner fills card completely with CenterCrop
  * - If app has no banner: tinted gradient plate + centered 46dp icon + bottom title
  * - On focus: 1.10x scale, glass specular highlight, 2.5dp crisp white rim
@@ -481,6 +609,7 @@ private fun CleanTvTopCapsule(
 private fun CleanTvAppTile(
     app: InstalledAppInfo,
     isDock: Boolean,
+    badgeText: String? = null,
     onFocus: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -500,191 +629,212 @@ private fun CleanTvAppTile(
         tween(150, easing = FastOutSlowInEasing),
         label = "tileScale"
     )
-    val elevation by animateFloatAsState(
-        if (focused) -4f else 0f,
-        tween(150),
-        label = "tileElevation"
-    )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(180.dp)
+        modifier = Modifier
+            .width(180.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                shadowElevation = if (focused) 20f else 0f
+            }
+            .onPreviewKeyEvent {
+                if (it.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                    if (it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU) {
+                        onLongClick()
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
     ) {
         Box(
             modifier = Modifier
-                .width(180.dp)
-                .height(101.dp)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationY = elevation
-                }
+                .size(180.dp, 101.dp)
                 .clip(RoundedCornerShape(18.dp))
+                .border(
+                    width = if (focused) 2.5.dp else 1.dp,
+                    color = if (focused) Color.White else Color(0x24FFFFFF),
+                    shape = RoundedCornerShape(18.dp)
+                )
                 .onFocusChanged {
-                    focused = it.isFocused
-                    if (it.isFocused) onFocus()
+                    if (it.isFocused) {
+                        focused = true
+                        onFocus()
+                    } else {
+                        focused = false
+                    }
                 }
-                .onPreviewKeyEvent { event ->
-                    if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU && event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                        onLongClick()
-                        true
-                    } else false
-                }
-                .clickable(onClick = onClick)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick
+                )
+                .focusable()
         ) {
             val v = visuals
             if (v != null && v.isBanner) {
-                // 1. Widescreen 16:9 TV Banner (Netflix, Prime Video, YouTube, Hotstar, etc.)
+                // TV Widescreen Banner
                 Image(
                     bitmap = v.bitmap,
                     contentDescription = app.appName,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-            } else if (v != null) {
-                // 2. Tinted gradient plate with centered icon + bottom label
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(listOf(v.topColor, v.bottomColor))
-                        )
-                ) {
-                    Image(
-                        bitmap = v.bitmap,
-                        contentDescription = app.appName,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .align(Alignment.Center)
-                            .padding(bottom = 12.dp),
-                        contentScale = ContentScale.Fit
-                    )
-
-                    Text(
-                        text = app.appName,
-                        style = Ty.Small.copy(
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
-                }
             } else {
-                // Placeholder while loading
+                // Sideloaded / Mobile APK without TV banner:
+                // Auto-generate 16:9 squircle gradient plate + centered 46dp icon + bottom title
+                val plateTop = v?.topColor ?: extractFallbackHue(app)
+                val plateBottom = v?.bottomColor ?: Color(0xFF101216)
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF15202B)),
-                    contentAlignment = Alignment.Center
+                        .background(Brush.verticalGradient(listOf(plateTop, plateBottom)))
+                ) {
+                    // Centered high-res app icon
+                    val iconBitmap = v?.bitmap
+                    if (iconBitmap != null) {
+                        Image(
+                            bitmap = iconBitmap,
+                            contentDescription = app.appName,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .align(Alignment.Center)
+                        )
+                    }
+
+                    // Bottom title tag
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(Color(0x73000000))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = app.appName,
+                            style = Ty.Small.copy(
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // Top-Right Badge (e.g. launch count)
+            if (badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xCC000000))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = app.appName.take(1).uppercase(),
-                        style = Ty.Title.copy(color = Color.White, fontSize = 24.sp)
+                        text = badgeText,
+                        color = Color(0xFF64B5F6),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            // 3. CleanYourTV Floating Glass Highlight (Specular sheen + crisp white rim)
+            // Apple tvOS Frosted Glass Specular Highlight (Top 45% shine)
             if (focused) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color(0x3DFFFFFF), Color(0x12FFFFFF)),
-                                startY = 0f,
-                                endY = 101f
-                            )
-                        )
-                )
-
-                // Top 45% specular shine
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(45.dp)
                         .background(
                             Brush.verticalGradient(
-                                listOf(Color(0x66FFFFFF), Color(0x00FFFFFF))
+                                colors = listOf(Color(0x66FFFFFF), Color(0x00FFFFFF))
                             )
                         )
-                )
-
-                // Crisp White Glass Rim
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(2.5.dp, Color.White, RoundedCornerShape(18.dp))
-                )
-            } else {
-                // Unfocused subtle border
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(18.dp))
                 )
             }
         }
 
-        // CleanYourTV Name label under tile in grid (14sp, #F2FFFFFF, appears when focused)
-        if (!isDock) {
-            Spacer(Modifier.height(6.dp))
+        // In Grid: focused tile title appears underneath
+        if (!isDock && focused) {
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = if (focused) app.appName else "",
+                text = app.appName,
                 style = Ty.Small.copy(
-                    color = Color(0xF2FFFFFF),
-                    fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
-                    letterSpacing = 0.3.sp
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xF2FFFFFF)
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .width(180.dp)
-                    .height(20.dp)
+                modifier = Modifier.fillMaxWidth()
             )
+        } else if (!isDock) {
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.height(18.dp)) // Reserve height to avoid grid jumping
         }
     }
 }
 
 /**
- * CleanYourTV Cinematic Backdrop:
- * Pitch-black background with dynamic saturated ambient radial glow matching focused app.
+ * CleanYourTV Backdrop:
+ * Renders the chosen theme background (Pitch Black, Aurora, Deep Space, Sunset, Apple Dark Glass)
+ * with an ambient radial blur matching the focused app's dominant color.
  */
 @Composable
-private fun CleanTvBackdrop(focusedApp: InstalledAppInfo?, content: @Composable () -> Unit) {
-    val targetAmbient = remember(focusedApp?.packageName, focusedApp?.appName) {
-        getAppAmbientColor(focusedApp)
-    }
-
-    val ambientColor by animateColorAsState(
-        targetValue = targetAmbient,
-        animationSpec = tween(350, easing = FastOutSlowInEasing),
+private fun CleanTvBackdrop(
+    themeId: String,
+    focusedApp: InstalledAppInfo?,
+    content: @Composable () -> Unit
+) {
+    val theme = WALLPAPER_THEMES.find { it.id == themeId } ?: WALLPAPER_THEMES.first()
+    val ambientColor = extractFallbackHue(focusedApp)
+    val animatedAmbient by animateColorAsState(
+        targetValue = ambientColor,
+        animationSpec = tween(500),
         label = "ambientGlow"
     )
 
     Box(
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))
             .drawBehind {
+                // 1. Theme gradient base
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = theme.gradientColors,
+                        startY = 0f,
+                        endY = size.height
+                    )
+                )
+
+                // 2. Ambient radial hero glow behind top-left title
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            ambientColor.copy(alpha = 0.46f),
-                            ambientColor.copy(alpha = 0.16f),
+                            animatedAmbient.copy(alpha = 0.40f),
+                            animatedAmbient.copy(alpha = 0.15f),
                             Color.Transparent
                         ),
-                        center = Offset(size.width * 0.32f, size.height * 0.30f),
-                        radius = size.width * 0.50f
+                        center = Offset(size.width * 0.22f, size.height * 0.28f),
+                        radius = size.width * 0.45f
+                    )
+                )
+
+                // 3. Subtle dark vignette towards bottom edges
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color(0xB3000000)),
+                        startY = size.height * 0.5f,
+                        endY = size.height
                     )
                 )
             }
@@ -693,13 +843,10 @@ private fun CleanTvBackdrop(focusedApp: InstalledAppInfo?, content: @Composable 
     }
 }
 
-/**
- * Ambient brand color resolution.
- */
-private fun getAppAmbientColor(app: InstalledAppInfo?): Color {
+private fun extractFallbackHue(app: InstalledAppInfo?): Color {
     if (app == null) return Color(0xFF1E1E1E)
-    val name = app.appName.lowercase()
-    val pkg = app.packageName.lowercase()
+    val name = app.appName.lowercase(Locale.ROOT)
+    val pkg = app.packageName.lowercase(Locale.ROOT)
     return when {
         name.contains("netflix") || pkg.contains("netflix") -> Color(0xFFE50914)
         name.contains("youtube") || pkg.contains("youtube") -> Color(0xFFFF0000)
@@ -734,7 +881,7 @@ private fun getAppAmbientColor(app: InstalledAppInfo?): Color {
     }
 }
 
-/** CleanYourTV Success Celebratory Modal */
+/** CleanYourTV Celebratory Success Modal */
 @Composable
 private fun CleanTvSuccessDialog(
     summary: String,
@@ -797,11 +944,15 @@ private fun CleanTvSuccessDialog(
     }
 }
 
-/** Inputs Switcher Dialog (Apple TV Control Center style) */
+/**
+ * Inputs Switcher Dialog (Feature #3):
+ * Only shows real hardware passthrough ports (HDMI 1, HDMI 2, Tuner, AV).
+ * Connected ports are fully colored with active indicators. Disconnected ports are grayed out.
+ */
 @Composable
 private fun InputsSwitcherDialog(
-    inputs: List<TvInputItem>,
-    onSelectInput: (TvInputItem) -> Unit,
+    ports: List<TvPort>,
+    onSelectPort: (TvPort) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -815,7 +966,7 @@ private fun InputsSwitcherDialog(
     ) {
         Column(
             Modifier
-                .width(480.dp)
+                .width(520.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color(0xFF15181E))
                 .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
@@ -824,43 +975,113 @@ private fun InputsSwitcherDialog(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("TV Inputs", style = Ty.Title.copy(color = Color.White, fontSize = 26.sp))
-            Text("Switch to external devices connected to this TV", style = Ty.Dim.copy(fontSize = 14.sp))
+            Text("Physically detected TV hardware ports", style = Ty.Dim.copy(fontSize = 14.sp))
 
             Spacer(Modifier.height(6.dp))
 
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                inputs.forEachIndexed { index, input ->
-                    TvButton(
-                        text = "📺  ${input.name} (${input.type})",
-                        onClick = { onSelectInput(input) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .let {
-                                if (index == 0) it.focusRequester(autoFocus) else it
-                            },
-                        primary = index == 0
-                    )
+            if (ports.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No external hardware inputs found on this device.", color = Color(0x88FFFFFF), fontSize = 14.sp)
                 }
+            } else {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ports.forEachIndexed { index, port ->
+                        TvPortRow(
+                            port = port,
+                            onClick = { onSelectPort(port) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .let { if (index == 0) it.focusRequester(autoFocus) else it }
+                        )
+                    }
+                }
+            }
 
-                TvButton(
-                    text = "Close",
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
+            Spacer(Modifier.height(8.dp))
+
+            TvButton(
+                text = "Close",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                primary = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvPortRow(
+    port: TvPort,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val isFocused by interaction.collectIsFocusedAsState()
+
+    val isConnected = port.isConnected
+    val bg = if (isFocused) Color.White
+    else if (isConnected) Color(0x282979FF)
+    else Color(0x0EFFFFFF)
+
+    val border = if (isFocused) Color.White
+    else if (isConnected) Color(0x662979FF)
+    else Color(0x18FFFFFF)
+
+    Box(
+        modifier = modifier
+            .scale(if (isFocused) 1.02f else 1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .border(if (isFocused) 2.dp else 1.dp, border, RoundedCornerShape(12.dp))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .focusable(interactionSource = interaction)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "📺  ${port.label}",
+                    color = if (isFocused) Color.Black else if (isConnected) Color.White else Color(0x66FFFFFF),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // Connection indicator badge
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (isConnected) Color(0x334CAF50)
+                        else Color(0x22FFFFFF)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isConnected) "● Connected" else "○ Disconnected",
+                    color = if (isConnected) Color(0xFF81C784) else Color(0x55FFFFFF),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
     }
 }
 
-/** Google Account Switcher & Profile Dialog */
+/** Google Account Switcher & Profile Dialog (Feature #5) */
 @Composable
 private fun ProfileAccountsDialog(
-    currentAccount: String,
-    accounts: List<GoogleAccountItem>,
+    profile: TvProfile,
     onAddAccount: () -> Unit,
     onManageSettings: () -> Unit,
     onDismiss: () -> Unit,
@@ -898,13 +1119,30 @@ private fun ProfileAccountsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Currently Active:", style = Ty.Small.copy(color = Color(0xFF64D2FF), fontWeight = FontWeight.Bold))
-                Text(currentAccount, style = Ty.Heading.copy(color = Color.White, fontSize = 18.sp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1976D2)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(profile.initial, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(profile.displayName, style = Ty.Heading.copy(color = Color.White, fontSize = 17.sp))
+                        profile.email?.let {
+                            Text(it, style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 13.sp))
+                        }
+                    }
+                }
 
-                if (accounts.size > 1) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("All Synced Accounts (${accounts.size}):", style = Ty.Small.copy(color = Pal.Dim))
-                    accounts.forEach { acc ->
-                        Text("• ${acc.name}", style = Ty.Body.copy(color = Color.White, fontSize = 15.sp))
+                if (profile.allAccounts.size > 1) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("All Synced Accounts (${profile.allAccounts.size}):", style = Ty.Small.copy(color = Pal.Dim))
+                    profile.allAccounts.forEach { acc ->
+                        Text("• $acc", style = Ty.Body.copy(color = Color.White, fontSize = 14.sp))
                     }
                 }
             }
@@ -1024,7 +1262,7 @@ private fun QuickShareHubDialog(
     }
 }
 
-/** Action menu for a selected app (Open, Favorite, Uninstall, Details). */
+/** Action menu for a selected app (Open, Favorite, Clear Data, Clear Cache, Hide, Uninstall, Details). */
 @Composable
 private fun LauncherActionDialog(
     app: InstalledAppInfo,
@@ -1032,6 +1270,9 @@ private fun LauncherActionDialog(
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onClearData: () -> Unit,
+    onClearCache: () -> Unit,
+    onHideApp: () -> Unit,
     onUninstall: () -> Unit,
     onDetails: () -> Unit,
 ) {
@@ -1049,21 +1290,24 @@ private fun LauncherActionDialog(
                 .background(Color(0xFF15181E))
                 .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
                 .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(app.appName, style = Ty.Title.copy(color = Color.White))
             Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace, color = Color(0x99FFFFFF)))
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TvButton("Open Application", onClick = onOpen, primary = true, modifier = Modifier.fillMaxWidth())
                 TvButton(
-                    if (isFavorite) "Remove from Favorites" else "Add to Favorites",
+                    if (isFavorite) "Unpin from Dock / Favorites" else "Pin to Dock / Favorites",
                     onClick = onToggleFavorite,
                     primary = false,
                     modifier = Modifier.fillMaxWidth()
                 )
+                TvButton("Clear Application Data", onClick = onClearData, primary = false, modifier = Modifier.fillMaxWidth())
+                TvButton("Clear Cache", onClick = onClearCache, primary = false, modifier = Modifier.fillMaxWidth())
+                TvButton("Hide from Launcher Grid", onClick = onHideApp, primary = false, modifier = Modifier.fillMaxWidth())
                 if (app.canUninstall) {
                     TvButton("Uninstall Application", onClick = onUninstall, primary = false, modifier = Modifier.fillMaxWidth())
                 }
@@ -1097,9 +1341,9 @@ private fun DefaultLauncherDialog(
                 .padding(36.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Set LeanTV as Default Home?", style = Ty.Title.copy(color = Color.White))
+            Text("Set CleanYourTV as Default Home?", style = Ty.Title.copy(color = Color.White))
             Text(
-                "Enjoy this fast, clean, Apple TV-style home launcher every time you turn on your TV or press the Home button on your remote.\n\nAndroid will prompt you to select LeanTV as the default Home app in system settings.",
+                "Enjoy this fast, clean, Apple TV-style home launcher every time you turn on your TV or press the Home button on your remote.\n\nAndroid will prompt you to select CleanYourTV as the default Home app in system settings.",
                 style = Ty.Dim
             )
 
@@ -1138,7 +1382,7 @@ private fun LauncherUninstallDialog(
         ) {
             Text("Uninstall ${app.appName}?", style = Ty.Title.copy(color = Color.White))
             Text(
-                "LeanTV will open the Android TV uninstaller for ${app.packageName}.\nConfirm the prompt to remove the application.",
+                "CleanYourTV will open the Android TV uninstaller for ${app.packageName}.\nConfirm the prompt to remove the application.",
                 style = Ty.Dim
             )
 
