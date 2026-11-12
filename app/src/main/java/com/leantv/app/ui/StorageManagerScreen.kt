@@ -78,7 +78,7 @@ fun StorageManagerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0C10))
+            .background(Color(0xFF000000))
             .padding(horizontal = 48.dp, vertical = 32.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -91,16 +91,16 @@ fun StorageManagerScreen(
                 Column {
                     Text(
                         text = "DEVICE CARE",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF64B5F6),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF64D2FF),
                         letterSpacing = 2.sp
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Storage Management",
                         fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
                 }
@@ -108,8 +108,8 @@ fun StorageManagerScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Optimize Button
                     StorageGlassButton(
-                        text = "⚡ Clean Cache",
-                        accent = Color(0xFF4CAF50),
+                        text = "Clean Cache",
+                        accent = Color(0xFF30D158),
                         onClick = {
                             scope.launch {
                                 val reclaimed = StorageHelper.cleanAllAccessibleCaches(ctx)
@@ -137,7 +137,7 @@ fun StorageManagerScreen(
                         .background(Color(0x334CAF50))
                         .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    Text(text = msg, color = Color(0xFFA5D6A7), fontSize = 14.sp)
+                    Text(text = msg, color = Color(0xFF30D158), fontSize = 17.sp)
                 }
             }
 
@@ -154,7 +154,7 @@ fun StorageManagerScreen(
                     Text(
                         text = "Analyzing TV storage...",
                         color = Color(0x99FFFFFF),
-                        fontSize = 18.sp
+                        fontSize = 20.sp
                     )
                 }
             } else {
@@ -183,7 +183,7 @@ fun StorageManagerScreen(
                     ) {
                         Text(
                             text = "Installed Applications by Size (${currentOverview.appDetails.size})",
-                            fontSize = 16.sp,
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xCCFFFFFF),
                             modifier = Modifier.padding(bottom = 12.dp)
@@ -248,8 +248,8 @@ private fun SamsungStorageBarCard(overview: StorageOverview) {
                 Column {
                     Text(
                         text = "INTERNAL STORAGE",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color(0x88FFFFFF),
                         letterSpacing = 1.sp
                     )
@@ -257,15 +257,15 @@ private fun SamsungStorageBarCard(overview: StorageOverview) {
                     Text(
                         text = "${StorageHelper.formatBytes(used)} / ${StorageHelper.formatBytes(total)}",
                         fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
                 }
                 Text(
                     text = "$percent%",
                     fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (percent > 90) Color(0xFFFF5252) else Color(0xFF64B5F6)
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (percent > 90) Color(0xFFFF453A) else Color(0xFF64D2FF)
                 )
             }
 
@@ -288,12 +288,12 @@ private fun SamsungStorageBarCard(overview: StorageOverview) {
                     val systemWeight = (overview.systemBytes.toFloat() / total).coerceAtLeast(0f)
                     val freeWeight = (overview.freeBytes.toFloat() / total).coerceAtLeast(0f)
 
-                    if (appsWeight > 0.005f) Box(Modifier.weight(appsWeight).fillMaxHeight().background(Color(0xFF2979FF)))
-                    if (videosWeight > 0.005f) Box(Modifier.weight(videosWeight).fillMaxHeight().background(Color(0xFFAB47BC)))
-                    if (audioWeight > 0.005f) Box(Modifier.weight(audioWeight).fillMaxHeight().background(Color(0xFF00E5FF)))
-                    if (imagesWeight > 0.005f) Box(Modifier.weight(imagesWeight).fillMaxHeight().background(Color(0xFFFF9100)))
-                    if (apksWeight > 0.005f) Box(Modifier.weight(apksWeight).fillMaxHeight().background(Color(0xFFFFEA00)))
-                    if (systemWeight > 0.005f) Box(Modifier.weight(systemWeight).fillMaxHeight().background(Color(0xFF78909C)))
+                    if (appsWeight > 0.005f) Box(Modifier.weight(appsWeight).fillMaxHeight().background(Color(0xFF000000)))
+                    if (videosWeight > 0.005f) Box(Modifier.weight(videosWeight).fillMaxHeight().background(Color(0xFFBF5AF2)))
+                    if (audioWeight > 0.005f) Box(Modifier.weight(audioWeight).fillMaxHeight().background(Color(0xFF64D2FF)))
+                    if (imagesWeight > 0.005f) Box(Modifier.weight(imagesWeight).fillMaxHeight().background(Color(0xFFFF9F0A)))
+                    if (apksWeight > 0.005f) Box(Modifier.weight(apksWeight).fillMaxHeight().background(Color(0xFFFFD60A)))
+                    if (systemWeight > 0.005f) Box(Modifier.weight(systemWeight).fillMaxHeight().background(Color(0xFF8E8E93)))
                     if (freeWeight > 0.005f) Box(Modifier.weight(freeWeight).fillMaxHeight().background(Color(0x11FFFFFF)))
                 }
             }
@@ -301,7 +301,7 @@ private fun SamsungStorageBarCard(overview: StorageOverview) {
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "${StorageHelper.formatBytes(overview.freeBytes)} Available Free Space",
-                fontSize = 13.sp,
+                fontSize = 16.sp,
                 color = Color(0x99FFFFFF)
             )
         }
@@ -311,12 +311,12 @@ private fun SamsungStorageBarCard(overview: StorageOverview) {
 @Composable
 private fun SamsungStorageCategories(overview: StorageOverview) {
     val items = listOf(
-        CategoryItem("Apps", StorageHelper.formatBytes(overview.appsBytes), Color(0xFF2979FF)),
-        CategoryItem("Videos", StorageHelper.formatBytes(overview.videosBytes), Color(0xFFAB47BC)),
-        CategoryItem("Audio", StorageHelper.formatBytes(overview.audioBytes), Color(0xFF00E5FF)),
-        CategoryItem("Images", StorageHelper.formatBytes(overview.imagesBytes), Color(0xFFFF9100)),
-        CategoryItem("Installation Files", StorageHelper.formatBytes(overview.apksBytes), Color(0xFFFFEA00)),
-        CategoryItem("System OS", StorageHelper.formatBytes(overview.systemBytes), Color(0xFF78909C))
+        CategoryItem("Apps", StorageHelper.formatBytes(overview.appsBytes), Color(0xFF000000)),
+        CategoryItem("Videos", StorageHelper.formatBytes(overview.videosBytes), Color(0xFFBF5AF2)),
+        CategoryItem("Audio", StorageHelper.formatBytes(overview.audioBytes), Color(0xFF64D2FF)),
+        CategoryItem("Images", StorageHelper.formatBytes(overview.imagesBytes), Color(0xFFFF9F0A)),
+        CategoryItem("Installation Files", StorageHelper.formatBytes(overview.apksBytes), Color(0xFFFFD60A)),
+        CategoryItem("System OS", StorageHelper.formatBytes(overview.systemBytes), Color(0xFF8E8E93))
     )
 
     Column(
@@ -341,9 +341,9 @@ private fun SamsungStorageCategories(overview: StorageOverview) {
                             .background(cat.color)
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text(text = cat.name, color = Color(0xDDFFFFFF), fontSize = 14.sp)
+                    Text(text = cat.name, color = Color(0xDDFFFFFF), fontSize = 17.sp)
                 }
-                Text(text = cat.size, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = cat.size, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -390,7 +390,7 @@ private fun AppStorageRow(
                 Text(
                     text = app.appLabel,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -398,16 +398,16 @@ private fun AppStorageRow(
                 Text(
                     text = if (app.isSystemApp) "System App • ${app.packageName}" else app.packageName,
                     color = Color(0x88FFFFFF),
-                    fontSize = 11.sp,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Text(
                 text = StorageHelper.formatBytes(app.totalBytes),
-                color = Color(0xFF64B5F6),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
+                color = Color(0xFF64D2FF),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold
             )
         }
 
@@ -421,7 +421,7 @@ private fun AppStorageRow(
                 Text(
                     text = "App: ${StorageHelper.formatBytes(app.appBytes)}  |  Data: ${StorageHelper.formatBytes(app.dataBytes)}  |  Cache: ${StorageHelper.formatBytes(app.cacheBytes)}",
                     color = Color(0xAAFFFFFF),
-                    fontSize = 12.sp
+                    fontSize = 16.sp
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -453,7 +453,7 @@ private fun StorageActionButton(text: String, onClick: () -> Unit) {
         Text(
             text = text,
             color = if (isFocused) Color.Black else Color.White,
-            fontSize = 12.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
     }
@@ -485,7 +485,7 @@ private fun StorageGlassButton(
         Text(
             text = text,
             color = if (isFocused && accent == Color.White) Color.Black else Color.White,
-            fontSize = 14.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

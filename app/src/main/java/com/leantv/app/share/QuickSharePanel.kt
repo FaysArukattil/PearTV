@@ -60,7 +60,7 @@ fun QuickSharePanel(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14)),
+            .background(Color(0xE6000000)),
         contentAlignment = Alignment.CenterStart
     ) {
         Column(
@@ -128,7 +128,7 @@ fun QuickSharePanel(
 
                         Text(
                             state.serverUrl!!,
-                            style = Ty.Body.copy(color = Pal.Amber, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            style = Ty.Body.copy(color = Pal.Amber, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                         )
 
                         Spacer(Modifier.height(2.dp))
@@ -141,7 +141,7 @@ fun QuickSharePanel(
                                 style = Ty.Heading.copy(
                                     color = Pal.Text,
                                     letterSpacing = 4.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 ),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
@@ -150,7 +150,7 @@ fun QuickSharePanel(
                             )
                         }
 
-                        Text("Scan QR or enter URL on your phone", style = Ty.Small.copy(fontSize = 12.sp))
+                        Text("Scan QR or enter URL on your phone", style = Ty.Small.copy(fontSize = 16.sp))
                     }
                 }
             } else {
@@ -261,7 +261,7 @@ private fun SharedFileRow(
                 )
                 Text(
                     "${item.formattedSize} • Saved to Downloads/LeanTV/ • ${item.formattedTime}",
-                    style = Ty.Small.copy(fontSize = 12.sp)
+                    style = Ty.Small.copy(fontSize = 16.sp)
                 )
             }
 
@@ -292,7 +292,7 @@ private fun SharedTextRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     if (item.isUrl) "Web Link" else "Note from Phone",
-                    style = Ty.Small.copy(color = if (item.isUrl) Pal.Sky else Pal.Mint, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    style = Ty.Small.copy(color = if (item.isUrl) Pal.Sky else Pal.Mint, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -305,7 +305,7 @@ private fun SharedTextRow(
                 )
                 Text(
                     "Received at ${item.formattedTime}",
-                    style = Ty.Small.copy(fontSize = 12.sp)
+                    style = Ty.Small.copy(fontSize = 16.sp)
                 )
             }
 

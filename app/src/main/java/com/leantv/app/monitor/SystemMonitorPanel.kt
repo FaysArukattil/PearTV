@@ -65,7 +65,7 @@ fun SystemMonitorPanel(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14)),
+            .background(Color(0xE6000000)),
         contentAlignment = Alignment.CenterEnd
     ) {
         Column(
@@ -121,7 +121,7 @@ fun SystemMonitorPanel(
                         Text("RAM Usage", style = Ty.Heading.copy(fontWeight = FontWeight.SemiBold))
                         Text(
                             "${mem.percentUsed}% (${mem.formattedUsed} / ${mem.formattedTotal})",
-                            style = Ty.Body.copy(color = ramColor, fontWeight = FontWeight.Bold)
+                            style = Ty.Body.copy(color = ramColor, fontWeight = FontWeight.SemiBold)
                         )
                     }
 
@@ -148,7 +148,7 @@ fun SystemMonitorPanel(
                     ) {
                         Text("Free Memory: ${mem.formattedAvail}", style = Ty.Small)
                         if (mem.isLowMem) {
-                            Text("Low Memory Warning", style = Ty.Small.copy(color = Pal.Coral, fontWeight = FontWeight.Bold))
+                            Text("Low Memory Warning", style = Ty.Small.copy(color = Pal.Coral, fontWeight = FontWeight.SemiBold))
                         }
                     }
                 }
@@ -175,7 +175,7 @@ fun SystemMonitorPanel(
                             "$p%",
                             style = Ty.Title.copy(
                                 color = if (p > 80) Pal.Coral else Pal.Amber,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.SemiBold
                             )
                         )
                     }
@@ -191,9 +191,9 @@ fun SystemMonitorPanel(
                 Column {
                     Text(
                         "Running Processes (${runningApps.size})",
-                        style = Ty.Heading.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        style = Ty.Heading.copy(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     )
-                    Text("Safe background termination", style = Ty.Small.copy(fontSize = 12.sp))
+                    Text("Safe background termination", style = Ty.Small.copy(fontSize = 16.sp))
                 }
 
                 TvButton(
@@ -281,13 +281,13 @@ private fun RunningProcessRow(
                     style = Ty.Body.copy(
                         fontWeight = FontWeight.SemiBold,
                         color = if (focused) Pal.Amber else Pal.Text,
-                        fontSize = 17.sp
+                        fontSize = 19.sp
                     ),
                     maxLines = 1
                 )
                 Text(
                     app.packageName,
-                    style = Ty.Small.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    style = Ty.Small.copy(fontFamily = FontFamily.Monospace, fontSize = 16.sp),
                     maxLines = 1
                 )
             }
@@ -296,7 +296,7 @@ private fun RunningProcessRow(
             if (app.pssMb > 0) {
                 Text(
                     String.format(Locale.US, "%.1f MB", app.pssMb),
-                    style = Ty.Small.copy(color = Pal.Sky, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    style = Ty.Small.copy(color = Pal.Sky, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 )
             }
 

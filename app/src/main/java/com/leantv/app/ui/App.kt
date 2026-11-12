@@ -151,7 +151,7 @@ private fun Scrim(content: @Composable () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14)),
+            .background(Color(0xE6000000)),
         contentAlignment = Alignment.Center,
     ) { content() }
 }

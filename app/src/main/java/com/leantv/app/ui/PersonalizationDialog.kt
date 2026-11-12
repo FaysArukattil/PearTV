@@ -70,7 +70,7 @@ val WALLPAPER_THEMES = listOf(
     ThemePreset(
         id = "glass",
         name = "Apple Dark Glass",
-        gradientColors = listOf(Color(0xFF14171E), Color(0xFF1E222B), Color(0xFF282D38)),
+        gradientColors = listOf(Color(0xFF1C1C1E), Color(0xFF232326), Color(0xFF2C2C2E)),
         description = "Frosted smoky slate with dynamic hero color accent."
     )
 )
@@ -89,7 +89,7 @@ fun PersonalizationDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xD905070A))
+            .background(Color(0xE6000000))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
@@ -97,25 +97,23 @@ fun PersonalizationDialog(
         Column(
             modifier = Modifier
                 .width(620.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF161922))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
+                .glassCard()
                 .clickable(enabled = false) {}
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = "PERSONALIZATION",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF64B5F6),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF64D2FF),
                 letterSpacing = 2.sp
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "Wallpaper & Display",
                 fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
 
@@ -123,7 +121,7 @@ fun PersonalizationDialog(
 
             Text(
                 text = "Ambient Themes",
-                fontSize = 14.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xCCFFFFFF),
                 modifier = Modifier.fillMaxWidth()
@@ -169,7 +167,7 @@ fun PersonalizationDialog(
 
             // Custom Wallpaper from File Manager
             SettingTogglePill(
-                label = "🖼️ Choose Custom Wallpaper from TV Storage...",
+                label = "Choose Custom Wallpaper from TV Storage...",
                 isActive = false,
                 onClick = onOpenFileManagerForWallpaper,
                 modifier = Modifier.fillMaxWidth()
@@ -184,7 +182,7 @@ fun PersonalizationDialog(
                     .clickable(onClick = onDismiss)
                     .padding(horizontal = 24.dp, vertical = 10.dp)
             ) {
-                Text("Close", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Close", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -207,7 +205,7 @@ private fun ThemeCard(
             .background(if (isFocused) Color(0x38FFFFFF) else Color(0x14FFFFFF))
             .border(
                 width = if (isFocused) 2.dp else if (isSelected) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else if (isSelected) Color(0xFF64B5F6) else Color(0x22FFFFFF),
+                color = if (isFocused) Color.White else if (isSelected) Color(0xFF64D2FF) else Color(0x22FFFFFF),
                 shape = RoundedCornerShape(14.dp)
             )
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -228,8 +226,8 @@ private fun ThemeCard(
         Spacer(Modifier.height(8.dp))
         Text(
             text = theme.name,
-            color = if (isSelected) Color(0xFF90CAF9) else Color.White,
-            fontSize = 12.sp,
+            color = if (isSelected) Color(0xFF64D2FF) else Color.White,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1
         )
@@ -250,10 +248,10 @@ private fun SettingTogglePill(
         modifier = modifier
             .scale(if (isFocused) 1.03f else 1f)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isFocused) Color.White else if (isActive) Color(0x3364B5F6) else Color(0x16FFFFFF))
+            .background(if (isFocused) Color.White else if (isActive) Color(0x3364D2FF) else Color(0x16FFFFFF))
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else if (isActive) Color(0xFF64B5F6) else Color(0x22FFFFFF),
+                color = if (isFocused) Color.White else if (isActive) Color(0xFF64D2FF) else Color(0x22FFFFFF),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -264,7 +262,7 @@ private fun SettingTogglePill(
         Text(
             text = label,
             color = if (isFocused) Color.Black else Color.White,
-            fontSize = 13.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
     }

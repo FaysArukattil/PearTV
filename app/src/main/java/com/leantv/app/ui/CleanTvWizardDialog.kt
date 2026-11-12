@@ -57,17 +57,15 @@ fun CleanTvWizardDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD905080E))
+            .background(Color(0xE6000000))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(720.dp)
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF13171F))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
+                .width(860.dp)
+                .glassCard()
                 .clickable(enabled = false) {}
                 .padding(30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -75,15 +73,15 @@ fun CleanTvWizardDialog(
             // Header with Device Recognition
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0x3364B5F6))
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0x3364D2FF))
                     .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = "📺 RECOGNIZED: $deviceLabel",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF90CAF9),
+                    text = "DETECTED: ${deviceLabel.uppercase()}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF64D2FF),
                     letterSpacing = 1.sp
                 )
             }
@@ -91,13 +89,13 @@ fun CleanTvWizardDialog(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                "⚡ CleanYourTV System Debloater",
+                "Clean your TV",
                 style = Ty.Title.copy(color = Color.White, fontSize = 28.sp)
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 "Telemetry daemons, manufacturer ads, and background trackers will be safely removed. Choose which features to KEEP or REMOVE:",
-                style = Ty.Dim.copy(fontSize = 13.sp),
+                style = Ty.Dim.copy(fontSize = 16.sp),
                 textAlign = TextAlign.Center
             )
 
@@ -107,7 +105,7 @@ fun CleanTvWizardDialog(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp),
+                    .height(300.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(majorOptions, key = { it.id }) { opt ->
@@ -137,13 +135,13 @@ fun CleanTvWizardDialog(
                         Text(
                             text = "One-Time Remote Authorization:",
                             color = Color.White,
-                            fontSize = 12.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = "Ensure 'USB debugging' is ON in Developer Options, then accept prompt.",
                             color = Color(0x99FFFFFF),
-                            fontSize = 11.sp
+                            fontSize = 15.sp
                         )
                     }
                     Spacer(Modifier.width(10.dp))
@@ -154,7 +152,7 @@ fun CleanTvWizardDialog(
                             .clickable(onClick = onOpenDeveloperOptions)
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text("Open Developer Options", color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Open Developer Options", color = Color(0xFF64D2FF), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -175,7 +173,7 @@ fun CleanTvWizardDialog(
                 )
 
                 TvButton(
-                    text = "⚡ Clean TV Now",
+                    text = "Clean TV Now",
                     onClick = onConfirm,
                     primary = true,
                     modifier = Modifier.weight(1.6f).focusRequester(autoFocus)
@@ -209,9 +207,9 @@ private fun MajorOptionRow(
     Box(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(22.dp))
             .background(cardBg)
-            .border(if (focused) 2.dp else 1.dp, ringColor, RoundedCornerShape(14.dp))
+            .border(if (focused) 2.dp else 1.dp, ringColor, RoundedCornerShape(22.dp))
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onToggle)
             .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -226,14 +224,14 @@ private fun MajorOptionRow(
                     option.title,
                     style = Ty.Heading.copy(
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     option.description,
-                    style = Ty.Small.copy(fontSize = 12.sp, color = Color(0xAAFFFFFF))
+                    style = Ty.Small.copy(fontSize = 16.sp, color = Color(0xAAFFFFFF))
                 )
             }
 
@@ -242,16 +240,16 @@ private fun MajorOptionRow(
             // Action Status Badge: "KEEP" or "REMOVE"
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isRemoving) Color(0xFFFF5252) else Color(0xFF4CAF50))
+                    .clip(RoundedCornerShape(50))
+                    .background(if (isRemoving) Color(0xFFFF453A) else Color(0xFF30D158))
                     .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = if (isRemoving) "REMOVE ✕" else "KEEP ✓",
+                    text = if (isRemoving) "REMOVE" else "KEEP",
                     style = Ty.Small.copy(
                         color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp
                     )
                 )
             }

@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
@@ -290,3 +291,9 @@ fun Modifier.modalTrap(): Modifier {
         .focusProperties { exit = { FocusRequester.Cancel } }
         .focusGroup()
 }
+
+/** Shared popup/panel surface: dark glass gradient, big rounded corners, hairline edge (reference "glass_panel"). */
+fun Modifier.glassCard(radius: Dp = 32.dp): Modifier = this
+    .clip(RoundedCornerShape(radius))
+    .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
+    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(radius))

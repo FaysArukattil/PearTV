@@ -104,13 +104,13 @@ fun InstalledAppsScreen(s: UiState, vm: MainViewModel) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "${displayedApps.size} apps shown (${s.installedApps.size} installed on TV)",
-                    style = Ty.Dim.copy(fontSize = 16.sp)
+                    style = Ty.Dim.copy(fontSize = 19.sp)
                 )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TvButton(
-                    text = if (showSearchBar) "Hide Search" else "🔍 Search",
+                    text = if (showSearchBar) "Hide Search" else "Search",
                     onClick = {
                         showSearchBar = !showSearchBar
                         if (!showSearchBar) vm.setAppSearchQuery("")
@@ -358,7 +358,7 @@ private fun InstalledAppCard(
                     app.packageName,
                     style = Ty.Small.copy(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
+                        fontSize = 16.sp,
                         color = Pal.Dim
                     ),
                     maxLines = 1,
@@ -368,11 +368,11 @@ private fun InstalledAppCard(
                 Spacer(Modifier.height(4.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("v${app.versionName}", style = Ty.Small.copy(fontSize = 13.sp))
-                    Text("•", style = Ty.Small.copy(fontSize = 13.sp))
-                    Text(app.formattedSize, style = Ty.Small.copy(fontSize = 13.sp))
-                    Text("•", style = Ty.Small.copy(fontSize = 13.sp))
-                    Text("Installed: ${app.formattedInstallDate}", style = Ty.Small.copy(fontSize = 13.sp))
+                    Text("v${app.versionName}", style = Ty.Small.copy(fontSize = 16.sp))
+                    Text("•", style = Ty.Small.copy(fontSize = 16.sp))
+                    Text(app.formattedSize, style = Ty.Small.copy(fontSize = 16.sp))
+                    Text("•", style = Ty.Small.copy(fontSize = 16.sp))
+                    Text("Installed: ${app.formattedInstallDate}", style = Ty.Small.copy(fontSize = 16.sp))
                 }
             }
 
@@ -384,7 +384,7 @@ private fun InstalledAppCard(
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
-                    if (focused) "Press OK for Options ➔" else "➔",
+                    if (focused) "Press OK for Options" else "",
                     style = Ty.Small.copy(
                         color = if (focused) Pal.Amber else Pal.Dim,
                         fontWeight = FontWeight.SemiBold
@@ -411,7 +411,7 @@ private fun AppActionDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xE6000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -426,7 +426,7 @@ private fun AppActionDialog(
         ) {
             Text(app.appName, style = Ty.Title.copy(fontSize = 26.sp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(4.dp))
-            Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp))
+            Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace, fontSize = 16.sp))
 
             Spacer(Modifier.height(24.dp))
 
@@ -444,7 +444,7 @@ private fun AppActionDialog(
                 }
 
                 TvButton(
-                    text = "⚙  Open TV App Settings",
+                    text = "Open TV App Settings",
                     onClick = onDetails,
                     modifier = Modifier.fillMaxWidth().let {
                         if (!app.launchIntentAvailable) it.focusRequester(autoFocus) else it
@@ -454,7 +454,7 @@ private fun AppActionDialog(
 
                 if (app.canUninstall) {
                     TvButton(
-                        text = "🗑  Uninstall Application",
+                        text = "Uninstall Application",
                         onClick = onUninstall,
                         modifier = Modifier.fillMaxWidth(),
                         primary = false
@@ -483,7 +483,7 @@ private fun UninstallConfirmDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9050E14))
+            .background(Color(0xE6000000))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {

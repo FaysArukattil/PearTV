@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -92,7 +93,10 @@ fun TvCanvas(content: @Composable () -> Unit) {
         val m = res.displayMetrics
         minOf(m.widthPixels / 1280f, m.heightPixels / 720f).coerceAtLeast(0.5f)
     }
-    CompositionLocalProvider(LocalDensity provides Density(d, 1f)) { content() }
+    CompositionLocalProvider(
+        LocalDensity provides Density(d, 1f),
+        LocalTextStyle provides LocalTextStyle.current.merge(TextStyle(fontFamily = Outfit)),
+    ) { content() }
 }
 
 @Composable

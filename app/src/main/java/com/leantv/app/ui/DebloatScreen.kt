@@ -100,13 +100,13 @@ fun DebloatScreen(s: UiState, vm: MainViewModel) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "${s.apps.size} system apps found • ${s.protectedCount} critical core apps protected",
-                    style = Ty.Dim.copy(fontSize = 16.sp)
+                    style = Ty.Dim.copy(fontSize = 19.sp)
                 )
             }
 
             // Quick Auto-Clean preset button
             TvButton(
-                text = "⚡ CleanYourTV Auto Preset",
+                text = "CleanYourTV Auto Preset",
                 onClick = vm::applyCleanYourTvPreset,
                 primary = true,
                 modifier = Modifier.focusRequester(fr)
@@ -253,7 +253,7 @@ private fun DebloatAppRow(
                         app.label,
                         style = Ty.Heading.copy(
                             color = if (focused) Pal.Amber else Pal.Text,
-                            fontSize = 18.sp
+                            fontSize = 20.sp
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -273,7 +273,7 @@ private fun DebloatAppRow(
                     style = Ty.Small.copy(
                         fontFamily = FontFamily.Monospace,
                         color = Pal.Dim,
-                        fontSize = 13.sp
+                        fontSize = 16.sp
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -283,7 +283,7 @@ private fun DebloatAppRow(
 
                 Text(
                     app.why,
-                    style = Ty.Small.copy(color = Color(0xFFC7DCDE), fontSize = 14.sp),
+                    style = Ty.Small.copy(color = Color(0xFFC7DCDE), fontSize = 17.sp),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )

@@ -1,5 +1,15 @@
 package com.leantv.app.ui
 
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Usb
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Android
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Description
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -128,7 +138,7 @@ fun FileManagerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF090B0F))
+            .background(Color(0xFF000000))
             .padding(horizontal = 48.dp, vertical = 32.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -141,16 +151,16 @@ fun FileManagerScreen(
                 Column {
                     Text(
                         text = "SAMSUNG MY FILES",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFF9800),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFF9F0A),
                         letterSpacing = 2.sp
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "TV File Manager",
                         fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
                 }
@@ -159,7 +169,7 @@ fun FileManagerScreen(
                     if (!hasPerm) {
                         FileGlassPill(
                             text = "Grant Storage Access",
-                            accent = Color(0xFFFF9800),
+                            accent = Color(0xFFFF9F0A),
                             onClick = { FileManagerHelper.requestStoragePermission(ctx) }
                         )
                     }
@@ -180,7 +190,7 @@ fun FileManagerScreen(
                         .background(Color(0x33FFA726))
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
-                    Text(text = msg, color = Color(0xFFFFE082), fontSize = 13.sp)
+                    Text(text = msg, color = Color(0xFFFFD60A), fontSize = 16.sp)
                 }
             }
 
@@ -241,7 +251,7 @@ fun FileManagerScreen(
                     text = if (activeCategory != null) "Category: ${activeCategory?.replaceFirstChar { it.uppercase() }}"
                     else currentDir?.path ?: "Storage Root",
                     color = Color(0xBBFFFFFF),
-                    fontSize = 13.sp,
+                    fontSize = 16.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -255,14 +265,14 @@ fun FileManagerScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Scanning storage...", color = Color(0x88FFFFFF), fontSize = 16.sp)
+                    Text("Scanning storage...", color = Color(0x88FFFFFF), fontSize = 19.sp)
                 }
             } else if (currentFiles.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("This folder is empty.", color = Color(0x66FFFFFF), fontSize = 16.sp)
+                    Text("This folder is empty.", color = Color(0x66FFFFFF), fontSize = 19.sp)
                 }
             } else {
                 LazyColumn(
@@ -324,7 +334,7 @@ fun FileManagerScreen(
                         }
                     }
                 }) {
-                    Text("Delete", color = Color(0xFFFF5252))
+                    Text("Delete", color = Color(0xFFFF453A))
                 }
             },
             dismissButton = {
@@ -332,7 +342,7 @@ fun FileManagerScreen(
                     Text("Cancel", color = Color.White)
                 }
             },
-            containerColor = Color(0xFF1E222B)
+            containerColor = Color(0xFF232326)
         )
     }
 
@@ -343,7 +353,7 @@ fun FileManagerScreen(
             title = { Text("Rename File", color = Color.White) },
             text = {
                 Column {
-                    Text("Enter new filename:", color = Color(0xCCFFFFFF), fontSize = 13.sp)
+                    Text("Enter new filename:", color = Color(0xCCFFFFFF), fontSize = 16.sp)
                     Spacer(Modifier.height(8.dp))
                     TextField(
                         value = renameInput,
@@ -371,7 +381,7 @@ fun FileManagerScreen(
                         }
                     }
                 }) {
-                    Text("Save", color = Color(0xFF64B5F6))
+                    Text("Save", color = Color(0xFF64D2FF))
                 }
             },
             dismissButton = {
@@ -379,7 +389,7 @@ fun FileManagerScreen(
                     Text("Cancel", color = Color.White)
                 }
             },
-            containerColor = Color(0xFF1E222B)
+            containerColor = Color(0xFF232326)
         )
     }
 }
@@ -404,7 +414,7 @@ private fun CategoryPill(
             )
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else if (isSelected) Color(0xFFFFA726) else Color(0x22FFFFFF),
+                color = if (isFocused) Color.White else if (isSelected) Color(0xFFFF9F0A) else Color(0x22FFFFFF),
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -413,8 +423,8 @@ private fun CategoryPill(
     ) {
         Text(
             text = label,
-            color = if (isFocused) Color.Black else if (isSelected) Color(0xFFFFB74D) else Color.White,
-            fontSize = 13.sp,
+            color = if (isFocused) Color.Black else if (isSelected) Color(0xFFFF9F0A) else Color.White,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -448,17 +458,19 @@ private fun DriveCard(
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Column {
-            Text(
-                text = (if (drive.isRemovable) "🔌 " else "💾 ") + drive.name,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (drive.isRemovable) Icons.Rounded.Usb else Icons.Rounded.Storage,
+                    contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(text = drive.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Medium)
+            }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "${StorageHelper.formatBytes(drive.freeBytes)} free of ${StorageHelper.formatBytes(drive.totalBytes)}",
                 color = Color(0x88FFFFFF),
-                fontSize = 11.sp
+                fontSize = 15.sp
             )
         }
     }
@@ -477,13 +489,21 @@ private fun FileRow(
     val isFocused by interaction.collectIsFocusedAsState()
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy  HH:mm", Locale.getDefault()) }
 
-    val iconSymbol = when {
-        item.isDirectory -> "📁"
-        item.extension == "apk" -> "📦"
-        item.mimeType.startsWith("video/") -> "🎬"
-        item.mimeType.startsWith("audio/") -> "🎵"
-        item.mimeType.startsWith("image/") -> "🖼️"
-        else -> "📄"
+    val fileIcon = when {
+        item.isDirectory -> Icons.Rounded.Folder
+        item.extension == "apk" -> Icons.Rounded.Android
+        item.mimeType.startsWith("video/") -> Icons.Rounded.Movie
+        item.mimeType.startsWith("audio/") -> Icons.Rounded.MusicNote
+        item.mimeType.startsWith("image/") -> Icons.Rounded.Image
+        else -> Icons.Rounded.Description
+    }
+    val fileTint = when {
+        item.isDirectory -> Color(0xFF64D2FF)
+        item.extension == "apk" -> Color(0xFF30D158)
+        item.mimeType.startsWith("video/") -> Color(0xFFBF5AF2)
+        item.mimeType.startsWith("audio/") -> Color(0xFFFF9F0A)
+        item.mimeType.startsWith("image/") -> Color(0xFFFF453A)
+        else -> Color(0xFF8E8E93)
     }
 
     Column(
@@ -514,13 +534,13 @@ private fun FileRow(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = iconSymbol, fontSize = 20.sp)
+                Icon(fileIcon, contentDescription = null, tint = fileTint, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         text = item.name,
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -528,7 +548,7 @@ private fun FileRow(
                     Text(
                         text = "${dateFormat.format(Date(item.lastModified))} • ${if (item.isDirectory) "Folder" else StorageHelper.formatBytes(item.sizeBytes)}",
                         color = Color(0x88FFFFFF),
-                        fontSize = 11.sp
+                        fontSize = 15.sp
                     )
                 }
             }
@@ -544,8 +564,8 @@ private fun FileRow(
                     Text(
                         text = item.extension.uppercase(),
                         color = Color(0xDDFFFFFF),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -583,7 +603,7 @@ private fun FileActionPill(text: String, onClick: () -> Unit) {
         Text(
             text = text,
             color = if (isFocused) Color.Black else Color.White,
-            fontSize = 11.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -615,7 +635,7 @@ private fun FileGlassPill(
         Text(
             text = text,
             color = if (isFocused && accent == Color.White) Color.Black else Color.White,
-            fontSize = 13.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

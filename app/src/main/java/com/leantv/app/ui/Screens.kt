@@ -89,7 +89,7 @@ fun WelcomeScreen(vm: MainViewModel) {
                         .background(Pal.Mint.copy(alpha = 0.2f))
                         .padding(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("1-CLICK TRANSFORMATION", style = Ty.Small.copy(color = Pal.Mint, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+                    Text("1-CLICK TRANSFORMATION", style = Ty.Small.copy(color = Pal.Mint, fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
                 }
             }
 
@@ -101,12 +101,12 @@ fun WelcomeScreen(vm: MainViewModel) {
                 style = Ty.Dim,
             )
             Spacer(Modifier.height(22.dp))
-            Fact("⚡ Single-click debloating with custom choice for Miracast, Assistant, Netflix & Prime.")
-            Fact("🔒 100% safe & reversible. Full restore journal saved on-device.")
-            Fact("📺 Apple TV-style home launcher with TV inputs, Quick Share & Google Account switcher.")
-            Fact("🛡️ Network-wide smart TV ad blocking via AdGuard Private DNS.")
+            Fact("Single-click debloating with custom choice for Miracast, Assistant, Netflix & Prime.")
+            Fact("100% safe & reversible. Full restore journal saved on-device.")
+            Fact("Apple TV-style home launcher with TV inputs, Quick Share & Google Account switcher.")
+            Fact("Network-wide smart TV ad blocking via AdGuard Private DNS.")
             Spacer(Modifier.height(28.dp))
-            TvButton("⚡ Start Transformation", onClick = vm::begin, modifier = Modifier.focusRequester(fr), primary = true)
+            TvButton("Start Transformation", onClick = vm::begin, modifier = Modifier.focusRequester(fr), primary = true)
             Spacer(Modifier.height(12.dp))
             Text("Navigate with arrow keys and press OK on your TV remote.", style = Ty.Small)
         }
@@ -287,7 +287,7 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
                     .background(Pal.Mint.copy(alpha = 0.18f))
                     .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                Text("TV CONNECTED & READY", style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.Bold))
+                Text("TV CONNECTED & READY", style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold))
             }
         }
 
@@ -323,7 +323,7 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
                             .background(Pal.Amber.copy(alpha = 0.22f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("⚡", fontSize = 32.sp)
+                        Text("", fontSize = 32.sp)
                     }
 
                     Column {
@@ -333,7 +333,7 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
                         ) {
                             Text(
                                 "CLEANYOURTV AUTO PRESET",
-                                style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
                             )
                             Pill("RECOMMENDED", Pal.Mint)
                         }
@@ -342,14 +342,14 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
 
                         Text(
                             "Clean Your TV in One Single Click",
-                            style = Ty.Heading.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            style = Ty.Heading.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                         )
 
                         Spacer(Modifier.height(4.dp))
 
                         Text(
                             "Safely strip all ad-serving feeds, PatchWall, telemetry & bloatware. Enables 2x animation speeds and AdGuard DNS.",
-                            style = Ty.Small.copy(color = Pal.Dim, fontSize = 14.sp)
+                            style = Ty.Small.copy(color = Pal.Dim, fontSize = 17.sp)
                         )
                     }
                 }
@@ -357,7 +357,7 @@ fun DashboardScreen(s: UiState, vm: MainViewModel) {
                 Spacer(Modifier.width(20.dp))
 
                 TvButton(
-                    text = "⚡ Clean TV Now",
+                    text = "Clean TV Now",
                     onClick = vm::requestCleanTvWizard,
                     primary = true,
                     modifier = Modifier.focusRequester(fr)

@@ -1,6 +1,19 @@
 package com.leantv.app.launcher
 
 import android.view.KeyEvent
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Info
+import com.leantv.app.ui.glassCard
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
@@ -146,17 +159,21 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     // Fullscreen Overlay Screens
     if (s.showStorageManager) {
-        StorageManagerScreen(
-            adbClient = vm.adb,
-            onClose = vm::closeStorageManager
-        )
+        TvCanvas {
+            StorageManagerScreen(
+                adbClient = vm.adb,
+                onClose = vm::closeStorageManager
+            )
+        }
         return
     }
 
     if (s.showFileManager) {
-        FileManagerScreen(
-            onClose = vm::closeFileManager
-        )
+        TvCanvas {
+            FileManagerScreen(
+                onClose = vm::closeFileManager
+            )
+        }
         return
     }
 
@@ -999,54 +1016,46 @@ private fun CleanTvSuccessDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(Color(0xE6000000))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(540.dp)
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF15181E))
-                .border(2.dp, Color.White, RoundedCornerShape(26.dp))
-                .padding(32.dp),
+                .width(640.dp)
+                .glassCard()
+                .padding(horizontal = 48.dp, vertical = 42.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Box(
-                Modifier
-                    .size(68.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x3300C853)),
+                Modifier.size(88.dp).clip(CircleShape).background(Color(0x3330D158)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✓", style = Ty.Display.copy(color = Color(0xFF00C853), fontSize = 38.sp))
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = Pal.Mint, modifier = Modifier.size(52.dp))
             }
-
-            Text("Your TV is Transformed!", style = Ty.Title.copy(color = Color.White, fontSize = 28.sp))
-
+            Text(
+                "Your TV is Transformed",
+                style = Ty.Title.copy(fontSize = 38.sp),
+                textAlign = TextAlign.Center
+            )
             Text(
                 summary,
-                style = Ty.Body.copy(color = Color(0xCCFFFFFF)),
+                style = Ty.Body.copy(color = Color(0xCCFFFFFF), fontSize = 22.sp, lineHeight = 30.sp),
                 textAlign = TextAlign.Center
             )
-
             Text(
-                "Telemetry daemons and background ads are now disabled. 0.5x animation scales applied. 100% reversible anytime.",
-                style = Ty.Small.copy(color = Color(0x99FFFFFF)),
+                "Telemetry and background ads are now disabled, with faster animations. Fully reversible anytime.",
+                style = Ty.Dim.copy(fontSize = 18.sp, lineHeight = 26.sp),
                 textAlign = TextAlign.Center
             )
-
-            Spacer(Modifier.height(6.dp))
-
+            Spacer(Modifier.height(10.dp))
             TvButton(
-                text = "Enjoy CleanTV ➔",
+                text = "Done",
                 onClick = onDismiss,
                 primary = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(autoFocus)
+                modifier = Modifier.fillMaxWidth().focusRequester(autoFocus)
             )
         }
     }
@@ -1223,92 +1232,52 @@ private fun ProfileAccountsDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(Color(0xE6000000))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(520.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF15181E))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .width(660.dp)
+                .glassCard()
+                .padding(horizontal = 44.dp, vertical = 38.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Google Accounts & Profile", style = Ty.Title.copy(color = Color.White, fontSize = 26.sp))
-            Text("Manage accounts linked to this Android TV system", style = Ty.Dim.copy(fontSize = 14.sp))
+            Text("Accounts", style = Ty.Title.copy(fontSize = 38.sp))
+            Text("Google accounts linked to this TV", style = Ty.Dim.copy(fontSize = 19.sp))
+            Spacer(Modifier.height(6.dp))
 
-            Spacer(Modifier.height(4.dp))
-
-            Column(
+            Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0x33000000))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0x14FFFFFF))
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Currently Active:", style = Ty.Small.copy(color = Color(0xFF64D2FF), fontWeight = FontWeight.Bold))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1976D2)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(profile.initial, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(profile.displayName, style = Ty.Heading.copy(color = Color.White, fontSize = 17.sp))
-                        profile.email?.let {
-                            Text(it, style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 13.sp))
-                        }
-                    }
+                Box(
+                    Modifier.size(60.dp).clip(CircleShape).background(Pal.Amber),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(profile.initial, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Medium)
                 }
-
-                if (profile.allAccounts.size > 1) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("All Synced Accounts (${profile.allAccounts.size}):", style = Ty.Small.copy(color = Pal.Dim))
-                    profile.allAccounts.forEach { acc ->
-                        Text("• $acc", style = Ty.Body.copy(color = Color.White, fontSize = 14.sp))
+                Spacer(Modifier.width(18.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(profile.displayName, style = Ty.Heading.copy(fontSize = 24.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    profile.email?.let {
+                        Text(it, style = Ty.Dim.copy(fontSize = 18.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (profile.allAccounts.size > 1) {
+                        Text("${profile.allAccounts.size} accounts synced", style = Ty.Small.copy(fontSize = 16.sp))
                     }
                 }
             }
 
             Spacer(Modifier.height(4.dp))
-
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                TvButton(
-                    text = "➕ Add or Switch Google Account",
-                    onClick = onAddAccount,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(autoFocus),
-                    primary = true
-                )
-
-                TvButton(
-                    text = "⚙ Manage TV Accounts in System Settings",
-                    onClick = onManageSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-
-                TvButton(
-                    text = "Close",
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-            }
+            TvPill("Add or Switch Account", Icons.Rounded.PersonAdd, onAddAccount, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 62.dp, textSize = 21.sp, fill = true)
+            TvPill("Manage in System Settings", Icons.Rounded.Settings, onManageSettings, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
+            TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
         }
     }
 }
@@ -1327,71 +1296,29 @@ private fun QuickShareHubDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(Color(0xE6000000))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(540.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF15181E))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .width(660.dp)
+                .glassCard()
+                .padding(horizontal = 44.dp, vertical = 38.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Quick Share Hub", style = Ty.Title.copy(color = Color.White, fontSize = 28.sp))
+            Text("Quick Share", style = Ty.Title.copy(fontSize = 38.sp))
             Text(
-                "Send files, APKs, videos, and links to your TV from any Android, iPhone, iPad, Mac, or PC.",
-                style = Ty.Dim.copy(fontSize = 14.sp),
-                textAlign = TextAlign.Center
+                "Send files, APKs, videos and links to this TV from any phone or computer.",
+                style = Ty.Dim.copy(fontSize = 19.sp, lineHeight = 27.sp)
             )
-
             Spacer(Modifier.height(6.dp))
-
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                TvButton(
-                    text = "🌐  Universal Wi-Fi AirShare (iPhone & Android - No App Needed)",
-                    onClick = onLaunchUniversalAirShare,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(autoFocus),
-                    primary = true
-                )
-
-                TvButton(
-                    text = "⚡  Launch Android Quick Share (Nearby Share)",
-                    onClick = onLaunchNative,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-
-                TvButton(
-                    text = "📲  Launch / Install LocalSend (Cross-Platform AirDrop)",
-                    onClick = onLaunchLocalSend,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-
-                TvButton(
-                    text = "🛒  Update / Install via Google Play Store",
-                    onClick = onLaunchGoogleStore,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-
-                TvButton(
-                    text = "Close",
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = false
-                )
-            }
+            TvPill("Wi-Fi AirShare (no app needed)", Icons.Rounded.Wifi, onLaunchUniversalAirShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 62.dp, textSize = 21.sp, fill = true, maxLabelWidth = 460.dp)
+            TvPill("Android Quick Share", Icons.Rounded.Bolt, onLaunchNative, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
+            TvPill("LocalSend", Icons.Rounded.Share, onLaunchLocalSend, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
+            TvPill("Get or update via Play Store", Icons.Rounded.Download, onLaunchGoogleStore, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true, maxLabelWidth = 460.dp)
+            TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
         }
     }
 }
@@ -1413,42 +1340,37 @@ private fun LauncherActionDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(Color(0xE6000000))
             .modalTrap(),
         contentAlignment = Alignment.Center
     ) {
-        val cancelFocus = rememberAutoFocus(app.packageName)
+        val firstFocus = rememberAutoFocus(app.packageName)
         Column(
             Modifier
-                .width(480.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF15181E))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
-                .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .width(560.dp)
+                .glassCard()
+                .padding(horizontal = 36.dp, vertical = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Text(app.appName, style = Ty.Title.copy(color = Color.White))
-            Text(app.packageName, style = Ty.Small.copy(fontFamily = FontFamily.Monospace, color = Color(0x99FFFFFF)))
-
+            Text(app.appName, style = Ty.Title.copy(fontSize = 34.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                app.packageName,
+                style = Ty.Small.copy(fontFamily = FontFamily.Monospace, color = Color(0x99FFFFFF), fontSize = 15.sp),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
             Spacer(Modifier.height(6.dp))
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TvButton("Open Application", onClick = onOpen, primary = true, modifier = Modifier.fillMaxWidth())
-                TvButton(
-                    if (isFavorite) "Unpin from Dock / Favorites" else "Pin to Dock / Favorites",
-                    onClick = onToggleFavorite,
-                    primary = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                TvButton("Clear Application Data", onClick = onClearData, primary = false, modifier = Modifier.fillMaxWidth())
-                TvButton("Clear Cache", onClick = onClearCache, primary = false, modifier = Modifier.fillMaxWidth())
-                TvButton("Hide from Launcher Grid", onClick = onHideApp, primary = false, modifier = Modifier.fillMaxWidth())
-                if (app.canUninstall) {
-                    TvButton("Uninstall Application", onClick = onUninstall, primary = false, modifier = Modifier.fillMaxWidth())
-                }
-                TvButton("System App Info", onClick = onDetails, primary = false, modifier = Modifier.fillMaxWidth())
-                TvButton("Close", onClick = onDismiss, primary = false, modifier = Modifier.fillMaxWidth().focusRequester(cancelFocus))
+            val h = 52.dp
+            val ts = 20.sp
+            TvPill("Open", Icons.Rounded.PlayArrow, onOpen, Modifier.fillMaxWidth().focusRequester(firstFocus), height = h, textSize = ts, fill = true)
+            TvPill(if (isFavorite) "Unpin from Dock" else "Pin to Dock", Icons.Rounded.PushPin, onToggleFavorite, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Clear Data", Icons.Rounded.DeleteSweep, onClearData, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Clear Cache", Icons.Rounded.CleaningServices, onClearCache, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Hide from Home", Icons.Rounded.VisibilityOff, onHideApp, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            if (app.canUninstall) {
+                TvPill("Uninstall", Icons.Rounded.Delete, onUninstall, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
             }
+            TvPill("App Info", Icons.Rounded.Info, onDetails, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
         }
     }
 }
@@ -1547,31 +1469,29 @@ private fun LauncherUninstallDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(Color(0xE6000000))
             .modalTrap(),
         contentAlignment = Alignment.Center
     ) {
         val cancelFocus = rememberAutoFocus(app.packageName)
         Column(
             Modifier
-                .width(540.dp)
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF15181E))
-                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
-                .padding(36.dp),
+                .width(640.dp)
+                .glassCard()
+                .padding(horizontal = 46.dp, vertical = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Uninstall ${app.appName}?", style = Ty.Title.copy(color = Color.White))
+            Text("Uninstall ${app.appName}?", style = Ty.Title.copy(fontSize = 34.sp), textAlign = TextAlign.Center, maxLines = 2)
             Text(
-                "CleanYourTV will open the Android TV uninstaller for ${app.packageName}.\nConfirm the prompt to remove the application.",
-                style = Ty.Dim
+                "Android will ask you to confirm the removal.",
+                style = Ty.Dim.copy(fontSize = 20.sp),
+                textAlign = TextAlign.Center
             )
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                TvButton("Cancel", onClick = onDismiss, primary = false, modifier = Modifier.focusRequester(cancelFocus))
-                TvButton("Uninstall", onClick = onConfirm, primary = true)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                TvButton("Cancel", onClick = onDismiss, primary = false, modifier = Modifier.weight(1f).focusRequester(cancelFocus))
+                TvButton("Uninstall", onClick = onConfirm, primary = true, modifier = Modifier.weight(1f))
             }
         }
     }
