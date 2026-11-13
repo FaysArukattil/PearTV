@@ -250,6 +250,8 @@ object TvInputHelper {
             Intent("com.google.android.tv.action.VIEW_INPUTS"),
             Intent("android.intent.action.VIEW", TvContract.Channels.CONTENT_URI),
             Intent("android.settings.TV_INPUT_SETTINGS"),
+            Intent("android.media.tv.action.SETUP_INPUTS"),
+            Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS),
             Intent(android.provider.Settings.ACTION_SETTINGS)
         )
         for (intent in intents) {

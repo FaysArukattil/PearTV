@@ -63,6 +63,7 @@
             android:clearTaskOnLaunch="true"
             android:alwaysRetainTaskState="false"
             android:windowSoftInputMode="adjustPan"
+            android:theme="@style/Theme.LeanTv.Starting"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

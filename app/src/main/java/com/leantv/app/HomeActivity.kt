@@ -6,6 +6,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.leantv.app.launcher.HomeScreen
 import com.leantv.app.launcher.LauncherViewModel
 import com.leantv.app.ui.TvSound
@@ -14,7 +15,10 @@ class HomeActivity : ComponentActivity() {
     private val vm: LauncherViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Keep the splash visible while apps are loading
+        splashScreen.setKeepOnScreenCondition { vm.state.value.isLoading }
         TvSound.init(applicationContext)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)

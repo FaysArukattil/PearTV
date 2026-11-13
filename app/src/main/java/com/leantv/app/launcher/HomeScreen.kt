@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsEthernet
+import androidx.compose.material.icons.rounded.SettingsInputHdmi
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -346,13 +347,19 @@ fun HomeScreen(vm: LauncherViewModel) {
                     }
 
                     if (s.isLoading) {
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Spinner()
-                                Text("Loading your apps...", style = Ty.Body.copy(color = Color(0x99FFFFFF)))
+                        AnimatedVisibility(
+                            visible = s.isLoading,
+                            enter = fadeIn(tween(300)),
+                            exit = fadeOut(tween(300))
+                        ) {
+                            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Spinner()
+                                    Text("Loading your apps...", style = Ty.Body.copy(color = Color(0x99FFFFFF)))
+                                }
                             }
                         }
                     } else {
@@ -364,6 +371,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
                                 item(key = "dock_bar") {
+                                    Box(Modifier.animateItem()) {
                                     AnimatedVisibility(
                                         visible = true,
                                         enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 4 } + fadeIn(tween(220))
@@ -415,6 +423,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                                 onLongClick = { vm.showActionMenu(it) },
                                             )
                                         }
+                                    }
                                     }
                                 }
                             }
@@ -1429,6 +1438,21 @@ private fun InputsSwitcherDialog(
             Text("Inputs & Sources", style = Ty.Title.copy(color = Color.White, fontSize = 34.sp))
             Text("Switch to TV hardware inputs or system source picker", style = Ty.Dim.copy(fontSize = 18.sp))
             Spacer(Modifier.height(10.dp))
+
+            if (ports.isEmpty()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(Icons.Rounded.SettingsInputHdmi, contentDescription = null, tint = Color(0x66FFFFFF), modifier = Modifier.size(64.dp))
+                    Text("No Hardware Inputs Detected", style = Ty.Heading.copy(color = Color.White, fontSize = 24.sp))
+                    Text(
+                        "This device may not expose HDMI/AV ports via Android TV API.\nUse the system source picker below.",
+                        style = Ty.Dim.copy(fontSize = 16.sp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
             if (ports.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

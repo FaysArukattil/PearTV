@@ -211,12 +211,28 @@ object FileManagerHelper {
      * List directory contents: folders first, then files.
      */
     suspend fun listDirectory(dir: File): List<FileItem> = withContext(Dispatchers.IO) {
-        if (!dir.exists()) dir.mkdirs()
-        val files = dir.listFiles() ?: return@withContext emptyList()
-        val items = files.filter { !it.name.startsWith(".") }.map { file ->
+        if (!dir.exists()) {
+            try { dir.mkdirs() } catch (_: Exception) {}
+        }
+
+        // Try direct file listing first
+        val files = try {
+            dir.listFiles()
+        } catch (e: SecurityException) {
+            Log.w(TAG, "listDirectory: SecurityException on ${dir.path}", e)
+            null
+        }
+
+        if (files == null) {
+            return@withContext emptyList()
+        }
+
+        files.filter { !it.name.startsWith(".") }.map { file ->
             val ext = file.extension.lowercase(Locale.ROOT)
             val mime = getMimeType(ext)
-            val childCount = if (file.isDirectory) (file.listFiles()?.count { !it.name.startsWith(".") } ?: 0) else 0
+            val childCount = if (file.isDirectory) {
+                try { file.listFiles()?.count { !it.name.startsWith(".") } ?: 0 } catch (_: Exception) { 0 }
+            } else 0
             FileItem(
                 file = file,
                 name = file.name,
@@ -227,10 +243,7 @@ object FileManagerHelper {
                 mimeType = mime,
                 childCount = childCount
             )
-        }
-
-        // Sort: directories first, then alphabetically
-        items.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase(Locale.ROOT) }))
+        }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase(Locale.ROOT) }))
     }
 
     /**
