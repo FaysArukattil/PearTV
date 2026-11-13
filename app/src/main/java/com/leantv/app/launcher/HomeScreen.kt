@@ -18,6 +18,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.automirrored.rounded.Input
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsEthernet
+import androidx.compose.material.icons.rounded.SettingsInputHdmi
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -110,6 +112,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -345,76 +348,92 @@ fun HomeScreen(vm: LauncherViewModel) {
                         )
                     }
 
-                    if (s.isLoading) {
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
+                    AnimatedContent(
+                        targetState = s.isLoading,
+                        transitionSpec = {
+                            fadeIn(tween(240)) togetherWith fadeOut(tween(180))
+                        },
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        label = "loadingToContent"
+                    ) { loading ->
+                        if (loading) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .background(Color(0x661A1C23))
+                                        .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(24.dp))
+                                        .padding(horizontal = 48.dp, vertical = 32.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(44.dp),
+                                        color = Color(0xFF64B5F6),
+                                        trackColor = Color(0x33FFFFFF),
+                                        strokeWidth = 3.5.dp
+                                    )
+                                    Text(
+                                        "Loading your apps...",
+                                        style = Ty.Body.copy(color = Color(0xF2FFFFFF), fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                Spinner()
-                                Text("Loading your apps...", style = Ty.Body.copy(color = Color(0x99FFFFFF)))
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
                                 item(key = "dock_bar") {
-                                    AnimatedVisibility(
-                                        visible = true,
-                                        enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 4 } + fadeIn(tween(220))
+                                    val bandShape = RoundedCornerShape(radius + bandPad)
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 6.dp)
+                                            .background(Color(0xE6141416), bandShape)
+                                            .border(1.dp, Color(0x1FFFFFFF), bandShape)
+                                            .padding(bandPad)
                                     ) {
-                                        val bandShape = RoundedCornerShape(radius + bandPad)
-                                        Box(
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .padding(bottom = 6.dp)
-                                                .background(Color(0xE6141416), bandShape)
-                                                .border(1.dp, Color(0x1FFFFFFF), bandShape)
-                                                .padding(bandPad)
-                                        ) {
-                                            AppRow(
-                                                apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                                focusScale = 1.03f, showNames = false,
-                                                tileModifier = { index, _ ->
-                                                    val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
-                                                    val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
-                                                    Modifier
-                                                        .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
-                                                        .focusProperties {
-                                                            up = topBarPillRequesters[topIdx]
-                                                            if (gridRows.isNotEmpty()) {
-                                                                down = gridRow0ColRequesters[gridTargetCol]
-                                                            }
+                                        AppRow(
+                                            apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
+                                            focusScale = 1.05f, showNames = false,
+                                            tileModifier = { index, _ ->
+                                                val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
+                                                val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
+                                                Modifier
+                                                    .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
+                                                    .focusProperties {
+                                                        up = topBarPillRequesters[topIdx]
+                                                        if (gridRows.isNotEmpty()) {
+                                                            down = gridRow0ColRequesters[gridTargetCol]
                                                         }
-                                                        .onPreviewKeyEvent { ev ->
-                                                            val k = ev.nativeKeyEvent
-                                                            if (k.action == KeyEvent.ACTION_DOWN) {
-                                                                when (k.keyCode) {
-                                                                    KeyEvent.KEYCODE_DPAD_UP -> {
-                                                                        topBarPillRequesters[topIdx].requestFocus()
-                                                                        true
-                                                                    }
-                                                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                                                        if (gridRows.isNotEmpty()) {
-                                                                            gridRow0ColRequesters[gridTargetCol].requestFocus()
-                                                                            true
-                                                                        } else false
-                                                                    }
-                                                                    else -> false
+                                                    }
+                                                    .onPreviewKeyEvent { ev ->
+                                                        val k = ev.nativeKeyEvent
+                                                        if (k.action == KeyEvent.ACTION_DOWN) {
+                                                            when (k.keyCode) {
+                                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                                    topBarPillRequesters[topIdx].requestFocus()
+                                                                    true
                                                                 }
-                                                            } else false
-                                                        }
-                                                },
-                                                onFocus = { vm.setFocusedApp(it) },
-                                                onClick = { vm.launch(it) },
-                                                onLongClick = { vm.showActionMenu(it) },
-                                            )
-                                        }
+                                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                                    if (gridRows.isNotEmpty()) {
+                                                                        gridRow0ColRequesters[gridTargetCol].requestFocus()
+                                                                        true
+                                                                    } else false
+                                                                }
+                                                                else -> false
+                                                            }
+                                                        } else false
+                                                    }
+                                            },
+                                            onFocus = { vm.setFocusedApp(it) },
+                                            onClick = { vm.launch(it) },
+                                            onLongClick = { vm.showActionMenu(it) },
+                                        )
                                     }
                                 }
                             }
@@ -434,45 +453,41 @@ fun HomeScreen(vm: LauncherViewModel) {
                                     )
                                 }
                                 itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }) { rowIndex, rowApps ->
-                                    AnimatedVisibility(
-                                        visible = true,
-                                        enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 3 } + fadeIn(tween(200))
-                                    ) {
-                                        AppRow(
-                                            apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                            focusScale = 1.06f, showNames = true,
-                                            modifier = Modifier.padding(start = bandPad),
-                                            tileModifier = if (rowIndex == 0) { index, _ ->
-                                                val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
-                                                Modifier
-                                                    .focusRequester(gridRow0ColRequesters[index.coerceIn(0, cols - 1)])
-                                                    .focusProperties {
+                                    AppRow(
+                                        apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
+                                        focusScale = 1.08f, showNames = true,
+                                        modifier = Modifier.padding(start = bandPad),
+                                        tileModifier = if (rowIndex == 0) { index, _ ->
+                                            val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
+                                            Modifier
+                                                .focusRequester(gridRow0ColRequesters[index.coerceIn(0, cols - 1)])
+                                                .focusProperties {
+                                                    if (dock.isNotEmpty()) {
+                                                        up = dockColRequesters[dockTargetCol]
+                                                    }
+                                                }
+                                                .onPreviewKeyEvent { ev ->
+                                                    val k = ev.nativeKeyEvent
+                                                    if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                                                         if (dock.isNotEmpty()) {
-                                                            up = dockColRequesters[dockTargetCol]
-                                                        }
-                                                    }
-                                                    .onPreviewKeyEvent { ev ->
-                                                        val k = ev.nativeKeyEvent
-                                                        if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                                                            if (dock.isNotEmpty()) {
-                                                                dockColRequesters[dockTargetCol].requestFocus()
-                                                                true
-                                                            } else false
+                                                            dockColRequesters[dockTargetCol].requestFocus()
+                                                            true
                                                         } else false
-                                                    }
-                                            } else null,
-                                            badge = null,
-                                            onFocus = { vm.setFocusedApp(it) },
-                                            onClick = { vm.launch(it) },
-                                            onLongClick = { vm.showActionMenu(it) },
-                                        )
-                                    }
+                                                    } else false
+                                                }
+                                        } else null,
+                                        badge = null,
+                                        onFocus = { vm.setFocusedApp(it) },
+                                        onClick = { vm.launch(it) },
+                                        onLongClick = { vm.showActionMenu(it) },
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        }
 
             if (showTools) {
                 ToolsMenuDialog(
@@ -1047,7 +1062,7 @@ private fun CleanTvAppTile(
 
     val scale by animateFloatAsState(
         if (focused) focusScale else 1f,
-        spring(dampingRatio = 0.75f, stiffness = 380f),
+        spring(dampingRatio = 0.72f, stiffness = 320f),
         label = "tileScale"
     )
     val ringAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(180), label = "tileRing")
@@ -1063,14 +1078,12 @@ private fun CleanTvAppTile(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
+                    shadowElevation = if (focused) 26f else 0f
+                    this.shape = shape
+                    clip = false
+                    ambientShadowColor = Color(0x66000000)
+                    spotShadowColor = Color(0x99000000)
                 }
-                .shadow(
-                    elevation = if (focused) 24.dp else 0.dp,
-                    shape = shape,
-                    clip = false,
-                    ambientColor = Color(0x66000000),
-                    spotColor = Color(0x99000000)
-                )
                 .clip(shape)
                 .border(if (focused) 2.5.dp else 0.dp, Color.White.copy(alpha = ringAlpha * 0.9f), shape)
                 .background(Color(0xFF1C1C1E))
@@ -1276,26 +1289,23 @@ private fun CleanTvBackdrop(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .drawBehind {
-                // 1. Theme gradient base
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = theme.gradientColors,
-                        startY = 0f,
-                        endY = size.height
-                    )
+            .drawWithCache {
+                val themeBrush = Brush.verticalGradient(
+                    colors = theme.gradientColors,
+                    startY = 0f,
+                    endY = size.height
                 )
-
-                // 2. Ambient glow in the focused app's colour (same shape as the reference launcher)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        0f to animatedAmbient.copy(alpha = 0.36f),
-                        0.45f to animatedAmbient.copy(alpha = 0.15f),
-                        1f to Color.Transparent,
-                        center = Offset(size.width * 0.32f, size.height * 0.42f),
-                        radius = size.width * 0.62f
-                    )
+                val ambientBrush = Brush.radialGradient(
+                    0f to animatedAmbient.copy(alpha = 0.36f),
+                    0.45f to animatedAmbient.copy(alpha = 0.15f),
+                    1f to Color.Transparent,
+                    center = Offset(size.width * 0.32f, size.height * 0.42f),
+                    radius = size.width * 0.62f
                 )
+                onDrawBehind {
+                    drawRect(brush = themeBrush)
+                    drawRect(brush = ambientBrush)
+                }
             }
     ) {
         content()
@@ -1429,6 +1439,21 @@ private fun InputsSwitcherDialog(
             Text("Inputs & Sources", style = Ty.Title.copy(color = Color.White, fontSize = 34.sp))
             Text("Switch to TV hardware inputs or system source picker", style = Ty.Dim.copy(fontSize = 18.sp))
             Spacer(Modifier.height(10.dp))
+
+            if (ports.isEmpty()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(Icons.Rounded.SettingsInputHdmi, contentDescription = null, tint = Color(0x66FFFFFF), modifier = Modifier.size(64.dp))
+                    Text("No Hardware Inputs Detected", style = Ty.Heading.copy(color = Color.White, fontSize = 24.sp))
+                    Text(
+                        "This device may not expose HDMI/AV ports via Android TV API.\nUse the system source picker below.",
+                        style = Ty.Dim.copy(fontSize = 16.sp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
             if (ports.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

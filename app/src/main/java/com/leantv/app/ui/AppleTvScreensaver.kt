@@ -113,6 +113,41 @@ val APPLE_AERIAL_PRESETS = listOf(
         location = "Hong Kong",
         subtext = "Daytime Peaks and Bay",
         url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HK_H004_C008_v10_6Mbps.mov"
+    ),
+    AppleAerialVideo(
+        location = "San Francisco",
+        subtext = "Bay Bridge at Night",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_C007_C004_0824AJ_001_v01_6M_t9.mov"
+    ),
+    AppleAerialVideo(
+        location = "London",
+        subtext = "River Thames at Night",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LD_A008_C006_v01_6Mbps.mov"
+    ),
+    AppleAerialVideo(
+        location = "Greenland",
+        subtext = "Icefjords & Icebergs",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_GL_G010_C006_v08_6Mbps.mov"
+    ),
+    AppleAerialVideo(
+        location = "Hawaii",
+        subtext = "Coastline Aerial",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HW_H004_C008_v03_6Mbps.mov"
+    ),
+    AppleAerialVideo(
+        location = "China",
+        subtext = "Li River",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_CH_C002_C005_v02_6Mbps.mov"
+    ),
+    AppleAerialVideo(
+        location = "Los Angeles",
+        subtext = "Night Skyline",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LA_A009_C009_t9_6M_tag0.mov"
+    ),
+    AppleAerialVideo(
+        location = "New York City",
+        subtext = "Night Aerial",
+        url = "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_NY_C004_C009_v01_6Mbps.mov"
     )
 )
 
@@ -244,17 +279,9 @@ private fun AppleAerialVideoPlayer(
 ) {
     var currentIndex by remember { mutableIntStateOf(Random.nextInt(APPLE_AERIAL_PRESETS.size)) }
     val currentPreset = APPLE_AERIAL_PRESETS[currentIndex]
-    var showLocation by remember { mutableStateOf(true) }
-    var hasError by remember { mutableStateOf(false) }
+    var errorCount by remember { mutableIntStateOf(0) }
 
-    // Location tag fades out after 9 seconds, like real Apple TV
-    LaunchedEffect(currentIndex) {
-        showLocation = true
-        delay(9000L)
-        showLocation = false
-    }
-
-    if (hasError) {
+    if (errorCount >= 3) {
         onFallback()
     } else {
         Box(Modifier.fillMaxSize()) {
@@ -265,64 +292,33 @@ private fun AppleAerialVideoPlayer(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
+                        tag = currentPreset.url
                         setOnPreparedListener { mp ->
                             mp.isLooping = false
-                            mp.setVolume(0f, 0f) // Screensavers are silent
+                            mp.setVolume(0f, 0f) // Aerial screensavers are silent
                             start()
                         }
                         setOnCompletionListener {
-                            // Advance to next video
+                            // Advance seamlessly to next video
                             currentIndex = (currentIndex + 1) % APPLE_AERIAL_PRESETS.size
                         }
                         setOnErrorListener { _, _, _ ->
-                            hasError = true
+                            errorCount++
+                            currentIndex = (currentIndex + 1) % APPLE_AERIAL_PRESETS.size
                             true
                         }
                         setVideoURI(Uri.parse(currentPreset.url))
                     }
                 },
                 update = { view ->
-                    val uri = Uri.parse(currentPreset.url)
-                    view.setVideoURI(uri)
-                    view.start()
+                    if (view.tag != currentPreset.url) {
+                        view.tag = currentPreset.url
+                        view.setVideoURI(Uri.parse(currentPreset.url))
+                        view.start()
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
-
-            // Apple TV Location Pill (Bottom Left)
-            AnimatedVisibility(
-                visible = showLocation,
-                enter = fadeIn(tween(800)),
-                exit = fadeOut(tween(1200)),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 64.dp, bottom = 48.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Black.copy(alpha = 0.50f))
-                        .padding(horizontal = 22.dp, vertical = 14.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = currentPreset.location,
-                            style = Ty.Heading.copy(
-                                color = Color.White,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        )
-                        Text(
-                            text = currentPreset.subtext,
-                            style = Ty.Small.copy(
-                                color = Color.White.copy(alpha = 0.75f),
-                                fontSize = 15.sp
-                            )
-                        )
-                    }
-                }
-            }
         }
     }
 }

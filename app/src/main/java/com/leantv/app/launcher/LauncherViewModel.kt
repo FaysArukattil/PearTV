@@ -596,7 +596,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openInputs() {
         val ports = TvInputHelper.queryHardwareInputs(ctx)
-        _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
+        if (ports.isEmpty()) {
+            // Try to open native TV input selector directly
+            val opened = TvInputHelper.openNativeTvInputs(ctx)
+            if (!opened) {
+                // Show dialog with empty state
+                _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
+            }
+        } else {
+            _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
+        }
     }
 
     fun closeInputs() {
@@ -616,12 +625,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Google Account Profile (Feature #6) ----------
 
     fun loadProfile() {
-        val profile = TvAccountHelper.getConnectedProfile(ctx)
-        _state.update {
-            it.copy(
-                tvProfile = profile,
-                currentAccountName = profile.displayName
-            )
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = TvAccountHelper.getConnectedProfile(ctx)
+            _state.update {
+                it.copy(
+                    tvProfile = profile,
+                    currentAccountName = profile.displayName
+                )
+            }
         }
     }
 
@@ -725,6 +736,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openAndroidQuickShare() {
+        if (!com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
+            com.leantv.app.files.FileManagerHelper.requestStoragePermission(ctx)
+        }
         startNativeQuickShare(openDialog = true, silent = false)
     }
 

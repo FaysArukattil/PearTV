@@ -47,11 +47,14 @@ object FileManagerHelper {
     private const val TAG = "FileManagerHelper"
 
     fun ensureQuickShareDir(): File {
-        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
-        val dir = File(root, "Quickshare")
+        // Target: /storage/emulated/0/Download/LeanTvQuickshare
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            ?: File("/storage/emulated/0/Download")
+        val dir = File(downloadsDir, "LeanTvQuickshare")
         if (!dir.exists()) {
             dir.mkdirs()
         }
+        // Try to chmod via privileged command
         try {
             com.leantv.app.data.SystemDebloater.runPrivilegedCommand("mkdir -p \"${dir.absolutePath}\" && chmod 777 \"${dir.absolutePath}\"")
         } catch (_: Exception) {}
@@ -113,20 +116,18 @@ object FileManagerHelper {
     fun detectStorageDrives(ctx: Context): List<StorageDrive> {
         val drives = mutableListOf<StorageDrive>()
 
-        // 1. Internal Storage
+        // 1. Internal Storage — always add even if not yet readable (permission may be granted later)
         val internalRoot = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
-        if (internalRoot.exists() || internalRoot.canRead()) {
-            val (total, free) = getDriveStats(internalRoot)
-            drives.add(
-                StorageDrive(
-                    name = "Internal Storage",
-                    path = internalRoot,
-                    totalBytes = total,
-                    freeBytes = free,
-                    isRemovable = false
-                )
+        val (total, free) = getDriveStats(internalRoot)
+        drives.add(
+            StorageDrive(
+                name = "Internal Storage",
+                path = internalRoot,
+                totalBytes = total,
+                freeBytes = free,
+                isRemovable = false
             )
-        }
+        )
 
         // 2. Scan /storage for USB drives and external SD cards
         try {
@@ -211,12 +212,54 @@ object FileManagerHelper {
      * List directory contents: folders first, then files.
      */
     suspend fun listDirectory(dir: File): List<FileItem> = withContext(Dispatchers.IO) {
-        if (!dir.exists()) dir.mkdirs()
-        val files = dir.listFiles() ?: return@withContext emptyList()
-        val items = files.filter { !it.name.startsWith(".") }.map { file ->
+        if (!dir.exists()) {
+            try { dir.mkdirs() } catch (_: Exception) {}
+        }
+
+        // Try direct file listing first
+        val files = try {
+            dir.listFiles()
+        } catch (e: SecurityException) {
+            Log.w(TAG, "listDirectory: SecurityException on ${dir.path}", e)
+            null
+        }
+
+        if (files == null) {
+            // If dir is /storage/emulated/0 and listFiles returned null (permission restricted),
+            // provide the well-known public folders that are readable so the screen is never blank:
+            if (dir.absolutePath == "/storage/emulated/0" || dir.absolutePath == "/sdcard") {
+                val publicDirs = listOf(
+                    File(dir, "Download"),
+                    ensureQuickShareDir(),
+                    File(dir, "Movies"),
+                    File(dir, "Music"),
+                    File(dir, "Pictures"),
+                    File(dir, "DCIM"),
+                    File(dir, "Documents")
+                ).filter { it.exists() || it.mkdirs() }
+
+                return@withContext publicDirs.map { d ->
+                    FileItem(
+                        file = d,
+                        name = d.name,
+                        isDirectory = true,
+                        sizeBytes = 0L,
+                        lastModified = d.lastModified(),
+                        extension = "",
+                        mimeType = "resource/folder",
+                        childCount = d.listFiles()?.size ?: 0
+                    )
+                }
+            }
+            return@withContext emptyList()
+        }
+
+        files.filter { !it.name.startsWith(".") }.map { file ->
             val ext = file.extension.lowercase(Locale.ROOT)
             val mime = getMimeType(ext)
-            val childCount = if (file.isDirectory) (file.listFiles()?.count { !it.name.startsWith(".") } ?: 0) else 0
+            val childCount = if (file.isDirectory) {
+                try { file.listFiles()?.count { !it.name.startsWith(".") } ?: 0 } catch (_: Exception) { 0 }
+            } else 0
             FileItem(
                 file = file,
                 name = file.name,
@@ -227,17 +270,37 @@ object FileManagerHelper {
                 mimeType = mime,
                 childCount = childCount
             )
-        }
+        }.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase(Locale.ROOT) }))
+    }
 
-        // Sort: directories first, then alphabetically
-        items.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase(Locale.ROOT) }))
+    private fun matchesCategory(ext: String, categoryKey: String): Boolean = when (categoryKey) {
+        "videos" -> isVideo(ext)
+        "audio" -> isAudio(ext)
+        "images" -> isImage(ext)
+        "apks" -> ext == "apk"
+        "documents" -> isDocument(ext)
+        else -> false
+    }
+
+    private fun toFileItem(f: File): FileItem {
+        val ext = f.extension.lowercase(Locale.ROOT)
+        return FileItem(
+            file = f,
+            name = f.name,
+            isDirectory = f.isDirectory,
+            sizeBytes = if (f.isDirectory) 0L else f.length(),
+            lastModified = f.lastModified(),
+            extension = ext,
+            mimeType = getMimeType(ext),
+            childCount = if (f.isDirectory) (f.listFiles()?.size ?: 0) else 0
+        )
     }
 
     /**
-     * Scan files for media categories (Downloads, APKs, Videos, Music, Pictures, Documents, Quickshare).
+     * Scan files for media categories (Downloads, APKs, Videos, Music, Pictures, Documents, Quickshare)
+     * using MediaStore queries and targeted directory scans for maximum speed and reliability.
      */
-    suspend fun scanCategoryFiles(categoryKey: String): List<FileItem> = withContext(Dispatchers.IO) {
-        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+    suspend fun scanCategoryFiles(ctx: Context, categoryKey: String): List<FileItem> = withContext(Dispatchers.IO) {
         val results = mutableListOf<FileItem>()
 
         if (categoryKey == "quickshare") {
@@ -246,44 +309,117 @@ object FileManagerHelper {
         }
 
         if (categoryKey == "downloads") {
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                ?: File(root, "Download")
-            return@withContext listDirectory(downloadDir)
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                ?: File("/storage/emulated/0/Download")
+            val items = listDirectory(downloadsDir).toMutableList()
+            val qsDir = ensureQuickShareDir()
+            if (qsDir.exists() && qsDir.absolutePath != downloadsDir.absolutePath) {
+                items.addAll(listDirectory(qsDir))
+            }
+            return@withContext items.distinctBy { it.file.absolutePath }
         }
 
-        val queue = ArrayDeque<File>()
-        queue.add(root)
-        var count = 0
+        // Try MediaStore content resolver queries first (very fast on Android)
+        try {
+            val contentUri = when (categoryKey) {
+                "videos" -> android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                "audio" -> android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                "images" -> android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                else -> null
+            }
 
-        while (queue.isNotEmpty() && count < 8000) {
-            val dir = queue.removeFirst()
-            val files = dir.listFiles() ?: continue
-            for (f in files) {
-                count++
-                if (f.isDirectory) {
-                    if (!f.name.startsWith(".") && f.name != "Android") queue.add(f)
-                } else {
-                    val ext = f.extension.lowercase(Locale.ROOT)
-                    val matches = when (categoryKey) {
-                        "videos" -> isVideo(ext)
-                        "audio" -> isAudio(ext)
-                        "images" -> isImage(ext)
-                        "apks" -> ext == "apk"
-                        "documents" -> isDocument(ext)
-                        else -> false
-                    }
-                    if (matches) {
+            if (contentUri != null) {
+                val projection = arrayOf(
+                    android.provider.MediaStore.MediaColumns.DATA,
+                    android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
+                    android.provider.MediaStore.MediaColumns.SIZE,
+                    android.provider.MediaStore.MediaColumns.DATE_MODIFIED
+                )
+                ctx.contentResolver.query(
+                    contentUri,
+                    projection,
+                    null,
+                    null,
+                    "${android.provider.MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+                )?.use { cursor ->
+                    val dataCol = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATA)
+                    val nameCol = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.SIZE)
+                    val dateCol = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DATE_MODIFIED)
+
+                    while (cursor.moveToNext() && results.size < 200) {
+                        val path = if (dataCol != -1) cursor.getString(dataCol) else null
+                        if (path == null) continue
+                        val file = File(path)
+                        val name = if (nameCol != -1) cursor.getString(nameCol) ?: file.name else file.name
+                        val size = if (sizeCol != -1) cursor.getLong(sizeCol) else file.length()
+                        val mod = if (dateCol != -1) cursor.getLong(dateCol) * 1000L else file.lastModified()
+                        val ext = file.extension.lowercase(Locale.ROOT)
                         results.add(
                             FileItem(
-                                file = f,
-                                name = f.name,
+                                file = file,
+                                name = name,
                                 isDirectory = false,
-                                sizeBytes = f.length(),
-                                lastModified = f.lastModified(),
+                                sizeBytes = if (size > 0) size else file.length(),
+                                lastModified = if (mod > 0) mod else file.lastModified(),
                                 extension = ext,
                                 mimeType = getMimeType(ext)
                             )
                         )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "MediaStore query failed for $categoryKey", e)
+        }
+
+        // Fast scan targeted folders for APKs, documents, and local media files
+        val targetFolders = mutableListOf<File>()
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            ?: File("/storage/emulated/0/Download")
+        if (downloads.exists()) targetFolders.add(downloads)
+        targetFolders.add(ensureQuickShareDir())
+
+        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+        when (categoryKey) {
+            "videos" -> {
+                targetFolders.add(File(root, "Movies"))
+                targetFolders.add(File(root, "DCIM"))
+            }
+            "audio" -> {
+                targetFolders.add(File(root, "Music"))
+                targetFolders.add(File(root, "Podcasts"))
+            }
+            "images" -> {
+                targetFolders.add(File(root, "Pictures"))
+                targetFolders.add(File(root, "DCIM"))
+            }
+            "documents" -> {
+                targetFolders.add(File(root, "Documents"))
+                targetFolders.add(File(root, "Download"))
+            }
+            "apks" -> {
+                targetFolders.add(File(root, "Download"))
+                targetFolders.add(File(root, "Download/LeanTvQuickshare"))
+            }
+        }
+
+        for (folder in targetFolders) {
+            if (!folder.exists() || !folder.isDirectory) continue
+            val list = folder.listFiles() ?: continue
+            for (f in list) {
+                if (f.isDirectory) {
+                    val sub = f.listFiles() ?: continue
+                    for (sf in sub) {
+                        if (!sf.isDirectory && matchesCategory(sf.extension, categoryKey)) {
+                            if (results.none { it.file.absolutePath == sf.absolutePath }) {
+                                results.add(toFileItem(sf))
+                            }
+                        }
+                    }
+                } else if (matchesCategory(f.extension, categoryKey)) {
+                    if (results.none { it.file.absolutePath == f.absolutePath }) {
+                        results.add(toFileItem(f))
                     }
                 }
             }

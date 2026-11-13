@@ -1,6 +1,7 @@
 package com.leantv.app.data
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -11,9 +12,42 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object InstalledAppsScanner {
+    @Volatile
+    private var cachedApps: List<InstalledAppInfo>? = null
 
-    suspend fun scan(context: Context): List<InstalledAppInfo> = withContext(Dispatchers.IO) {
+    fun getCached(): List<InstalledAppInfo>? = cachedApps
+
+    fun invalidate() {
+        cachedApps = null
+    }
+
+    suspend fun scan(context: Context, forceRefresh: Boolean = false): List<InstalledAppInfo> = withContext(Dispatchers.IO) {
+        if (!forceRefresh && cachedApps != null) {
+            return@withContext cachedApps!!
+        }
+
         val pm = context.packageManager
+
+        // Batch query all launchable activities in 2 IPC calls instead of hundreds
+        val launchablePackages = mutableSetOf<String>()
+        try {
+            val leanbackIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+            @Suppress("DEPRECATION")
+            val leanbackList = pm.queryIntentActivities(leanbackIntent, 0)
+            for (ri in leanbackList) {
+                ri.activityInfo?.packageName?.let { launchablePackages.add(it) }
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val mainLauncherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            @Suppress("DEPRECATION")
+            val launcherList = pm.queryIntentActivities(mainLauncherIntent, 0)
+            for (ri in launcherList) {
+                ri.activityInfo?.packageName?.let { launchablePackages.add(it) }
+            }
+        } catch (_: Exception) {}
+
         val packages: List<PackageInfo> = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0))
@@ -25,7 +59,7 @@ object InstalledAppsScanner {
             emptyList()
         }
 
-        val result = mutableListOf<InstalledAppInfo>()
+        val result = ArrayList<InstalledAppInfo>(packages.size)
 
         for (pi in packages) {
             val ai = pi.applicationInfo ?: continue
@@ -41,7 +75,8 @@ object InstalledAppsScanner {
                 pkg
             }
 
-            val versionName = pi.versionName?.trim()?.ifEmpty { "v${PackageInfoCompat.getLongVersionCode(pi)}" } ?: "v${PackageInfoCompat.getLongVersionCode(pi)}"
+            val versionName = pi.versionName?.trim()?.ifEmpty { "v${PackageInfoCompat.getLongVersionCode(pi)}" }
+                ?: "v${PackageInfoCompat.getLongVersionCode(pi)}"
             val versionCode = PackageInfoCompat.getLongVersionCode(pi)
 
             var sizeBytes = 0L
@@ -54,37 +89,18 @@ object InstalledAppsScanner {
                     val splitFile = File(splitDir)
                     if (splitFile.exists()) sizeBytes += splitFile.length()
                 }
-            } catch (_: Exception) {
-                // Ignore file access limitations
+            } catch (_: Exception) {}
+
+            var hasLaunchIntent = pkg in launchablePackages
+            if (!hasLaunchIntent) {
+                // Quick fallback check
+                hasLaunchIntent = try {
+                    pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null
+                } catch (_: Exception) { false }
             }
 
-            var hasLaunchIntent = try {
-                pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null
-            } catch (_: Exception) {
-                false
-            }
-
-            // Sideloaded or non-leanback user apps: scan for any exported activity or MAIN intent
-            if (!hasLaunchIntent && (!isSystem || isUpdatedSystem)) {
-                try {
-                    val mainIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).setPackage(pkg)
-                    @Suppress("DEPRECATION")
-                    val list = pm.queryIntentActivities(mainIntent, 0)
-                    if (list.isNotEmpty()) {
-                        hasLaunchIntent = true
-                    } else {
-                        @Suppress("DEPRECATION")
-                        val pInfo = pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
-                        if (pInfo.activities?.any { it.exported } == true) {
-                            hasLaunchIntent = true
-                        }
-                    }
-                } catch (_: Exception) {
-                    // Ignore scanner exceptions
-                }
-            }
-
-            result.add(
+            cachedApps = result
+        result.add(
                 InstalledAppInfo(
                     packageName = pkg,
                     appName = label,
@@ -100,7 +116,9 @@ object InstalledAppsScanner {
             )
         }
 
+        cachedApps = result
         result
     }
 }
+
 

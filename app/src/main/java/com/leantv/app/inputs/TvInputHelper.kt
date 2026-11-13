@@ -40,86 +40,102 @@ object TvInputHelper {
      */
     fun queryHardwareInputs(ctx: Context): List<TvPort> {
         val manager = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager
-            ?: return emptyList()
 
-        return try {
-            val all = manager.tvInputList ?: emptyList()
+        val hardwarePorts: List<TvPort> = try {
+            if (manager == null) emptyList()
+            else {
+                val all = manager.tvInputList ?: emptyList()
 
-            // CEC devices (e.g. a Fire Stick) appear as child inputs of an HDMI port.
-            // Keep the port, and show the device name as its subtitle.
-            val cecNames = HashMap<String, String>()
-            all.forEach { info ->
-                val parent = parentIdOf(info)
-                if (parent != null) {
-                    val name = cecNameOf(ctx, info)
-                    if (name != null) cecNames[parent] = name
+                // CEC devices (e.g. a Fire Stick) appear as child inputs of an HDMI port.
+                // Keep the port, and show the device name as its subtitle.
+                val cecNames = HashMap<String, String>()
+                all.forEach { info ->
+                    val parent = parentIdOf(info)
+                    if (parent != null) {
+                        val name = cecNameOf(ctx, info)
+                        if (name != null) cecNames[parent] = name
+                    }
                 }
-            }
-            val presentIds = all.map { it.id }.toSet()
+                val presentIds = all.map { it.id }.toSet()
 
-            val kept = all.filter { info ->
-                val parent = parentIdOf(info)
-                if (parent != null && parent in presentIds) return@filter false // child of a listed port
-                when (info.type) {
-                    TvInputInfo.TYPE_HDMI,
-                    TvInputInfo.TYPE_COMPOSITE,
-                    TvInputInfo.TYPE_COMPONENT,
-                    TvInputInfo.TYPE_DISPLAY_PORT,
-                    TvInputInfo.TYPE_VGA,
-                    TvInputInfo.TYPE_DVI -> true
-                    TvInputInfo.TYPE_TUNER -> true
-                    else -> info.isPassthroughInput
+                val kept = all.filter { info ->
+                    val parent = parentIdOf(info)
+                    if (parent != null && parent in presentIds) return@filter false // child of a listed port
+                    when (info.type) {
+                        TvInputInfo.TYPE_HDMI,
+                        TvInputInfo.TYPE_COMPOSITE,
+                        TvInputInfo.TYPE_COMPONENT,
+                        TvInputInfo.TYPE_DISPLAY_PORT,
+                        TvInputInfo.TYPE_VGA,
+                        TvInputInfo.TYPE_DVI -> true
+                        TvInputInfo.TYPE_TUNER -> true
+                        else -> info.isPassthroughInput
+                    }
                 }
-            }
 
-            val listToUse = if (kept.isNotEmpty()) kept else all.filter { parentIdOf(it) == null }
+                val listToUse = if (kept.isNotEmpty()) kept else all.filter { parentIdOf(it) == null }
 
-            // Only one "TV" entry, even if the OEM registers several tuner services.
-            var tunerSeen = false
-            val unique = listToUse.filter { info ->
-                if (info.type != TvInputInfo.TYPE_TUNER) true
-                else if (tunerSeen) false
-                else { tunerSeen = true; true }
-            }
-
-            unique.map { info ->
-                val state = try { manager.getInputState(info.id) } catch (_: Exception) { TvInputManager.INPUT_STATE_DISCONNECTED }
-                val kind = when (info.type) {
-                    TvInputInfo.TYPE_TUNER -> "TV"
-                    TvInputInfo.TYPE_HDMI -> "HDMI"
-                    TvInputInfo.TYPE_COMPOSITE -> "AV"
-                    TvInputInfo.TYPE_COMPONENT -> "COMPONENT"
-                    else -> "OTHER"
+                // Only one "TV" entry, even if the OEM registers several tuner services.
+                var tunerSeen = false
+                val unique = listToUse.filter { info ->
+                    if (info.type != TvInputInfo.TYPE_TUNER) true
+                    else if (tunerSeen) false
+                    else { tunerSeen = true; true }
                 }
-                val rawLabel = try {
-                    val custom = info.loadCustomLabel(ctx)?.toString()
-                    if (!custom.isNullOrBlank()) custom else info.loadLabel(ctx)?.toString()
-                } catch (_: Exception) { null }
-                val label = when (kind) {
-                    "TV" -> "TV"
-                    "AV" -> "AV"
-                    "COMPONENT" -> "Component"
-                    else -> if (!rawLabel.isNullOrBlank()) rawLabel else getHumanReadablePortName(info)
-                }
-                TvPort(
-                    id = info.id,
-                    label = label,
-                    typeName = getTypeName(info.type),
-                    isConnected = state == TvInputManager.INPUT_STATE_CONNECTED || kind == "TV",
-                    isStandby = state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY,
-                    isPassthrough = info.isPassthroughInput,
-                    kind = kind,
-                    subtitle = cecNames[info.id]?.takeIf { !it.equals(label, ignoreCase = true) },
+
+                unique.map { info ->
+                    val state = try { manager.getInputState(info.id) } catch (_: Exception) { TvInputManager.INPUT_STATE_DISCONNECTED }
+                    val kind = when (info.type) {
+                        TvInputInfo.TYPE_TUNER -> "TV"
+                        TvInputInfo.TYPE_HDMI -> "HDMI"
+                        TvInputInfo.TYPE_COMPOSITE -> "AV"
+                        TvInputInfo.TYPE_COMPONENT -> "COMPONENT"
+                        else -> "OTHER"
+                    }
+                    val rawLabel = try {
+                        val custom = info.loadCustomLabel(ctx)?.toString()
+                        if (!custom.isNullOrBlank()) custom else info.loadLabel(ctx)?.toString()
+                    } catch (_: Exception) { null }
+                    val label = when (kind) {
+                        "TV" -> "TV"
+                        "AV" -> "AV"
+                        "COMPONENT" -> "Component"
+                        else -> if (!rawLabel.isNullOrBlank()) rawLabel else getHumanReadablePortName(info)
+                    }
+                    TvPort(
+                        id = info.id,
+                        label = label,
+                        typeName = getTypeName(info.type),
+                        isConnected = state == TvInputManager.INPUT_STATE_CONNECTED || kind == "TV",
+                        isStandby = state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY,
+                        isPassthrough = info.isPassthroughInput,
+                        kind = kind,
+                        subtitle = cecNames[info.id]?.takeIf { !it.equals(label, ignoreCase = true) },
+                    )
+                }.sortedWith(
+                    compareBy<TvPort> {
+                        when (it.kind) { "TV" -> 0; "HDMI" -> 1; "AV" -> 2; "COMPONENT" -> 3; else -> 4 }
+                    }.thenBy { it.label }
                 )
-            }.sortedWith(
-                compareBy<TvPort> {
-                    when (it.kind) { "TV" -> 0; "HDMI" -> 1; "AV" -> 2; "COMPONENT" -> 3; else -> 4 }
-                }.thenBy { it.label }
-            )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Error querying TV inputs", e)
             emptyList()
         }
+
+        if (hardwarePorts.isNotEmpty()) {
+            return hardwarePorts
+        }
+
+        // Fallback: If no ports were detected from the system TV service (e.g. TV box or custom ROM),
+        // present standard ports matching our aesthetic that trigger the native input switchers
+        return listOf(
+            TvPort(id = "default_tuner", label = "Live TV", typeName = "Tuner", isConnected = true, isStandby = false, isPassthrough = true, kind = "TV", subtitle = "Antenna / Cable"),
+            TvPort(id = "default_hdmi1", label = "HDMI 1", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Console / Player"),
+            TvPort(id = "default_hdmi2", label = "HDMI 2 (eARC)", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Audio Return / TV Box"),
+            TvPort(id = "default_hdmi3", label = "HDMI 3", typeName = "HDMI", isConnected = false, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Auxiliary"),
+            TvPort(id = "default_av", label = "AV / Composite", typeName = "AV", isConnected = false, isStandby = false, isPassthrough = true, kind = "AV", subtitle = "Composite Input")
+        )
     }
 
     /** A real broadcast tuner is provided by the TV's own firmware, never by an installed app. */
@@ -203,30 +219,42 @@ object TvInputHelper {
      */
     fun switchToPort(ctx: Context, port: TvPort): Boolean {
         if (port.kind == "TV") {
-            try {
-                ctx.startActivity(
-                    Intent(Intent.ACTION_VIEW, TvContract.Channels.CONTENT_URI)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-                return true
-            } catch (_: Exception) { /* fall through to the generic fallbacks below */ }
-        }
-        try {
-            val channelUri: Uri = TvContract.buildChannelUriForPassthroughInput(port.id)
-            val intent = Intent(Intent.ACTION_VIEW, channelUri).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val tvIntents = listOf(
+                Intent(Intent.ACTION_VIEW, TvContract.Channels.CONTENT_URI),
+                Intent("android.intent.action.VIEW", Uri.parse("tv://channel")),
+                Intent(Intent.ACTION_VIEW).setPackage("com.google.android.tv"),
+                Intent(Intent.ACTION_VIEW).setPackage("com.android.tv")
+            )
+            for (intent in tvIntents) {
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(intent)
+                    return true
+                } catch (_: Exception) {}
             }
-            ctx.startActivity(intent)
-            return true
-        } catch (e: Exception) {
-            Log.w(TAG, "Direct channel switch failed for port ${port.id}, trying fallback", e)
+        }
+
+        // If port has a real system input ID (not default_*)
+        if (!port.id.startsWith("default_")) {
+            try {
+                val channelUri: Uri = TvContract.buildChannelUriForPassthroughInput(port.id)
+                val intent = Intent(Intent.ACTION_VIEW, channelUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                ctx.startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Direct channel switch failed for port ${port.id}, trying fallback", e)
+            }
         }
 
         // Fallback: OEM / TV Input actions
         val fallbacks = listOf(
             Intent("android.media.tv.action.VIEW_INPUTS"),
             Intent("com.android.tv.action.VIEW_INPUTS"),
+            Intent("com.google.android.tv.action.VIEW_INPUTS"),
             Intent("android.intent.action.VIEW", Uri.parse("tv://passthrough/${port.id}")),
+            Intent("android.settings.TV_INPUT_SETTINGS"),
             Intent(android.provider.Settings.ACTION_SETTINGS)
         )
 
@@ -237,21 +265,43 @@ object TvInputHelper {
                 return true
             } catch (_: Exception) {}
         }
-        return false
+
+        return openNativeTvInputs(ctx)
     }
 
     /**
-     * Opens the native TV input / source selector UI.
+     * Opens the native TV input / source selector UI across OEM TV platforms.
      */
     fun openNativeTvInputs(ctx: Context): Boolean {
         val intents = listOf(
+            // Android TV standard input actions
             Intent("android.media.tv.action.VIEW_INPUTS"),
             Intent("com.android.tv.action.VIEW_INPUTS"),
             Intent("com.google.android.tv.action.VIEW_INPUTS"),
+            // Live TV / tuner uri
             Intent("android.intent.action.VIEW", TvContract.Channels.CONTENT_URI),
+            // Sony BRAVIA
+            Intent().setClassName("com.sony.dtv.tvinput.sources", "com.sony.dtv.tvinput.sources.SourcesActivity"),
+            Intent().setClassName("com.sony.dtv.osat.viewinputs", "com.sony.dtv.osat.viewinputs.MainActivity"),
+            // Xiaomi / PatchWall / Mi TV
+            Intent("com.xiaomi.mitv.media.INPUT_SOURCE"),
+            Intent("mitv.intent.action.INPUT_SOURCE"),
+            Intent().setClassName("com.mitv.tvhome", "com.mitv.tvhome.SourceActivity"),
+            // TCL
+            Intent("com.tcl.tvinput.action.CHOOSE_INPUT"),
+            Intent().setClassName("com.tcl.tvinput", "com.tcl.tvinput.InputSelectActivity"),
+            // Hisense / VIDAA
+            Intent("com.hisense.intent.action.SOURCE_SELECT"),
+            Intent().setClassName("com.jamdeo.tv.source", "com.jamdeo.tv.source.SourceActivity"),
+            // Philips
+            Intent().setClassName("org.droidtv.settings", "org.droidtv.settings.inputs.SourceSelectionActivity"),
+            // TV Settings Inputs
             Intent("android.settings.TV_INPUT_SETTINGS"),
+            Intent("android.media.tv.action.SETUP_INPUTS"),
+            Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS),
             Intent(android.provider.Settings.ACTION_SETTINGS)
         )
+
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

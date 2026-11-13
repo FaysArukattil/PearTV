@@ -106,9 +106,18 @@ fun FileManagerScreen(
             isLoading = true
             activeCategory = key
             currentDir = null
-            currentFiles = FileManagerHelper.scanCategoryFiles(key)
+            currentFiles = FileManagerHelper.scanCategoryFiles(ctx, key)
             isLoading = false
         }
+    }
+
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        val granted = FileManagerHelper.hasStoragePermission(ctx)
+        hasPermission = granted
+        if (granted) {
+            currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
+        }
+        onPauseOrDispose { }
     }
 
     LaunchedEffect(Unit) {
@@ -376,22 +385,75 @@ fun FileManagerScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.FolderOpen,
-                            contentDescription = null,
-                            tint = Color(0x33FFFFFF),
-                            modifier = Modifier.size(72.dp)
-                        )
-                        Text(
-                            text = if (activeCategory != null) "No $activeCategory files found" else "This folder is empty",
-                            color = Color(0x66FFFFFF),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    if (!hasPermission) {
+                        val permFocusRequester = remember { FocusRequester() }
+                        LaunchedEffect(Unit) {
+                            delay(150)
+                            runCatching { permFocusRequester.requestFocus() }
+                        }
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier
+                                .width(560.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color(0xFF161820))
+                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp))
+                                .padding(36.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x28FF9F0A)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Shield,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF9F0A),
+                                    modifier = Modifier.size(38.dp)
+                                )
+                            }
+                            Text(
+                                text = "Storage Permission Required",
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "To browse files, access LeanTvQuickshare, and install APKs, LeanTV needs All Files Access permission.",
+                                color = Color(0x99FFFFFF),
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            TvHeaderButton(
+                                label = "Grant Storage Permission",
+                                icon = Icons.Rounded.Key,
+                                accentColor = Color(0xFF0A84FF),
+                                modifier = Modifier.focusRequester(permFocusRequester),
+                                onClick = { FileManagerHelper.requestStoragePermission(ctx) }
+                            )
+                        }
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                                tint = Color(0x33FFFFFF),
+                                modifier = Modifier.size(72.dp)
+                            )
+                            Text(
+                                text = if (activeCategory != null) "No $activeCategory files found" else "This folder is empty",
+                                color = Color(0x66FFFFFF),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             } else {
@@ -636,6 +698,7 @@ private fun TvHeaderButton(
     label: String,
     icon: ImageVector,
     accentColor: Color = Color.White,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val view = LocalView.current
@@ -643,7 +706,7 @@ private fun TvHeaderButton(
     val shape = RoundedCornerShape(14.dp)
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .height(42.dp)
             .clip(shape)
             .background(if (focused) Color.White else Color(0x1FFFFFFF))

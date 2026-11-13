@@ -52,6 +52,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.LeanTv">
 
         <activity
@@ -63,6 +64,7 @@
             android:clearTaskOnLaunch="true"
             android:alwaysRetainTaskState="false"
             android:windowSoftInputMode="adjustPan"
+            android:theme="@style/Theme.LeanTv.Starting"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

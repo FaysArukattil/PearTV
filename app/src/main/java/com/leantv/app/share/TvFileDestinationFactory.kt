@@ -24,7 +24,7 @@ class TvFileDestinationFactory(
 
     companion object {
         private const val TAG = "TvFileDestFactory"
-        const val FOLDER_NAME = "Quickshare"
+        const val FOLDER_NAME = "LeanTvQuickshare"
 
         fun getDownloadDir(ctx: Context): File {
             val primary = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
@@ -35,19 +35,16 @@ class TvFileDestinationFactory(
             val candidates = mutableListOf<File>()
             candidates.add(primary)
 
-            // 1. Primary: /storage/emulated/0/Quickshare (Directly in internal storage root)
-            val extRoot = Environment.getExternalStorageDirectory()
-            if (extRoot != null) {
-                candidates.add(File(extRoot, FOLDER_NAME))
-            }
+            // 1. Primary: /storage/emulated/0/Download/LeanTvQuickshare
+            val baseDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                ?: File("/storage/emulated/0/Download")
+            candidates.add(File(baseDownloads, FOLDER_NAME))
+
+            // 2. /storage/emulated/0/LeanTvQuickshare
+            val extRoot = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+            candidates.add(File(extRoot, FOLDER_NAME))
             candidates.add(File("/storage/emulated/0", FOLDER_NAME))
             candidates.add(File("/sdcard", FOLDER_NAME))
-
-            // 2. Standard Downloads/Quickshare
-            val baseDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if (baseDownloads != null) {
-                candidates.add(File(baseDownloads, FOLDER_NAME))
-            }
 
             // 3. Fallback: App external files dir
             val extFiles = ctx.getExternalFilesDir(null)
@@ -114,9 +111,27 @@ class TvFileDestinationFactory(
     }
 
     override fun commit(payloadId: Long): Boolean {
-        val file = activeFiles.remove(payloadId)
+        var file = activeFiles.remove(payloadId)
         activeChannels.remove(payloadId)
         if (file != null && file.exists()) {
+            val targetDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
+            if (file.parentFile?.absolutePath != targetDir.absolutePath && (targetDir.exists() || targetDir.mkdirs()) && targetDir.canWrite()) {
+                try {
+                    val publicDest = resolveUniqueFile(targetDir, file.name)
+                    if (file.renameTo(publicDest)) {
+                        file = publicDest
+                        Log.i(TAG, "Promoted received file to public LeanTvQuickshare: ${file.absolutePath}")
+                    } else {
+                        file.copyTo(publicDest, overwrite = true)
+                        file.delete()
+                        file = publicDest
+                        Log.i(TAG, "Copied received file to public LeanTvQuickshare: ${file.absolutePath}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not promote file to public QuickShare dir: ${e.message}")
+                }
+            }
+
             try {
                 android.media.MediaScannerConnection.scanFile(
                     context,
