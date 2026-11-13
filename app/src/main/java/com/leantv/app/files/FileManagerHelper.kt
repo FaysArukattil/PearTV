@@ -11,9 +11,12 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.leantv.app.data.SystemDebloater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 data class FileItem(
@@ -23,7 +26,8 @@ data class FileItem(
     val sizeBytes: Long,
     val lastModified: Long,
     val extension: String,
-    val mimeType: String
+    val mimeType: String,
+    val childCount: Int = 0
 )
 
 data class StorageDrive(
@@ -34,21 +38,46 @@ data class StorageDrive(
     val isRemovable: Boolean
 )
 
-data class FileCategorySummary(
-    val key: String,
-    val label: String,
-    val count: Int,
-    val totalBytes: Long
+data class ClipboardItem(
+    val file: File,
+    val isCut: Boolean // true for Move, false for Copy
 )
 
 object FileManagerHelper {
     private const val TAG = "FileManagerHelper"
+
+    fun ensureQuickShareDir(): File {
+        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+        val dir = File(root, "Quickshare")
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
 
     /**
      * Checks if full external storage permission is granted.
      */
     fun hasStoragePermission(ctx: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Attempt to auto-grant MANAGE_EXTERNAL_STORAGE via Shizuku / on-device ADB.
+     */
+    suspend fun autoGrantStoragePermission(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) return@withContext true
+            try {
+                SystemDebloater.runPrivilegedCommand("appops set ${ctx.packageName} MANAGE_EXTERNAL_STORAGE allow")
+                SystemDebloater.runPrivilegedCommand("pm grant ${ctx.packageName} android.permission.MANAGE_EXTERNAL_STORAGE")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed auto-grant storage permission", e)
+            }
             Environment.isExternalStorageManager()
         } else {
             true
@@ -76,14 +105,14 @@ object FileManagerHelper {
     }
 
     /**
-     * Auto-detect all accessible storage volumes (Internal Flash + USB Flash Drives / Hard Drives).
+     * Auto-detect accessible storage drives (Internal Storage, USB Drives, OTG).
      */
     fun detectStorageDrives(ctx: Context): List<StorageDrive> {
         val drives = mutableListOf<StorageDrive>()
 
         // 1. Internal Storage
-        val internalRoot = Environment.getExternalStorageDirectory()
-        if (internalRoot != null && internalRoot.exists()) {
+        val internalRoot = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
+        if (internalRoot.exists() || internalRoot.canRead()) {
             val (total, free) = getDriveStats(internalRoot)
             drives.add(
                 StorageDrive(
@@ -103,7 +132,6 @@ object FileManagerHelper {
                 val subDirs = storageDir.listFiles() ?: emptyArray()
                 for (dir in subDirs) {
                     val name = dir.name
-                    // Filter out internal emulated mounts and self
                     if (name != "emulated" && name != "self" && dir.canRead() && dir.isDirectory) {
                         val (total, free) = getDriveStats(dir)
                         if (total > 0L) {
@@ -125,26 +153,41 @@ object FileManagerHelper {
         }
 
         // 3. Fallback: ContextCompat external dirs
-        val externalDirs = ContextCompat.getExternalFilesDirs(ctx, null)
-        for (f in externalDirs) {
-            if (f != null && Environment.isExternalStorageRemovable(f)) {
-                var root = f
-                while (root.parentFile != null && root.parentFile?.path != "/storage") {
-                    root = root.parentFile ?: break
-                }
-                if (drives.none { it.path.path == root.path }) {
-                    val (total, free) = getDriveStats(root)
-                    drives.add(
-                        StorageDrive(
-                            name = "Removable Drive (${root.name})",
-                            path = root,
-                            totalBytes = total,
-                            freeBytes = free,
-                            isRemovable = true
+        try {
+            val externalDirs = ContextCompat.getExternalFilesDirs(ctx, null)
+            for (f in externalDirs) {
+                if (f != null && Environment.isExternalStorageRemovable(f)) {
+                    var root = f
+                    while (root.parentFile != null && root.parentFile?.path != "/storage") {
+                        root = root.parentFile ?: break
+                    }
+                    if (drives.none { it.path.path == root.path }) {
+                        val (total, free) = getDriveStats(root)
+                        drives.add(
+                            StorageDrive(
+                                name = "Removable Drive (${root.name})",
+                                path = root,
+                                totalBytes = total,
+                                freeBytes = free,
+                                isRemovable = true
+                            )
                         )
-                    )
+                    }
                 }
             }
+        } catch (_: Exception) {}
+
+        // Fallback drive if nothing was found
+        if (drives.isEmpty()) {
+            drives.add(
+                StorageDrive(
+                    name = "Internal Storage",
+                    path = File("/storage/emulated/0"),
+                    totalBytes = 0L,
+                    freeBytes = 0L,
+                    isRemovable = false
+                )
+            )
         }
 
         return drives
@@ -165,10 +208,12 @@ object FileManagerHelper {
      * List directory contents: folders first, then files.
      */
     suspend fun listDirectory(dir: File): List<FileItem> = withContext(Dispatchers.IO) {
+        if (!dir.exists()) dir.mkdirs()
         val files = dir.listFiles() ?: return@withContext emptyList()
         val items = files.filter { !it.name.startsWith(".") }.map { file ->
             val ext = file.extension.lowercase(Locale.ROOT)
             val mime = getMimeType(ext)
+            val childCount = if (file.isDirectory) (file.listFiles()?.count { !it.name.startsWith(".") } ?: 0) else 0
             FileItem(
                 file = file,
                 name = file.name,
@@ -176,7 +221,8 @@ object FileManagerHelper {
                 sizeBytes = if (file.isDirectory) 0L else file.length(),
                 lastModified = file.lastModified(),
                 extension = ext,
-                mimeType = mime
+                mimeType = mime,
+                childCount = childCount
             )
         }
 
@@ -185,41 +231,28 @@ object FileManagerHelper {
     }
 
     /**
-     * Scan files for standard Samsung My Files categories.
+     * Scan files for media categories (Downloads, APKs, Videos, Music, Pictures, Documents, Quickshare).
      */
     suspend fun scanCategoryFiles(categoryKey: String): List<FileItem> = withContext(Dispatchers.IO) {
-        val root = Environment.getExternalStorageDirectory() ?: return@withContext emptyList()
+        val root = Environment.getExternalStorageDirectory() ?: File("/storage/emulated/0")
         val results = mutableListOf<FileItem>()
+
+        if (categoryKey == "quickshare") {
+            val qs = ensureQuickShareDir()
+            return@withContext listDirectory(qs)
+        }
 
         if (categoryKey == "downloads") {
             val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if (downloadDir != null && downloadDir.exists()) {
-                val files = downloadDir.listFiles() ?: emptyArray()
-                for (f in files) {
-                    if (!f.isDirectory && !f.name.startsWith(".")) {
-                        val ext = f.extension.lowercase(Locale.ROOT)
-                        results.add(
-                            FileItem(
-                                file = f,
-                                name = f.name,
-                                isDirectory = false,
-                                sizeBytes = f.length(),
-                                lastModified = f.lastModified(),
-                                extension = ext,
-                                mimeType = getMimeType(ext)
-                            )
-                        )
-                    }
-                }
-            }
-            return@withContext results.sortedByDescending { it.lastModified }
+                ?: File(root, "Download")
+            return@withContext listDirectory(downloadDir)
         }
 
         val queue = ArrayDeque<File>()
         queue.add(root)
         var count = 0
 
-        while (queue.isNotEmpty() && count < 6000) {
+        while (queue.isNotEmpty() && count < 8000) {
             val dir = queue.removeFirst()
             val files = dir.listFiles() ?: continue
             for (f in files) {
@@ -276,9 +309,12 @@ object FileManagerHelper {
     }
 
     /**
-     * Open media file (Video, Audio, Photo) in external TV media player or gallery.
+     * Open file with suitable TV viewer, media player or package installer.
      */
-    fun openMediaFile(ctx: Context, file: File): Boolean {
+    fun openFile(ctx: Context, file: File): Boolean {
+        if (file.extension.equals("apk", ignoreCase = true)) {
+            return installApk(ctx, file)
+        }
         try {
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
             val ext = file.extension.lowercase(Locale.ROOT)
@@ -291,7 +327,7 @@ object FileManagerHelper {
             ctx.startActivity(intent)
             return true
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to open media file ${file.name}", e)
+            Log.w(TAG, "Failed to open file ${file.name}", e)
             return false
         }
     }
@@ -321,18 +357,91 @@ object FileManagerHelper {
         }
     }
 
-    private fun isVideo(ext: String) = ext in listOf("mp4", "mkv", "avi", "mov", "webm", "ts", "3gp", "m4v")
-    private fun isAudio(ext: String) = ext in listOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "wma")
-    private fun isImage(ext: String) = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
-    private fun isDocument(ext: String) = ext in listOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "epub", "zip", "tar", "gz")
+    suspend fun copyFile(source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val dest = File(targetDir, source.name)
+            if (source.isDirectory) {
+                source.copyRecursively(dest, overwrite = true)
+            } else {
+                source.copyTo(dest, overwrite = true)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Copy failed", e)
+            false
+        }
+    }
 
-    private fun getMimeType(ext: String): String {
+    suspend fun moveFile(source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val dest = File(targetDir, source.name)
+            val success = source.renameTo(dest)
+            if (!success) {
+                if (source.isDirectory) {
+                    source.copyRecursively(dest, overwrite = true)
+                    source.deleteRecursively()
+                } else {
+                    source.copyTo(dest, overwrite = true)
+                    source.delete()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Move failed", e)
+            false
+        }
+    }
+
+    suspend fun createFolder(parentDir: File, name: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val newDir = File(parentDir, name)
+            if (!newDir.exists()) newDir.mkdirs() else true
+        } catch (e: Exception) {
+            Log.e(TAG, "Create folder failed", e)
+            false
+        }
+    }
+
+    fun formatFileSize(bytes: Long): String = when {
+        bytes <= 0L -> "0 B"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024f)
+        bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024f * 1024f))
+        else -> "%.2f GB".format(bytes / (1024f * 1024f * 1024f))
+    }
+
+    fun formatDate(timestamp: Long): String {
+        if (timestamp <= 0L) return ""
+        val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+        return sdf.format(Date(timestamp))
+    }
+
+    fun getFileDetails(file: File): Map<String, String> {
+        return linkedMapOf(
+            "Name" to file.name,
+            "Path" to file.absolutePath,
+            "Type" to (if (file.isDirectory) "Folder" else file.extension.uppercase().ifEmpty { "File" }),
+            "Size" to (if (file.isDirectory) "${file.listFiles()?.size ?: 0} items" else formatFileSize(file.length())),
+            "Modified" to formatDate(file.lastModified()),
+            "Readable" to (if (file.canRead()) "Yes" else "No"),
+            "Writable" to (if (file.canWrite()) "Yes" else "No"),
+        )
+    }
+
+    fun isVideo(ext: String) = ext in listOf("mp4", "mkv", "avi", "mov", "webm", "ts", "3gp", "m4v")
+    fun isAudio(ext: String) = ext in listOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "wma")
+    fun isImage(ext: String) = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
+    fun isDocument(ext: String) = ext in listOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "epub", "zip", "tar", "gz", "rar", "7z")
+
+    fun getMimeType(ext: String): String {
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: when (ext) {
             "apk" -> "application/vnd.android.package-archive"
             "mkv" -> "video/x-matroska"
             "mp4" -> "video/mp4"
             "mp3" -> "audio/mpeg"
             "pdf" -> "application/pdf"
+            "zip" -> "application/zip"
+            "rar" -> "application/x-rar-compressed"
             else -> "*/*"
         }
     }

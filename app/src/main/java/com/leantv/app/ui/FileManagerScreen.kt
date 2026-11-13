@@ -1,78 +1,72 @@
 package com.leantv.app.ui
 
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Usb
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Android
-import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.Description
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.leantv.app.R
+import com.leantv.app.files.ClipboardItem
 import com.leantv.app.files.FileItem
 import com.leantv.app.files.FileManagerHelper
 import com.leantv.app.files.StorageDrive
-import com.leantv.app.storage.StorageHelper
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 @Composable
 fun FileManagerScreen(
+    initialDir: File? = null,
+    highlightFile: String? = null,
     onClose: () -> Unit
 ) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
 
     var drives by remember { mutableStateOf<List<StorageDrive>>(emptyList()) }
@@ -81,13 +75,21 @@ fun FileManagerScreen(
     var activeCategory by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
-    var selectedFile by remember { mutableStateOf<FileItem?>(null) }
+    // Clipboard for Copy / Move
+    var clipboard by remember { mutableStateOf<ClipboardItem?>(null) }
+
+    // Action dialogs
+    var actionFile by remember { mutableStateOf<FileItem?>(null) }
     var showRenameDialog by remember { mutableStateOf<FileItem?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf<FileItem?>(null) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
+    var newFolderInput by remember { mutableStateOf("") }
+    var showDetailsDialog by remember { mutableStateOf<FileItem?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    val hasPerm = remember { FileManagerHelper.hasStoragePermission(ctx) }
+    var hasPermission by remember { mutableStateOf(FileManagerHelper.hasStoragePermission(ctx)) }
+    var showPermissionPrompt by remember { mutableStateOf(false) }
 
     fun loadDir(dir: File) {
         scope.launch {
@@ -110,533 +112,1067 @@ fun FileManagerScreen(
     }
 
     LaunchedEffect(Unit) {
+        // Auto grant storage permission if Shizuku / ADB is active
+        val granted = FileManagerHelper.autoGrantStoragePermission(ctx)
+        hasPermission = granted
+        if (!granted) {
+            showPermissionPrompt = true
+        }
+
+        // Initialize drives
         val detected = FileManagerHelper.detectStorageDrives(ctx)
         drives = detected
-        if (detected.isNotEmpty()) {
+
+        if (initialDir != null && (initialDir.exists() || initialDir.mkdirs())) {
+            loadDir(initialDir)
+        } else if (detected.isNotEmpty()) {
             loadDir(detected.first().path)
+        } else {
+            loadDir(FileManagerHelper.ensureQuickShareDir())
         }
     }
 
     // Intercept Back button: navigate up directory, or close file manager
     BackHandler {
-        val cur = currentDir
-        if (activeCategory != null) {
-            val root = drives.firstOrNull()?.path
-            if (root != null) loadDir(root) else onClose()
-        } else if (cur != null && drives.none { it.path.path == cur.path }) {
-            val parent = cur.parentFile
-            if (parent != null && parent.canRead()) {
-                loadDir(parent)
-            } else {
-                onClose()
+        when {
+            actionFile != null -> actionFile = null
+            showRenameDialog != null -> showRenameDialog = null
+            showDeleteDialog != null -> showDeleteDialog = null
+            showNewFolderDialog -> showNewFolderDialog = false
+            showDetailsDialog != null -> showDetailsDialog = null
+            showPermissionPrompt -> showPermissionPrompt = false
+            activeCategory != null -> {
+                val root = drives.firstOrNull()?.path ?: File("/storage/emulated/0")
+                loadDir(root)
             }
-        } else {
-            onClose()
+            currentDir != null -> {
+                val cur = currentDir!!
+                val isRoot = drives.any { it.path.absolutePath == cur.absolutePath } || cur.path == "/storage/emulated/0" || cur.path == "/sdcard"
+                if (!isRoot && cur.parentFile != null && cur.parentFile!!.canRead()) {
+                    loadDir(cur.parentFile!!)
+                } else {
+                    onClose()
+                }
+            }
+            else -> onClose()
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))
-            .padding(horizontal = 48.dp, vertical = 32.dp)
+            .background(Color(0xFF0D0E12))
+            .padding(horizontal = 48.dp, vertical = 28.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header Bar
+            // ─── Header: Breadcrumb & Main Actions ───
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "SAMSUNG MY FILES",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFFF9F0A),
-                        letterSpacing = 2.sp
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "TV File Manager",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF2A85FF), Color(0xFF0051C7)))),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.Folder,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.width(14.dp))
+
+                    Column {
+                        Text(
+                            text = "LEANTV FILES",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF388AF6),
+                            letterSpacing = 2.4.sp
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        // Breadcrumbs path
+                        Text(
+                            text = if (activeCategory != null) "Category  ›  ${activeCategory?.uppercase()}"
+                            else currentDir?.path?.replace("/storage/emulated/0", "Internal Storage") ?: "Storage",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (!hasPerm) {
-                        FileGlassPill(
-                            text = "Grant Storage Access",
-                            accent = Color(0xFFFF9F0A),
+                // Top Actions (New Folder, Paste, Close)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (currentDir != null) {
+                        TvHeaderButton(
+                            label = "New Folder",
+                            icon = Icons.Rounded.CreateNewFolder,
+                            onClick = {
+                                newFolderInput = ""
+                                showNewFolderDialog = true
+                            }
+                        )
+                    }
+
+                    clipboard?.let { clip ->
+                        TvHeaderButton(
+                            label = "Paste (${clip.file.name.take(12)})",
+                            icon = Icons.Rounded.ContentPaste,
+                            accentColor = Color(0xFF30D158),
+                            onClick = {
+                                val target = currentDir
+                                if (target != null) {
+                                    scope.launch {
+                                        val ok = if (clip.isCut) {
+                                            FileManagerHelper.moveFile(clip.file, target)
+                                        } else {
+                                            FileManagerHelper.copyFile(clip.file, target)
+                                        }
+                                        if (ok) {
+                                            statusMessage = if (clip.isCut) "Moved successfully" else "Copied successfully"
+                                            clipboard = null
+                                            loadDir(target)
+                                        } else {
+                                            statusMessage = "Operation failed"
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+
+                    if (!hasPermission) {
+                        TvHeaderButton(
+                            label = "Grant Storage Access",
+                            icon = Icons.Rounded.Shield,
+                            accentColor = Color(0xFFFF9F0A),
                             onClick = { FileManagerHelper.requestStoragePermission(ctx) }
                         )
                     }
-                    FileGlassPill(
-                        text = "Close",
-                        accent = Color.White,
+
+                    TvHeaderButton(
+                        label = "Close",
+                        icon = Icons.Rounded.Close,
                         onClick = onClose
                     )
                 }
             }
 
             statusMessage?.let { msg ->
+                LaunchedEffect(msg) {
+                    delay(3500)
+                    statusMessage = null
+                }
                 Spacer(Modifier.height(10.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(Color(0x33FFA726))
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    Text(text = msg, color = Color(0xFFFFD60A), fontSize = 16.sp)
+                    Text(text = msg, color = Color(0xFFFFD60A), fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
             }
 
             Spacer(Modifier.height(18.dp))
 
-            // Categories Row (Samsung style)
+            // ─── Quick Access Tabs Row (Amaze style categories + Quick Share) ───
             val categories = listOf(
+                Pair("quickshare", "Quick Share"),
                 Pair("downloads", "Downloads"),
+                Pair("apks", "APKs"),
                 Pair("videos", "Videos"),
-                Pair("apks", "APK Files"),
-                Pair("audio", "Audio"),
-                Pair("images", "Images"),
+                Pair("audio", "Music"),
+                Pair("images", "Pictures"),
                 Pair("documents", "Documents")
             )
 
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(categories) { (key, label) ->
-                    CategoryPill(
-                        label = label,
-                        isSelected = activeCategory == key,
-                        onClick = { loadCategory(key) }
+                // Root Internal Storage tab
+                item {
+                    val root = drives.firstOrNull()?.path ?: File("/storage/emulated/0")
+                    val isSelected = currentDir?.absolutePath == root.absolutePath && activeCategory == null
+                    TvCategoryPill(
+                        label = "Internal Storage",
+                        icon = Icons.Rounded.Storage,
+                        isSelected = isSelected,
+                        onClick = { loadDir(root) }
                     )
                 }
-            }
 
-            Spacer(Modifier.height(16.dp))
+                items(categories) { (key, label) ->
+                    val isSelected = activeCategory == key || (key == "quickshare" && currentDir?.name == "Quickshare")
+                    val icon = when (key) {
+                        "quickshare" -> Icons.Rounded.Bolt
+                        "downloads" -> Icons.Rounded.Download
+                        "apks" -> Icons.Rounded.Android
+                        "videos" -> Icons.Rounded.Movie
+                        "audio" -> Icons.Rounded.MusicNote
+                        "images" -> Icons.Rounded.Image
+                        else -> Icons.Rounded.Description
+                    }
+                    val isQs = key == "quickshare"
+                    TvCategoryPill(
+                        label = label,
+                        icon = icon,
+                        iconRes = if (isQs) R.drawable.ic_quick_share else null,
+                        isSelected = isSelected,
+                        accent = if (isQs) Color(0xFF0A84FF) else null,
+                        onClick = {
+                            if (isQs) {
+                                loadDir(FileManagerHelper.ensureQuickShareDir())
+                            } else {
+                                loadCategory(key)
+                            }
+                        }
+                    )
+                }
 
-            // Storage Drives Row
-            if (drives.isNotEmpty()) {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(drives) { drive ->
-                        DriveCard(
-                            drive = drive,
-                            isSelected = currentDir?.path == drive.path.path,
-                            onClick = { loadDir(drive.path) }
+                // Any connected USB / Removable drives
+                drives.filter { it.isRemovable }.forEach { usb ->
+                    item {
+                        TvCategoryPill(
+                            label = usb.name,
+                            icon = Icons.Rounded.Usb,
+                            isSelected = currentDir?.absolutePath == usb.path.absolutePath,
+                            onClick = { loadDir(usb.path) }
                         )
                     }
                 }
-                Spacer(Modifier.height(16.dp))
             }
 
-            // Path Breadcrumb
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0x14FFFFFF))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (activeCategory != null) "Category: ${activeCategory?.replaceFirstChar { it.uppercase() }}"
-                    else currentDir?.path ?: "Storage Root",
-                    color = Color(0xBBFFFFFF),
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Spacer(Modifier.height(18.dp))
 
-            Spacer(Modifier.height(12.dp))
-
-            // File & Directory List
+            // ─── Main Content Grid / Card List ───
             if (isLoading) {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Scanning storage...", color = Color(0x88FFFFFF), fontSize = 19.sp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF0A84FF), strokeWidth = 3.dp)
+                        Text("Reading storage...", color = Color(0x99FFFFFF), fontSize = 18.sp)
+                    }
                 }
             } else if (currentFiles.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("This folder is empty.", color = Color(0x66FFFFFF), fontSize = 19.sp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            tint = Color(0x33FFFFFF),
+                            modifier = Modifier.size(72.dp)
+                        )
+                        Text(
+                            text = if (activeCategory != null) "No $activeCategory files found" else "This folder is empty",
+                            color = Color(0x66FFFFFF),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0x0EFFFFFF))
-                        .padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(bottom = 32.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    // If in subfolder, show ".." Up Folder item
+                    if (currentDir != null && drives.none { it.path.absolutePath == currentDir!!.absolutePath } && currentDir!!.parentFile != null) {
+                        item {
+                            TvParentFolderCard(
+                                onClick = { loadDir(currentDir!!.parentFile!!) }
+                            )
+                        }
+                    }
+
                     items(currentFiles, key = { it.file.absolutePath }) { item ->
-                        FileRow(
+                        val isHighlighted = highlightFile != null && item.name.equals(highlightFile, ignoreCase = true)
+                        TvFileCard(
                             item = item,
-                            isSelected = selectedFile?.file?.absolutePath == item.file.absolutePath,
-                            onItemClick = {
+                            isHighlighted = isHighlighted,
+                            onClick = {
                                 if (item.isDirectory) {
                                     loadDir(item.file)
-                                } else if (item.extension == "apk") {
-                                    val success = FileManagerHelper.installApk(ctx, item.file)
-                                    if (!success) statusMessage = "Unable to install APK"
                                 } else {
-                                    val opened = FileManagerHelper.openMediaFile(ctx, item.file)
-                                    if (!opened) statusMessage = "No viewer found for ${item.name}"
+                                    val opened = FileManagerHelper.openFile(ctx, item.file)
+                                    if (!opened) statusMessage = "No compatible app found to open ${item.name}"
                                 }
                             },
-                            onToggleSelect = {
-                                selectedFile = if (selectedFile?.file?.absolutePath == item.file.absolutePath) null else item
-                            },
-                            onDelete = { showDeleteDialog = item },
-                            onRename = {
-                                showRenameDialog = item
-                                renameInput = item.name
+                            onLongClick = {
+                                actionFile = item
                             }
                         )
                     }
                 }
             }
         }
-    }
 
-    // Delete Confirmation Dialog
-    showDeleteDialog?.let { fileToDelete ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text("Delete File?", color = Color.White) },
-            text = { Text("Are you sure you want to permanently delete '${fileToDelete.name}'?", color = Color(0xCCFFFFFF)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val ok = FileManagerHelper.deleteFile(fileToDelete.file)
-                        showDeleteDialog = null
-                        if (ok) {
-                            statusMessage = "Deleted ${fileToDelete.name}"
-                            currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
-                        } else {
-                            statusMessage = "Failed to delete file"
+        // ─── Modal Context Menu: File Actions ───
+        actionFile?.let { item ->
+            TvFileActionModal(
+                item = item,
+                onDismiss = { actionFile = null },
+                onOpen = {
+                    actionFile = null
+                    FileManagerHelper.openFile(ctx, item.file)
+                },
+                onCopy = {
+                    actionFile = null
+                    clipboard = ClipboardItem(item.file, isCut = false)
+                    statusMessage = "Copied to clipboard. Navigate to target folder and click Paste."
+                },
+                onMove = {
+                    actionFile = null
+                    clipboard = ClipboardItem(item.file, isCut = true)
+                    statusMessage = "Moved to clipboard. Navigate to target folder and click Paste."
+                },
+                onRename = {
+                    actionFile = null
+                    renameInput = item.name
+                    showRenameDialog = item
+                },
+                onDelete = {
+                    actionFile = null
+                    showDeleteDialog = item
+                },
+                onDetails = {
+                    actionFile = null
+                    showDetailsDialog = item
+                }
+            )
+        }
+
+        // ─── Rename Dialog ───
+        showRenameDialog?.let { item ->
+            TvInputDialog(
+                title = "Rename",
+                initialValue = renameInput,
+                onValueChange = { renameInput = it },
+                confirmLabel = "Rename",
+                onConfirm = {
+                    if (renameInput.isNotBlank() && renameInput != item.name) {
+                        scope.launch {
+                            val ok = FileManagerHelper.renameFile(item.file, renameInput.trim())
+                            if (ok) {
+                                statusMessage = "Renamed to ${renameInput.trim()}"
+                                currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
+                            } else {
+                                statusMessage = "Rename failed"
+                            }
                         }
                     }
-                }) {
-                    Text("Delete", color = Color(0xFFFF453A))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) {
-                    Text("Cancel", color = Color.White)
-                }
-            },
-            containerColor = Color(0xFF232326)
-        )
-    }
+                    showRenameDialog = null
+                },
+                onDismiss = { showRenameDialog = null }
+            )
+        }
 
-    // Rename Dialog
-    showRenameDialog?.let { fileToRename ->
-        AlertDialog(
-            onDismissRequest = { showRenameDialog = null },
-            title = { Text("Rename File", color = Color.White) },
-            text = {
-                Column {
-                    Text("Enter new filename:", color = Color(0xCCFFFFFF), fontSize = 16.sp)
-                    Spacer(Modifier.height(8.dp))
-                    TextField(
-                        value = renameInput,
-                        onValueChange = { renameInput = it },
-                        singleLine = true,
-                        colors = TextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedContainerColor = Color(0x22FFFFFF),
-                            unfocusedContainerColor = Color(0x11FFFFFF)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val ok = FileManagerHelper.renameFile(fileToRename.file, renameInput.trim())
-                        showRenameDialog = null
-                        if (ok) {
-                            statusMessage = "Renamed to ${renameInput.trim()}"
-                            currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
-                        } else {
-                            statusMessage = "Failed to rename file"
+        // ─── New Folder Dialog ───
+        if (showNewFolderDialog) {
+            TvInputDialog(
+                title = "Create New Folder",
+                initialValue = newFolderInput,
+                onValueChange = { newFolderInput = it },
+                confirmLabel = "Create",
+                onConfirm = {
+                    val name = newFolderInput.trim()
+                    if (name.isNotBlank() && currentDir != null) {
+                        scope.launch {
+                            val ok = FileManagerHelper.createFolder(currentDir!!, name)
+                            if (ok) {
+                                statusMessage = "Folder '$name' created"
+                                loadDir(currentDir!!)
+                            } else {
+                                statusMessage = "Failed to create folder"
+                            }
                         }
                     }
-                }) {
-                    Text("Save", color = Color(0xFF64D2FF))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRenameDialog = null }) {
-                    Text("Cancel", color = Color.White)
-                }
-            },
-            containerColor = Color(0xFF232326)
-        )
-    }
-}
-
-@Composable
-private fun CategoryPill(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val isFocused by interaction.collectIsFocusedAsState()
-
-    Box(
-        modifier = Modifier
-            .scale(if (isFocused) 1.05f else 1f)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isFocused) Color.White
-                else if (isSelected) Color(0x44FFA726)
-                else Color(0x1AFFFFFF)
+                    showNewFolderDialog = false
+                },
+                onDismiss = { showNewFolderDialog = false }
             )
-            .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else if (isSelected) Color(0xFFFF9F0A) else Color(0x22FFFFFF),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .focusable(interactionSource = interaction)
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-    ) {
-        Text(
-            text = label,
-            color = if (isFocused) Color.Black else if (isSelected) Color(0xFFFF9F0A) else Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
+        }
 
-@Composable
-private fun DriveCard(
-    drive: StorageDrive,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val isFocused by interaction.collectIsFocusedAsState()
+        // ─── Delete Confirmation Dialog ───
+        showDeleteDialog?.let { item ->
+            TvConfirmDialog(
+                title = "Delete ${if (item.isDirectory) "Folder" else "File"}?",
+                message = "Are you sure you want to permanently delete '${item.name}'? This cannot be undone.",
+                confirmLabel = "Delete",
+                confirmColor = Color(0xFFFF453A),
+                onConfirm = {
+                    scope.launch {
+                        val ok = FileManagerHelper.deleteFile(item.file)
+                        if (ok) {
+                            statusMessage = "Deleted '${item.name}'"
+                            currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
+                        } else {
+                            statusMessage = "Delete failed"
+                        }
+                    }
+                    showDeleteDialog = null
+                },
+                onDismiss = { showDeleteDialog = null }
+            )
+        }
 
-    Box(
-        modifier = Modifier
-            .scale(if (isFocused) 1.03f else 1f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (isFocused) Color(0x38FFFFFF)
-                else if (isSelected) Color(0x29FFFFFF)
-                else Color(0x14FFFFFF)
+        // ─── File Details Dialog ───
+        showDetailsDialog?.let { item ->
+            TvFileDetailsDialog(
+                item = item,
+                onDismiss = { showDetailsDialog = null }
             )
-            .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else Color(0x22FFFFFF),
-                shape = RoundedCornerShape(14.dp)
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .focusable(interactionSource = interaction)
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (drive.isRemovable) Icons.Rounded.Usb else Icons.Rounded.Storage,
-                    contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(text = drive.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Medium)
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "${StorageHelper.formatBytes(drive.freeBytes)} free of ${StorageHelper.formatBytes(drive.totalBytes)}",
-                color = Color(0x88FFFFFF),
-                fontSize = 15.sp
+        }
+
+        // ─── Storage Permission Dialog ───
+        if (showPermissionPrompt && !hasPermission) {
+            TvConfirmDialog(
+                title = "Storage Access Required",
+                message = "LeanTV needs full storage access to browse your files, install APKs, and save incoming Quick Share files to internal storage.",
+                confirmLabel = "Grant Storage Access",
+                confirmColor = Color(0xFF0A84FF),
+                onConfirm = {
+                    showPermissionPrompt = false
+                    FileManagerHelper.requestStoragePermission(ctx)
+                },
+                onDismiss = { showPermissionPrompt = false }
             )
         }
     }
 }
 
+// ─── Sub-Composables for Amaze TV UI ───
+
 @Composable
-private fun FileRow(
-    item: FileItem,
-    isSelected: Boolean,
-    onItemClick: () -> Unit,
-    onToggleSelect: () -> Unit,
-    onDelete: () -> Unit,
-    onRename: () -> Unit
+private fun TvCategoryPill(
+    label: String,
+    icon: ImageVector? = null,
+    iconRes: Int? = null,
+    isSelected: Boolean = false,
+    accent: Color? = null,
+    onClick: () -> Unit
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val isFocused by interaction.collectIsFocusedAsState()
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy  HH:mm", Locale.getDefault()) }
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.07f else 1f, spring(dampingRatio = 0.8f, stiffness = 400f), label = "catScale")
+    val shape = RoundedCornerShape(50)
 
-    val fileIcon = when {
-        item.isDirectory -> Icons.Rounded.Folder
-        item.extension == "apk" -> Icons.Rounded.Android
-        item.mimeType.startsWith("video/") -> Icons.Rounded.Movie
-        item.mimeType.startsWith("audio/") -> Icons.Rounded.MusicNote
-        item.mimeType.startsWith("image/") -> Icons.Rounded.Image
-        else -> Icons.Rounded.Description
+    val bg = when {
+        focused -> Color.White
+        isSelected -> accent?.copy(alpha = 0.35f) ?: Color(0x3DFFFFFF)
+        else -> Color(0x1AFFFFFF)
     }
-    val fileTint = when {
-        item.isDirectory -> Color(0xFF64D2FF)
-        item.extension == "apk" -> Color(0xFF30D158)
-        item.mimeType.startsWith("video/") -> Color(0xFFBF5AF2)
-        item.mimeType.startsWith("audio/") -> Color(0xFFFF9F0A)
-        item.mimeType.startsWith("image/") -> Color(0xFFFF453A)
-        else -> Color(0xFF8E8E93)
+    val fg = when {
+        focused -> Color.Black
+        isSelected -> accent ?: Color.White
+        else -> Color(0xCCFFFFFF)
     }
 
-    Column(
+    Row(
+        modifier = Modifier
+            .height(48.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .background(bg)
+            .border(
+                if (focused) 1.5.dp else if (isSelected) 1.dp else 0.5.dp,
+                if (focused) Color.White else if (isSelected) (accent ?: Color.White) else Color(0x24FFFFFF),
+                shape
+            )
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .clickable {
+                TvSound.playClick(view)
+                onClick()
+            }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        if (iconRes != null) {
+            Icon(painterResource(iconRes), contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+        } else if (icon != null) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(text = label, color = fg, fontSize = 16.sp, fontWeight = if (isSelected || focused) FontWeight.SemiBold else FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun TvHeaderButton(
+    label: String,
+    icon: ImageVector,
+    accentColor: Color = Color.White,
+    onClick: () -> Unit
+) {
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+
+    Row(
+        modifier = Modifier
+            .height(42.dp)
+            .clip(shape)
+            .background(if (focused) Color.White else Color(0x1FFFFFFF))
+            .border(1.dp, if (focused) Color.White else Color(0x2EFFFFFF), shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .clickable {
+                TvSound.playClick(view)
+                onClick()
+            }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = if (focused) Color.Black else accentColor, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = if (focused) Color.Black else accentColor, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun TvParentFolderCard(onClick: () -> Unit) {
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(20.dp)
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .scale(if (isFocused) 1.01f else 1f)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (isFocused) Color(0x3DFFFFFF)
-                else if (isSelected) Color(0x24FFFFFF)
-                else Color(0x0CFFFFFF)
-            )
-            .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else Color(0x16FFFFFF),
-                shape = RoundedCornerShape(10.dp)
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onItemClick)
-            .focusable(interactionSource = interaction)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .height(96.dp)
+            .clip(shape)
+            .background(if (focused) Color.White else Color(0x14FFFFFF))
+            .border(1.5.dp, if (focused) Color.White else Color(0x24FFFFFF), shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .clickable {
+                TvSound.playClick(view)
+                onClick()
+            }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0x33FFFFFF)),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(fileIcon, contentDescription = null, tint = fileTint, modifier = Modifier.size(30.dp))
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = item.name,
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${dateFormat.format(Date(item.lastModified))} • ${if (item.isDirectory) "Folder" else StorageHelper.formatBytes(item.sizeBytes)}",
-                        color = Color(0x88FFFFFF),
-                        fontSize = 15.sp
-                    )
-                }
-            }
-
-            // Quick type badge
-            if (item.extension.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0x22FFFFFF))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = item.extension.uppercase(),
-                        color = Color(0xDDFFFFFF),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = null,
+                tint = if (focused) Color.Black else Color.White,
+                modifier = Modifier.size(28.dp)
+            )
         }
-
-        // Inline Action bar when focused or selected
-        if (isFocused || isSelected) {
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FileActionPill(
-                    text = if (item.isDirectory) "Open" else if (item.extension == "apk") "Install" else "Play / View",
-                    onClick = onItemClick
-                )
-                FileActionPill(text = "Rename", onClick = onRename)
-                FileActionPill(text = "Delete", onClick = onDelete)
-            }
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(".. (Up Level)", color = if (focused) Color.Black else Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text("Return to parent folder", color = if (focused) Color(0x99000000) else Color(0x80FFFFFF), fontSize = 13.sp)
         }
     }
 }
 
 @Composable
-private fun FileActionPill(text: String, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val isFocused by interaction.collectIsFocusedAsState()
+private fun TvFileCard(
+    item: FileItem,
+    isHighlighted: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var longPressJob by remember { mutableStateOf<Job?>(null) }
+    var isLongPressHandled by remember { mutableStateOf(false) }
+
+    val scale by animateFloatAsState(
+        if (focused) 1.05f else 1f,
+        spring(dampingRatio = 0.8f, stiffness = 420f),
+        label = "fileScale"
+    )
+    val shape = RoundedCornerShape(20.dp)
+
+    val iconVector = when {
+        item.isDirectory -> Icons.Rounded.Folder
+        item.extension == "apk" -> Icons.Rounded.Android
+        FileManagerHelper.isVideo(item.extension) -> Icons.Rounded.Movie
+        FileManagerHelper.isAudio(item.extension) -> Icons.Rounded.MusicNote
+        FileManagerHelper.isImage(item.extension) -> Icons.Rounded.Image
+        item.extension in listOf("zip", "rar", "7z", "tar", "gz") -> Icons.Rounded.Archive
+        else -> Icons.Rounded.Description
+    }
+
+    val iconTint = when {
+        focused -> Color.Black
+        item.isDirectory -> Color(0xFF2A85FF)
+        item.extension == "apk" -> Color(0xFF30D158)
+        FileManagerHelper.isVideo(item.extension) -> Color(0xFFFF9F0A)
+        FileManagerHelper.isAudio(item.extension) -> Color(0xFFFF375F)
+        FileManagerHelper.isImage(item.extension) -> Color(0xFFBF5AF2)
+        else -> Color(0xFF64D2FF)
+    }
+
+    val borderColor = when {
+        focused -> Color.White
+        isHighlighted -> Color(0xFF0A84FF)
+        else -> Color(0x1AFFFFFF)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(96.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(if (focused) 16.dp else 0.dp, shape, clip = false)
+            .clip(shape)
+            .background(if (focused) Color.White else if (isHighlighted) Color(0x260A84FF) else Color(0x12FFFFFF))
+            .border(if (focused) 2.dp else if (isHighlighted) 1.5.dp else 1.dp, borderColor, shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .focusable()
+            .onPreviewKeyEvent { ev ->
+                val k = ev.nativeKeyEvent
+                val center = k.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || k.keyCode == KeyEvent.KEYCODE_ENTER
+                val menu = k.keyCode == KeyEvent.KEYCODE_MENU
+                when {
+                    menu && k.action == KeyEvent.ACTION_DOWN -> {
+                        TvSound.playClick(view)
+                        onLongClick()
+                        true
+                    }
+                    center && k.action == KeyEvent.ACTION_DOWN -> {
+                        if (k.repeatCount == 0) {
+                            isLongPressHandled = false
+                            longPressJob?.cancel()
+                            longPressJob = scope.launch {
+                                delay(450)
+                                isLongPressHandled = true
+                                TvSound.playClick(view)
+                                onLongClick()
+                            }
+                        }
+                        true
+                    }
+                    center && k.action == KeyEvent.ACTION_UP -> {
+                        val wasLongPress = isLongPressHandled
+                        longPressJob?.cancel()
+                        longPressJob = null
+                        isLongPressHandled = false
+                        if (!wasLongPress) {
+                            TvSound.playClick(view)
+                            onClick()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon container
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (focused) Color(0x1F000000) else iconTint.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                iconVector,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+
+        Spacer(Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                color = if (focused) Color.Black else Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(3.dp))
+            val detail = if (item.isDirectory) {
+                "${item.childCount} items • ${FileManagerHelper.formatDate(item.lastModified)}"
+            } else {
+                "${FileManagerHelper.formatFileSize(item.sizeBytes)} • ${FileManagerHelper.formatDate(item.lastModified)}"
+            }
+            Text(
+                text = detail,
+                color = if (focused) Color(0x99000000) else Color(0x80FFFFFF),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+// ─── Modal Context Menu: File Actions ───
+
+@Composable
+private fun TvFileActionModal(
+    item: FileItem,
+    onDismiss: () -> Unit,
+    onOpen: () -> Unit,
+    onCopy: () -> Unit,
+    onMove: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onDetails: () -> Unit
+) {
+    val autoFocus = rememberAutoFocus()
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isFocused) Color.White else Color(0x26FFFFFF))
-            .border(1.dp, if (isFocused) Color.White else Color(0x33FFFFFF), RoundedCornerShape(6.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .focusable(interactionSource = interaction)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .clickable(onClick = onDismiss)
+            .modalTrap(),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            color = if (isFocused) Color.Black else Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Column(
+            modifier = Modifier
+                .width(480.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color(0xFF1E2128))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(28.dp))
+                .padding(26.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = item.name,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+
+            TvModalActionButton(
+                label = if (item.isDirectory) "Open Folder" else if (item.extension == "apk") "Install APK" else "Open File",
+                icon = if (item.extension == "apk") Icons.Rounded.Download else Icons.Rounded.Launch,
+                modifier = Modifier.focusRequester(autoFocus),
+                onClick = onOpen
+            )
+            TvModalActionButton(label = "Copy", icon = Icons.Rounded.ContentCopy, onClick = onCopy)
+            TvModalActionButton(label = "Move / Cut", icon = Icons.Rounded.DriveFileMove, onClick = onMove)
+            TvModalActionButton(label = "Rename", icon = Icons.Rounded.Edit, onClick = onRename)
+            TvModalActionButton(label = "File Details", icon = Icons.Rounded.Info, onClick = onDetails)
+            TvModalActionButton(label = "Delete", icon = Icons.Rounded.Delete, accentColor = Color(0xFFFF453A), onClick = onDelete)
+            TvModalActionButton(label = "Cancel", icon = Icons.Rounded.Close, onClick = onDismiss)
+        }
     }
 }
 
 @Composable
-private fun FileGlassPill(
-    text: String,
-    accent: Color,
+private fun TvModalActionButton(
+    label: String,
+    icon: ImageVector,
+    accentColor: Color = Color.White,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val isFocused by interaction.collectIsFocusedAsState()
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(shape)
+            .background(if (focused) Color.White else Color(0x14FFFFFF))
+            .border(1.dp, if (focused) Color.White else Color(0x1FFFFFFF), shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .clickable {
+                TvSound.playClick(view)
+                onClick()
+            }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = if (focused) Color.Black else accentColor, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
+        Text(label, color = if (focused) Color.Black else accentColor, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ─── Input Dialog for Rename & New Folder ───
+
+@Composable
+private fun TvInputDialog(
+    title: String,
+    initialValue: String,
+    onValueChange: (String) -> Unit,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialValue) }
+    val autoFocus = rememberAutoFocus()
 
     Box(
         modifier = Modifier
-            .scale(if (isFocused) 1.05f else 1f)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isFocused) accent else Color(0x1FFFFFFF))
-            .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) Color.White else Color(0x33FFFFFF),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .focusable(interactionSource = interaction)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .modalTrap(),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            color = if (isFocused && accent == Color.White) Color.Black else Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        Column(
+            modifier = Modifier
+                .width(500.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xFF1E2128))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+            TextField(
+                value = text,
+                onValueChange = {
+                    text = it
+                    onValueChange(it)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(autoFocus),
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color(0x26FFFFFF),
+                    unfocusedContainerColor = Color(0x14FFFFFF),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFF0A84FF),
+                    focusedIndicatorColor = Color(0xFF0A84FF),
+                    unfocusedIndicatorColor = Color.Transparent
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Focusable(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(50),
+                    idle = Color(0xFF0A84FF).copy(alpha = 0.25f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(confirmLabel, style = Ty.Button.copy(color = Color(0xFF0A84FF)))
+                    }
+                }
+
+                Focusable(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(50),
+                    idle = Color(0x1AFFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("Cancel", style = Ty.Button.copy(color = Color.White))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Confirmation Dialog ───
+
+@Composable
+private fun TvConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    confirmColor: Color = Color.White,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val autoFocus = rememberAutoFocus()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .modalTrap(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(520.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xFF1E2128))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(message, fontSize = 16.sp, color = Color(0xCCFFFFFF), lineHeight = 24.sp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Focusable(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f).focusRequester(autoFocus),
+                    shape = RoundedCornerShape(50),
+                    idle = confirmColor.copy(alpha = 0.25f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(confirmLabel, style = Ty.Button.copy(color = confirmColor))
+                    }
+                }
+
+                Focusable(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(50),
+                    idle = Color(0x1AFFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("Cancel", style = Ty.Button.copy(color = Color.White))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── File Details Dialog ───
+
+@Composable
+private fun TvFileDetailsDialog(
+    item: FileItem,
+    onDismiss: () -> Unit
+) {
+    val autoFocus = rememberAutoFocus()
+    val details = remember(item) { FileManagerHelper.getFileDetails(item.file) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .clickable(onClick = onDismiss)
+            .modalTrap(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(540.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xFF1E2128))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(26.dp))
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("File Details", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Spacer(Modifier.height(4.dp))
+
+            details.forEach { (key, value) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(key, color = Color(0x80FFFFFF), fontSize = 15.sp)
+                    Text(
+                        value,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.widthIn(max = 340.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Focusable(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
+                shape = RoundedCornerShape(50),
+                idle = Color(0x24FFFFFF)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text("OK", style = Ty.Button.copy(color = Color.White))
+                }
+            }
+        }
     }
 }

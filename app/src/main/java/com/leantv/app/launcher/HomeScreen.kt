@@ -86,6 +86,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,7 +98,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -152,7 +156,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     BackHandler(
         enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
                 s.showCleanTvScreen || s.showScreensaver ||
-                s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare || s.showInputsDialog ||
+                s.showNativeQuickShare || s.showInputsDialog ||
                 s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
                 s.debloatSuccessSummary != null || s.actionMenuApp != null ||
                 s.uninstallConfirmApp != null || s.showDefaultPrompt
@@ -163,8 +167,6 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showStorageManager -> vm.closeStorageManager()
             s.showFileManager -> vm.closeFileManager()
             s.showPersonalization -> vm.closePersonalization()
-            s.showQuickShare -> vm.closeQuickShare()
-            s.showQuickShareHub -> vm.closeQuickShareHub()
             s.showNativeQuickShare -> vm.closeNativeQuickShare()
             s.showInputsDialog -> vm.closeInputs()
             s.showProfileDialog -> vm.closeProfile()
@@ -214,13 +216,15 @@ fun HomeScreen(vm: LauncherViewModel) {
     if (s.showFileManager) {
         TvCanvas {
             FileManagerScreen(
+                initialDir = s.fileManagerInitialDir,
+                highlightFile = s.fileManagerHighlightFile,
                 onClose = vm::closeFileManager
             )
         }
         return
     }
 
-    val modalOpen = s.showPersonalization || s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare ||
+    val modalOpen = s.showPersonalization || s.showNativeQuickShare ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
             s.showCleanTvScreen || s.showScreensaver ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
@@ -261,13 +265,16 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val radius = 22.dp
 
                 val dock = s.dockApps.ifEmpty { s.allApps.take(cols) }.take(cols)
-                val dockPkgSet = dock.map { it.packageName }.toSet()
-                val gridApps = s.allApps.filter { it.packageName !in dockPkgSet }
+                val gridApps = s.allApps // Show all installed applications on the home screen
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
                 val heroName = s.focusedApp?.appName
                     ?: dock.firstOrNull()?.appName
                     ?: s.allApps.firstOrNull()?.appName
                     ?: ""
+
+                val topBarPillRequesters = remember { List(7) { FocusRequester() } }
+                val dockColRequesters = remember { List(cols) { FocusRequester() } }
+                val gridRow0ColRequesters = remember { List(cols) { FocusRequester() } }
 
                 var isDockVisible by remember { mutableStateOf(true) }
                 var showSortMenu by remember { mutableStateOf(false) }
@@ -285,7 +292,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                         dateText = s.dateText,
                         networkLabel = s.networkLabel,
                         sortMode = s.appSortMode,
-                        onOpenQuickShare = { vm.openQuickShareHub() },
+                        pillRequesters = topBarPillRequesters,
+                        dockRequesters = dockColRequesters,
+                        dockSize = dock.size,
+                        onOpenQuickShare = { vm.openAndroidQuickShare() },
                         onOpenInputs = vm::openInputs,
                         onOpenNetwork = vm::openNetworkSettings,
                         onOpenCleanTv = vm::requestCleanTv,
@@ -335,6 +345,36 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         AppRow(
                                             apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                             focusScale = 1.03f, showNames = false,
+                                            tileModifier = { index, _ ->
+                                                val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
+                                                val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
+                                                Modifier
+                                                    .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
+                                                    .focusProperties {
+                                                        up = topBarPillRequesters[topIdx]
+                                                        if (gridRows.isNotEmpty()) {
+                                                            down = gridRow0ColRequesters[gridTargetCol]
+                                                        }
+                                                    }
+                                                    .onPreviewKeyEvent { ev ->
+                                                        val k = ev.nativeKeyEvent
+                                                        if (k.action == KeyEvent.ACTION_DOWN) {
+                                                            when (k.keyCode) {
+                                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                                    topBarPillRequesters[topIdx].requestFocus()
+                                                                    true
+                                                                }
+                                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                                    if (gridRows.isNotEmpty()) {
+                                                                        gridRow0ColRequesters[gridTargetCol].requestFocus()
+                                                                        true
+                                                                    } else false
+                                                                }
+                                                                else -> false
+                                                            }
+                                                        } else false
+                                                    }
+                                            },
                                             onFocus = { vm.setFocusedApp(it) },
                                             onClick = { vm.launch(it) },
                                             onLongClick = { vm.showActionMenu(it) },
@@ -357,11 +397,30 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         modifier = Modifier.padding(start = bandPad + 6.dp, top = 6.dp, bottom = 4.dp)
                                     )
                                 }
-                                items(gridRows, key = { row -> "g_" + row.first().packageName }) { rowApps ->
+                                itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }) { rowIndex, rowApps ->
                                     AppRow(
                                         apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                         focusScale = 1.06f, showNames = true,
                                         modifier = Modifier.padding(start = bandPad),
+                                        tileModifier = if (rowIndex == 0) { index, _ ->
+                                            val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
+                                            Modifier
+                                                .focusRequester(gridRow0ColRequesters[index.coerceIn(0, cols - 1)])
+                                                .focusProperties {
+                                                    if (dock.isNotEmpty()) {
+                                                        up = dockColRequesters[dockTargetCol]
+                                                    }
+                                                }
+                                                .onPreviewKeyEvent { ev ->
+                                                    val k = ev.nativeKeyEvent
+                                                    if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                                        if (dock.isNotEmpty()) {
+                                                            dockColRequesters[dockTargetCol].requestFocus()
+                                                            true
+                                                        } else false
+                                                    } else false
+                                                }
+                                        } else null,
                                         badge = if (s.appSortMode == AppSortMode.RECENCY) {
                                             { app ->
                                                 val count = vm.journal.getLaunchCount(app.packageName)
@@ -382,7 +441,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             if (showTools) {
                 ToolsMenuDialog(
                     accountName = s.tvProfile.displayName,
-                    onQuickShare = { showTools = false; vm.openQuickShareHub() },
+                    onQuickShare = { showTools = false; vm.openAndroidQuickShare() },
                     onStorage = { showTools = false; vm.openStorageManager() },
                     onFiles = { showTools = false; vm.openFileManager() },
                     onTheme = { showTools = false; vm.openPersonalization() },
@@ -431,36 +490,20 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Quick Share Hub Modal
-            if (s.showQuickShareHub) {
-                QuickShareHubDialog(
-                    onLaunchNative = vm::launchNativeQuickShare,
-                    onLaunchUniversalAirShare = {
-                        vm.closeQuickShareHub()
-                        vm.openQuickShare()
-                    },
-                    onLaunchLocalSend = vm::launchLocalSend,
-                    onLaunchGoogleStore = vm::launchGoogleQuickShareStore,
-                    onDismiss = vm::closeQuickShareHub
-                )
-            }
-
-            // Quick Share Universal Wi-Fi Slide-in Panel
-            if (s.showQuickShare) {
-                QuickSharePanel(
-                    state = s.quickShareState,
-                    onClose = vm::closeQuickShare,
-                    onOpenUrl = vm::openUrl
-                )
-            }
-
-            // Native Quick Share – consent dialog (TV appears in phone picker)
+            // Native Android Quick Share – consent / discoverable dialog
             if (s.showNativeQuickShare) {
                 com.leantv.app.share.NativeQuickShareConsentDialog(
                     state = s.nativeQuickShareState,
                     onAccept = vm::acceptNativeTransfer,
                     onDecline = vm::rejectNativeTransfer,
                     onDismiss = vm::closeNativeQuickShare,
+                    onOpenFolder = {
+                        vm.closeNativeQuickShare()
+                        vm.openFileManager(
+                            initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
+                            highlightFile = null
+                        )
+                    }
                 )
             }
 
@@ -596,6 +639,9 @@ private fun CleanTvTopBar(
     dateText: String,
     networkLabel: String,
     sortMode: AppSortMode,
+    pillRequesters: List<FocusRequester> = emptyList(),
+    dockRequesters: List<FocusRequester> = emptyList(),
+    dockSize: Int = 4,
     onOpenQuickShare: () -> Unit,
     onOpenInputs: () -> Unit,
     onOpenNetwork: () -> Unit,
@@ -608,6 +654,27 @@ private fun CleanTvTopBar(
     val clock = parts.firstOrNull().orEmpty()
     val ampm = parts.getOrNull(1).orEmpty()
     val netIcon = if (networkLabel.contains("Ethernet", ignoreCase = true)) Icons.Rounded.SettingsEthernet else Icons.Rounded.Wifi
+
+    fun pillFocusModifier(index: Int): Modifier {
+        if (pillRequesters.size <= index) return Modifier
+        val targetCol = if (dockSize > 0) (index * dockSize / 7).coerceIn(0, dockSize - 1) else 0
+        return Modifier
+            .focusRequester(pillRequesters[index])
+            .focusProperties {
+                if (dockSize > 0 && dockRequesters.isNotEmpty()) {
+                    down = dockRequesters[targetCol]
+                }
+            }
+            .onPreviewKeyEvent { ev ->
+                val k = ev.nativeKeyEvent
+                if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (dockSize > 0 && dockRequesters.isNotEmpty()) {
+                        dockRequesters[targetCol].requestFocus()
+                        true
+                    } else false
+                } else false
+            }
+    }
 
     Column(
         Modifier.fillMaxWidth(),
@@ -682,39 +749,46 @@ private fun CleanTvTopBar(
                 label = null,
                 iconRes = R.drawable.ic_quick_share,
                 contentDescription = "Quick Share",
+                modifier = pillFocusModifier(0),
                 onClick = onOpenQuickShare,
             )
             TvPill(
                 label = "Clean TV",
                 icon = Icons.Rounded.AutoAwesome,
+                modifier = pillFocusModifier(1),
                 onClick = onOpenCleanTv,
             )
             TvPill(
                 label = "Inputs",
                 icon = Icons.AutoMirrored.Rounded.Input,
+                modifier = pillFocusModifier(2),
                 onClick = onOpenInputs,
             )
             TvPill(
                 label = if (sortMode == AppSortMode.RECENCY) "Recent" else "A-Z",
                 icon = if (sortMode == AppSortMode.RECENCY) Icons.Rounded.Schedule else Icons.AutoMirrored.Rounded.Sort,
                 isSelected = true,
+                modifier = pillFocusModifier(3),
                 onClick = onToggleSort,
             )
             TvPill(
                 label = networkLabel.ifBlank { "Wi-Fi" },
                 icon = netIcon,
+                modifier = pillFocusModifier(4),
                 onClick = onOpenNetwork,
                 maxLabelWidth = 140.dp,
             )
             TvPill(
                 label = null,
                 icon = Icons.Rounded.Apps,
+                modifier = pillFocusModifier(5),
                 onClick = onOpenTools,
                 contentDescription = "Tools",
             )
             TvPill(
                 label = "Settings",
                 icon = Icons.Rounded.Settings,
+                modifier = pillFocusModifier(6),
                 onClick = onOpenSettings,
             )
         }
@@ -866,13 +940,15 @@ private fun AppRow(
     onLongClick: (InstalledAppInfo) -> Unit,
     modifier: Modifier = Modifier,
     badge: ((InstalledAppInfo) -> String?)? = null,
+    tileModifier: ((index: Int, app: InstalledAppInfo) -> Modifier)? = null,
 ) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap)) {
-        apps.forEach { app ->
+        apps.forEachIndexed { index, app ->
             CleanTvAppTile(
                 app = app, tileW = tileW, tileH = tileH, radius = radius,
                 focusScale = focusScale, showName = showNames,
                 badgeText = badge?.invoke(app),
+                modifier = tileModifier?.invoke(index, app) ?: Modifier,
                 onFocus = { onFocus(app) },
                 onClick = { onClick(app) },
                 onLongClick = { onLongClick(app) },
@@ -884,7 +960,7 @@ private fun AppRow(
 /**
  * Tile like the reference launcher: banner artwork fills a 16:9 card (or a tinted plate with the icon
  * and name), the focused tile scales up with a white glass highlight and glow, and its name appears below.
- * Menu key or long-press OK opens the app menu.
+ * Menu key or long-press OK opens the app menu without triggering a tap on release.
  */
 @Composable
 private fun CleanTvAppTile(
@@ -895,19 +971,23 @@ private fun CleanTvAppTile(
     focusScale: Float,
     showName: Boolean,
     badgeText: String? = null,
+    modifier: Modifier = Modifier,
     onFocus: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     var visuals by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
     LaunchedEffect(app.packageName) {
         if (visuals == null) visuals = IconCache.loadVisuals(context, app.packageName)
     }
 
     var focused by remember { mutableStateOf(false) }
-    var longHandled by remember { mutableStateOf(false) }
+    var longPressJob by remember { mutableStateOf<Job?>(null) }
+    var isLongPressHandled by remember { mutableStateOf(false) }
+
     val scale by animateFloatAsState(
         if (focused) focusScale else 1f,
         spring(dampingRatio = 0.8f, stiffness = 420f),
@@ -917,27 +997,10 @@ private fun CleanTvAppTile(
     val shape = RoundedCornerShape(radius)
 
     Column(
-        Modifier
-            .width(tileW)
-            .onPreviewKeyEvent { ev ->
-                val k = ev.nativeKeyEvent
-                val center = k.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || k.keyCode == KeyEvent.KEYCODE_ENTER
-                when {
-                    k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_MENU -> {
-                        onLongClick(); true
-                    }
-                    center && k.action == KeyEvent.ACTION_DOWN && k.isLongPress -> {
-                        longHandled = true; onLongClick(); true
-                    }
-                    center && k.action == KeyEvent.ACTION_UP && longHandled -> {
-                        longHandled = false; true
-                    }
-                    else -> false
-                }
-            }
+        Modifier.width(tileW)
     ) {
         Box(
-            Modifier
+            modifier
                 .size(tileW, tileH)
                 .graphicsLayer {
                     scaleX = scale
@@ -959,14 +1022,44 @@ private fun CleanTvAppTile(
                     focused = it.isFocused
                     if (it.isFocused) onFocus()
                 }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        TvSound.playClick(view)
-                        onClick()
+                .focusable()
+                .onPreviewKeyEvent { ev ->
+                    val k = ev.nativeKeyEvent
+                    val center = k.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || k.keyCode == KeyEvent.KEYCODE_ENTER
+                    val menu = k.keyCode == KeyEvent.KEYCODE_MENU
+                    when {
+                        menu && k.action == KeyEvent.ACTION_DOWN -> {
+                            TvSound.playClick(view)
+                            onLongClick()
+                            true
+                        }
+                        center && k.action == KeyEvent.ACTION_DOWN -> {
+                            if (k.repeatCount == 0) {
+                                isLongPressHandled = false
+                                longPressJob?.cancel()
+                                longPressJob = scope.launch {
+                                    delay(450)
+                                    isLongPressHandled = true
+                                    TvSound.playClick(view)
+                                    onLongClick()
+                                }
+                            }
+                            true
+                        }
+                        center && k.action == KeyEvent.ACTION_UP -> {
+                            val wasLong = isLongPressHandled
+                            longPressJob?.cancel()
+                            longPressJob = null
+                            isLongPressHandled = false
+                            if (!wasLong) {
+                                TvSound.playClick(view)
+                                onClick()
+                            }
+                            true
+                        }
+                        else -> false
                     }
-                )
+                }
         ) {
             val v = visuals
             if (v != null && v.isBanner) {
@@ -1460,47 +1553,6 @@ private fun ProfileAccountsDialog(
             Spacer(Modifier.height(4.dp))
             TvPill("Add or Switch Account", Icons.Rounded.PersonAdd, onAddAccount, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 62.dp, textSize = 21.sp, fill = true)
             TvPill("Manage in System Settings", Icons.Rounded.Settings, onManageSettings, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
-            TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
-        }
-    }
-}
-
-/** Quick Share Hub Dialog */
-@Composable
-private fun QuickShareHubDialog(
-    onLaunchNative: () -> Unit,
-    onLaunchUniversalAirShare: () -> Unit,
-    onLaunchLocalSend: () -> Unit,
-    onLaunchGoogleStore: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val autoFocus = rememberAutoFocus()
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xE6000000))
-            .modalTrap()
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            Modifier
-                .width(660.dp)
-                .glassCard()
-                .padding(horizontal = 44.dp, vertical = 38.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("Quick Share", style = Ty.Title.copy(fontSize = 38.sp))
-            Text(
-                "Send files, APKs, videos and links to this TV from any phone or computer.",
-                style = Ty.Dim.copy(fontSize = 19.sp, lineHeight = 27.sp)
-            )
-            Spacer(Modifier.height(6.dp))
-            TvPill("Wi-Fi AirShare (no app needed)", Icons.Rounded.Wifi, onLaunchUniversalAirShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 62.dp, textSize = 21.sp, fill = true, maxLabelWidth = 460.dp)
-            TvPill("Android Quick Share", Icons.Rounded.Bolt, onLaunchNative, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
-            TvPill("LocalSend", Icons.Rounded.Share, onLaunchLocalSend, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
-            TvPill("Get or update via Play Store", Icons.Rounded.Download, onLaunchGoogleStore, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true, maxLabelWidth = 460.dp)
             TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
         }
     }

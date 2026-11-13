@@ -58,10 +58,30 @@ object InstalledAppsScanner {
                 // Ignore file access limitations
             }
 
-            val hasLaunchIntent = try {
+            var hasLaunchIntent = try {
                 pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null
             } catch (_: Exception) {
                 false
+            }
+
+            // Sideloaded or non-leanback user apps: scan for any exported activity or MAIN intent
+            if (!hasLaunchIntent && (!isSystem || isUpdatedSystem)) {
+                try {
+                    val mainIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).setPackage(pkg)
+                    @Suppress("DEPRECATION")
+                    val list = pm.queryIntentActivities(mainIntent, 0)
+                    if (list.isNotEmpty()) {
+                        hasLaunchIntent = true
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val pInfo = pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+                        if (pInfo.activities?.any { it.exported } == true) {
+                            hasLaunchIntent = true
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Ignore scanner exceptions
+                }
             }
 
             result.add(

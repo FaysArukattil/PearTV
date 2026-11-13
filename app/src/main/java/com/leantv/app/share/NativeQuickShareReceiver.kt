@@ -28,6 +28,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
+import android.util.Log
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.security.SecureRandom
@@ -83,13 +85,23 @@ class NativeQuickShareReceiver : Service() {
 
     // ─── Core start / stop ────────────────────────────────────────────────────
 
+    private val committedPayloadFiles = java.util.concurrent.ConcurrentHashMap<Long, File>()
+
     private fun startReceiving() {
         val ctx = applicationContext
         val mediumRegistry = MediumRegistries.defaultForContext(ctx)
 
         val server = TcpReceiverServer(
             parentScope = serviceScope,
-            factoryProvider = { TvFileDestinationFactory(ctx) },
+            factoryProvider = {
+                TvFileDestinationFactory(
+                    context = ctx,
+                    onFileCommitted = { file, payloadId ->
+                        committedPayloadFiles[payloadId] = file
+                        Log.i(TAG, "Quick Share file committed: ${file.absolutePath} for payload $payloadId")
+                    }
+                )
+            },
             mediumRegistry = mediumRegistry,
         )
         tcpServer = server
@@ -197,15 +209,19 @@ class NativeQuickShareReceiver : Service() {
                     }
 
                     is InboundConnectionState.Completed -> {
+                        val ctx = applicationContext
                         val received = connState.items.mapNotNull { item ->
                             when (item) {
-                                is dev.bluehouse.bada.protocol.connection.ReceivedItem.File ->
+                                is dev.bluehouse.bada.protocol.connection.ReceivedItem.File -> {
+                                    val committed = committedPayloadFiles.remove(item.payloadId)
+                                        ?: File(TvFileDestinationFactory.getDownloadDir(ctx), item.header.fileName.ifEmpty { "file_${item.payloadId}" })
                                     ReceivedFile(
-                                        name = item.header.fileName.ifEmpty { "file_${item.payloadId}" },
-                                        path = "", // Actual path managed by TvFileDestinationFactory
-                                        sizeBytes = item.bytesWritten,
+                                        name = committed.name,
+                                        path = committed.absolutePath,
+                                        sizeBytes = if (committed.exists()) committed.length() else item.bytesWritten,
                                         timestamp = System.currentTimeMillis(),
                                     )
+                                }
                                 else -> null
                             }
                         }

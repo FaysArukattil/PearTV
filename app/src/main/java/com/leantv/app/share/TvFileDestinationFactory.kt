@@ -24,26 +24,27 @@ class TvFileDestinationFactory(
 
     companion object {
         private const val TAG = "TvFileDestFactory"
-        const val FOLDER_NAME = "LeanTv quick share"
+        const val FOLDER_NAME = "Quickshare"
 
         fun getDownloadDir(ctx: Context): File {
             val candidates = mutableListOf<File>()
 
-            // 1. Standard Downloads/LeanTv quick share (visible to all TV file explorers)
+            // 1. Primary: /storage/emulated/0/Quickshare (Directly in internal storage root)
+            val extRoot = Environment.getExternalStorageDirectory()
+            if (extRoot != null) {
+                candidates.add(File(extRoot, FOLDER_NAME))
+            }
+            candidates.add(File("/storage/emulated/0", FOLDER_NAME))
+            candidates.add(File("/sdcard", FOLDER_NAME))
+
+            // 2. Standard Downloads/Quickshare
             val baseDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             if (baseDownloads != null) {
                 candidates.add(File(baseDownloads, FOLDER_NAME))
             }
 
-            // 2. /sdcard/Download/LeanTv quick share
-            val extRoot = Environment.getExternalStorageDirectory()
-            if (extRoot != null) {
-                candidates.add(File(File(extRoot, "Download"), FOLDER_NAME))
-                candidates.add(File(extRoot, FOLDER_NAME))
-            }
-
-            // 3. App external files dir (guaranteed writable without permissions)
-            val extFiles = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            // 3. Fallback: App external files dir
+            val extFiles = ctx.getExternalFilesDir(null)
             if (extFiles != null) {
                 candidates.add(File(extFiles, FOLDER_NAME))
             }
@@ -56,11 +57,12 @@ class TvFileDestinationFactory(
                     if (!dir.exists()) {
                         dir.mkdirs()
                     }
-                    if (dir.exists() && dir.canWrite()) {
-                        // Validate writeability with test file probe
+                    if (dir.exists() && (dir.canWrite() || dir.setWritable(true))) {
+                        // Validate writeability with test probe file
                         val probe = File(dir, ".probe_${System.currentTimeMillis()}")
                         if (probe.createNewFile()) {
                             probe.delete()
+                            Log.i(TAG, "Selected Quick Share destination directory: ${dir.absolutePath}")
                             return dir
                         }
                     }
@@ -69,7 +71,7 @@ class TvFileDestinationFactory(
                 }
             }
 
-            val fallback = File(ctx.filesDir, FOLDER_NAME)
+            val fallback = File(Environment.getExternalStorageDirectory() ?: ctx.filesDir, FOLDER_NAME)
             fallback.mkdirs()
             return fallback
         }

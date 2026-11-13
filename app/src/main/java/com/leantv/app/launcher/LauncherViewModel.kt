@@ -95,8 +95,10 @@ data class LauncherState(
     // Storage Manager Screen (Samsung Device Care style)
     val showStorageManager: Boolean = false,
 
-    // File Manager Screen (Samsung My Files style)
+    // File Manager Screen (Amaze TV style)
     val showFileManager: Boolean = false,
+    val fileManagerInitialDir: java.io.File? = null,
+    val fileManagerHighlightFile: String? = null,
 
     // Clean TV Full Screen Debloater Menu
     val showCleanTvScreen: Boolean = false,
@@ -164,6 +166,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         checkDefaultLauncherPrompt()
         checkFirstRunDebloat()
         startNativeQuickShare(openDialog = false, silent = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                com.leantv.app.files.FileManagerHelper.autoGrantStoragePermission(ctx)
+                com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
+            } catch (_: Exception) {}
+        }
     }
 
     private fun detectDevice() {
@@ -424,8 +432,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         loadApps(silent = true)
 
         val pm = ctx.packageManager
-        val intent = pm.getLeanbackLaunchIntentForPackage(app.packageName)
+        var intent = pm.getLeanbackLaunchIntentForPackage(app.packageName)
             ?: pm.getLaunchIntentForPackage(app.packageName)
+
+        if (intent == null) {
+            try {
+                val mainIntent = Intent(Intent.ACTION_MAIN).setPackage(app.packageName)
+                val resolves = pm.queryIntentActivities(mainIntent, 0)
+                val act = resolves.firstOrNull()?.activityInfo
+                    ?: runCatching {
+                        pm.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_ACTIVITIES).activities?.firstOrNull { it.exported }
+                    }.getOrNull()
+                if (act != null) {
+                    intent = Intent(Intent.ACTION_MAIN).apply {
+                        component = android.content.ComponentName(app.packageName, act.name)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         if (intent != null) {
             try {
@@ -618,14 +642,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         loadApps(silent = true)
     }
 
-    // ---------- TV File Manager Screen (Samsung My Files - Feature #7) ----------
+    // ---------- TV File Manager Screen (Amaze TV Style) ----------
 
-    fun openFileManager() {
-        _state.update { it.copy(showFileManager = true) }
+    fun openFileManager(initialDir: java.io.File? = null, highlightFile: String? = null) {
+        _state.update {
+            it.copy(
+                showFileManager = true,
+                fileManagerInitialDir = initialDir,
+                fileManagerHighlightFile = highlightFile,
+                showNativeQuickShare = false
+            )
+        }
     }
 
     fun closeFileManager() {
-        _state.update { it.copy(showFileManager = false) }
+        _state.update {
+            it.copy(
+                showFileManager = false,
+                fileManagerInitialDir = null,
+                fileManagerHighlightFile = null
+            )
+        }
     }
 
     // ---------- Personalization & Wallpapers (Feature #12) ----------
@@ -672,8 +709,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(showQuickShareHub = true) }
     }
 
+    fun openAndroidQuickShare() {
+        startNativeQuickShare(openDialog = true, silent = false)
+    }
+
     fun openQuickShareHub() {
-        _state.update { it.copy(showQuickShareHub = true) }
+        openAndroidQuickShare()
     }
 
     fun closeQuickShareHub() {
@@ -681,8 +722,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun launchNativeQuickShare() {
-        closeQuickShareHub()
-        startNativeQuickShare(openDialog = true, silent = false)
+        openAndroidQuickShare()
     }
 
     fun startNativeQuickShare(openDialog: Boolean = true, silent: Boolean = false) {
@@ -710,6 +750,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                                         // When an incoming file transfer arrives from any phone, POP UP INSTANTLY
                                         showNativeQuickShare = if (incoming != null) true else current.showNativeQuickShare
                                     )
+                                }
+
+                                if (incoming?.phase == com.leantv.app.share.TransferPhase.COMPLETED) {
+                                    viewModelScope.launch {
+                                        delay(1200)
+                                        val fileOnDisk = qsState.lastReceivedFiles.firstOrNull()?.let { java.io.File(it.path) }
+                                        val qsDir = fileOnDisk?.parentFile ?: com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
+                                        openFileManager(
+                                            initialDir = qsDir,
+                                            highlightFile = fileOnDisk?.name
+                                        )
+                                    }
                                 }
                             }
                         }

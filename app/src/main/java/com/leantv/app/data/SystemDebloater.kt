@@ -59,6 +59,23 @@ object SystemDebloater {
         }
     }
 
+    fun runPrivilegedCommand(cmd: String): Boolean {
+        if (isShizukuAvailable() && hasShizukuPermission()) {
+            try {
+                runShizukuProcess(cmd)
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Shizuku exec failed: ${e.message}")
+            }
+        }
+        try {
+            val p = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+            p.waitFor()
+            if (p.exitValue() == 0) return true
+        } catch (_: Exception) {}
+        return false
+    }
+
     private fun runShizukuProcess(cmd: String): String {
         val method = Shizuku::class.java.getDeclaredMethod(
             "newProcess",
