@@ -94,7 +94,7 @@ class Scanner(private val ctx: Context, private val catalog: Catalog) {
 
             val entry = catalog.entries[pkg]
             val isProtectedPrefix = protectedPrefixes.any { pkg == it || pkg.startsWith("$it.") }
-            val isVitalTvInput = pkg in tvInput
+            val isVitalTvInput = pkg in tvInput && (pkg.startsWith("com.android.") || pkg.startsWith("com.google.android."))
             val isSoleHome = pkg in home && home.size <= 1
             val isSoleIme = pkg in ime && ime.size <= 1
 

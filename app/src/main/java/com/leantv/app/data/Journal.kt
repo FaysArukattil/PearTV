@@ -179,4 +179,8 @@ class Journal(ctx: Context) {
     var debloatWizardDismissed: Boolean
         get() = sp.getBoolean("debloat_wizard_dismissed", false)
         set(v) = sp.edit().putBoolean("debloat_wizard_dismissed", v).apply()
+
+    var appSortMode: String
+        get() = sp.getString("app_sort_mode", "USAGE") ?: "USAGE"
+        set(v) = sp.edit().putString("app_sort_mode", v).apply()
 }

@@ -1,5 +1,7 @@
 package com.leantv.app.ui
 
+import android.view.SoundEffectConstants
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -71,7 +73,7 @@ fun tierColor(t: Tier): Color = when (t) {
     Tier.ADVANCED -> Pal.Coral
 }
 
-/** Base for anything the remote can focus: scales up and gets an amber ring. */
+/** Base for anything the remote can focus: Apple TV style soft shadow, crisp rim & sound feedback. */
 @Composable
 fun Focusable(
     onClick: () -> Unit,
@@ -83,10 +85,11 @@ fun Focusable(
     idleOutline: Boolean = false,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
+    val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, spring(dampingRatio = 0.75f, stiffness = 400f), label = "scale")
+    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, spring(dampingRatio = 0.8f, stiffness = 420f), label = "scale")
     val ring by animateColorAsState(
-        if (focused) Color.White else if (idleOutline) Pal.Line else Color.Transparent,
+        if (focused) Color.White.copy(alpha = 0.85f) else if (idleOutline) Pal.Line else Color.Transparent,
         tween(150), label = "ring",
     )
     val bg by animateColorAsState(if (focused) Pal.SurfaceHi else idle, tween(150), label = "bg")
@@ -96,12 +99,29 @@ fun Focusable(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(if (focused) 22.dp else 0.dp, shape, clip = false, ambientColor = Color.White, spotColor = Color.White)
+            .shadow(
+                elevation = if (focused) 24.dp else 0.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color(0x66000000),
+                spotColor = Color(0x99000000)
+            )
             .clip(shape)
             .background(bg)
-            .border(if (focused) 3.dp else 0.dp, ring, shape)
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(enabled = enabled, onClick = onClick),
+            .border(if (focused) 1.5.dp else if (idleOutline) 1.dp else 0.dp, ring, shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) {
+                    TvSound.playMove(view)
+                }
+                focused = it.isFocused
+            }
+            .clickable(
+                enabled = enabled,
+                onClick = {
+                    TvSound.playClick(view)
+                    onClick()
+                }
+            ),
     ) {
         this.content(focused)
     }
@@ -115,8 +135,9 @@ fun TvButton(
     primary: Boolean = true,
     enabled: Boolean = true,
 ) {
+    val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.75f, stiffness = 400f), label = "btn")
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.8f, stiffness = 420f), label = "btn")
     val shape = RoundedCornerShape(50)
     val bg by animateColorAsState(
         when {
@@ -137,11 +158,29 @@ fun TvButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(if (focused) 20.dp else 0.dp, shape, clip = false, ambientColor = Color.White, spotColor = Color.White)
+            .shadow(
+                elevation = if (focused) 20.dp else 0.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color(0x66000000),
+                spotColor = Color(0x99000000)
+            )
             .clip(shape)
             .background(bg)
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(enabled = enabled, onClick = onClick)
+            .border(if (focused) 1.5.dp else 0.dp, Color.White.copy(alpha = 0.9f), shape)
+            .onFocusChanged {
+                if (it.isFocused && !focused) {
+                    TvSound.playMove(view)
+                }
+                focused = it.isFocused
+            }
+            .clickable(
+                enabled = enabled,
+                onClick = {
+                    TvSound.playClick(view)
+                    onClick()
+                }
+            )
             .padding(horizontal = 24.dp, vertical = 15.dp),
         contentAlignment = Alignment.Center,
     ) {

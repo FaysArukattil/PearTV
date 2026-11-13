@@ -2,6 +2,7 @@ package com.leantv.app.share
 
 import android.content.Context
 import android.os.Environment
+import android.util.Log
 import com.google.location.nearby.connections.proto.OfflineWireFormatsProto.PayloadTransferFrame.PayloadHeader
 import dev.bluehouse.bada.protocol.payload.FileDestinationFactory
 import java.io.File
@@ -11,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * TV FileDestinationFactory for receiving files via native Quick Share.
- * Saves incoming payloads into the TV's system Downloads folder.
+ * Saves incoming payloads into the TV's system Downloads folder (LeanTv quick share).
  */
 class TvFileDestinationFactory(
     private val context: Context,
@@ -21,37 +22,102 @@ class TvFileDestinationFactory(
     private val activeFiles = ConcurrentHashMap<Long, File>()
     private val activeChannels = ConcurrentHashMap<Long, SeekableByteChannel>()
 
-    private fun getDownloadDir(): File {
-        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (publicDir != null && (publicDir.exists() || publicDir.mkdirs())) {
-            return publicDir
+    companion object {
+        private const val TAG = "TvFileDestFactory"
+        const val FOLDER_NAME = "LeanTv quick share"
+
+        fun getDownloadDir(ctx: Context): File {
+            val candidates = mutableListOf<File>()
+
+            // 1. Standard Downloads/LeanTv quick share (visible to all TV file explorers)
+            val baseDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (baseDownloads != null) {
+                candidates.add(File(baseDownloads, FOLDER_NAME))
+            }
+
+            // 2. /sdcard/Download/LeanTv quick share
+            val extRoot = Environment.getExternalStorageDirectory()
+            if (extRoot != null) {
+                candidates.add(File(File(extRoot, "Download"), FOLDER_NAME))
+                candidates.add(File(extRoot, FOLDER_NAME))
+            }
+
+            // 3. App external files dir (guaranteed writable without permissions)
+            val extFiles = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            if (extFiles != null) {
+                candidates.add(File(extFiles, FOLDER_NAME))
+            }
+
+            // 4. App internal files
+            candidates.add(File(ctx.filesDir, FOLDER_NAME))
+
+            for (dir in candidates) {
+                try {
+                    if (!dir.exists()) {
+                        dir.mkdirs()
+                    }
+                    if (dir.exists() && dir.canWrite()) {
+                        // Validate writeability with test file probe
+                        val probe = File(dir, ".probe_${System.currentTimeMillis()}")
+                        if (probe.createNewFile()) {
+                            probe.delete()
+                            return dir
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Directory ${dir.path} not writable: ${e.message}")
+                }
+            }
+
+            val fallback = File(ctx.filesDir, FOLDER_NAME)
+            fallback.mkdirs()
+            return fallback
         }
-        val extFiles = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-        if (extFiles != null && (extFiles.exists() || extFiles.mkdirs())) {
-            return extFiles
-        }
-        val fallback = File(context.filesDir, "downloads")
-        fallback.mkdirs()
-        return fallback
     }
 
     override fun open(header: PayloadHeader): SeekableByteChannel {
-        val dir = getDownloadDir()
         val rawName = header.fileName.ifEmpty { "received_file_${header.id}" }
         val safeName = sanitizeFileName(rawName)
-        val targetFile = resolveUniqueFile(dir, safeName)
 
-        val raf = RandomAccessFile(targetFile, "rw")
-        val channel = raf.channel
-        activeFiles[header.id] = targetFile
-        activeChannels[header.id] = channel
-        return channel
+        val candidateDirs = listOf(
+            getDownloadDir(context),
+            File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, FOLDER_NAME),
+            File(context.filesDir, FOLDER_NAME)
+        )
+
+        var lastEx: Exception? = null
+        for (dir in candidateDirs) {
+            try {
+                if (!dir.exists()) dir.mkdirs()
+                val targetFile = resolveUniqueFile(dir, safeName)
+                val raf = RandomAccessFile(targetFile, "rw")
+                val channel = raf.channel
+                activeFiles[header.id] = targetFile
+                activeChannels[header.id] = channel
+                Log.i(TAG, "Opened destination channel: ${targetFile.absolutePath}")
+                return channel
+            } catch (e: Exception) {
+                lastEx = e
+                Log.w(TAG, "Failed opening in ${dir.path}, trying next fallback: ${e.message}")
+            }
+        }
+
+        throw lastEx ?: IllegalStateException("Could not create destination file for payload ${header.id}")
     }
 
     override fun commit(payloadId: Long): Boolean {
         val file = activeFiles.remove(payloadId)
         activeChannels.remove(payloadId)
         if (file != null && file.exists()) {
+            try {
+                android.media.MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(file.absolutePath),
+                    null,
+                    null
+                )
+            } catch (_: Exception) {}
+            Log.i(TAG, "Committed received file: ${file.absolutePath} (${file.length()} bytes)")
             onFileCommitted(file, file.length())
             return true
         }
@@ -97,4 +163,3 @@ class TvFileDestinationFactory(
         return file
     }
 }
-

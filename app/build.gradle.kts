@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.leantv.app"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 34
         versionCode = 3
         versionName = "1.0.0"
@@ -57,6 +57,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("dev.mobile:dadb:1.2.10")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("com.google.zxing:core:3.5.3")
     implementation(project(":core-protocol"))
     implementation(project(":discovery-android"))

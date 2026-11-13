@@ -261,7 +261,11 @@ class NativeQuickShareReceiver : Service() {
     fun submitConsent(accepted: Boolean) {
         val conn = _state.value.incomingTransfer?.connection ?: return
         conn.submitUserConsent(accepted)
-        if (!accepted) {
+        if (accepted) {
+            _state.update { s ->
+                s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.RECEIVING))
+            }
+        } else {
             _state.update { s ->
                 s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.REJECTED))
             }

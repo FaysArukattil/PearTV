@@ -48,14 +48,14 @@ object StorageHelper {
     /**
      * Compute comprehensive storage breakdown similar to Samsung Device Care.
      */
-    suspend fun getStorageOverview(ctx: Context): StorageOverview = withContext(Dispatchers.IO) {
+    suspend fun getStorageOverview(ctx: Context, journal: com.leantv.app.data.Journal? = null): StorageOverview = withContext(Dispatchers.IO) {
         val stat = StatFs(Environment.getDataDirectory().path)
         val totalBytes = stat.blockCountLong * stat.blockSizeLong
         val freeBytes = stat.availableBlocksLong * stat.blockSizeLong
         val usedBytes = (totalBytes - freeBytes).coerceAtLeast(0L)
 
-        // 1. Per-App storage details
-        val appDetails = scanAppStorage(ctx)
+        // 1. Per-App storage details (excluding removed/disabled bloatware)
+        val appDetails = scanAppStorage(ctx, journal)
         val totalAppsBytes = appDetails.sumOf { it.totalBytes }
 
         // 2. Scan external storage files by category
@@ -142,18 +142,22 @@ object StorageHelper {
         return FileStats(videos, audio, images, apks)
     }
 
-    private fun scanAppStorage(ctx: Context): List<AppStorageDetail> {
+    private fun scanAppStorage(ctx: Context, journal: com.leantv.app.data.Journal? = null): List<AppStorageDetail> {
         val pm = ctx.packageManager
         val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
         val storageStatsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ctx.getSystemService(Context.STORAGE_STATS_SERVICE) as? StorageStatsManager
         } else null
 
+        val removedPkgs = journal?.removed()?.map { it.pkg }?.toSet() ?: emptySet()
         val result = mutableListOf<AppStorageDetail>()
 
         for (pkg in packages) {
             val appInfo = pkg.applicationInfo ?: continue
             val pkgName = pkg.packageName
+
+            // Skip removed, disabled, or uninstalled bloatware packages
+            if (!appInfo.enabled || pkgName in removedPkgs) continue
             val label = appInfo.loadLabel(pm)?.toString() ?: pkgName
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 

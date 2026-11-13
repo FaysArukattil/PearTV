@@ -44,16 +44,35 @@ object IconCache {
                 val leanbackIntent = pm.getLeanbackLaunchIntentForPackage(packageName)
                 val resolveInfo = leanbackIntent?.let { pm.resolveActivity(it, 0) }
 
-                // Check for real TV banner first
-                val bannerDrawable = leanbackIntent?.let {
+                // 1. Try Leanback activity banner
+                var bannerDrawable: Drawable? = leanbackIntent?.let {
                     try { pm.getActivityBanner(it) } catch (_: Throwable) { null }
-                } ?: try { pm.getApplicationBanner(packageName) } catch (_: Throwable) { null }
+                }
+                // 2. Try resolved activity loadBanner
+                if (bannerDrawable == null && resolveInfo?.activityInfo != null) {
+                    bannerDrawable = try { resolveInfo.activityInfo.loadBanner(pm) } catch (_: Throwable) { null }
+                }
+                // 3. Try standard launch intent banner
+                if (bannerDrawable == null) {
+                    val standardIntent = pm.getLaunchIntentForPackage(packageName)
+                    if (standardIntent != null) {
+                        bannerDrawable = try { pm.getActivityBanner(standardIntent) } catch (_: Throwable) { null }
+                        if (bannerDrawable == null) {
+                            val stdResolve = pm.resolveActivity(standardIntent, 0)
+                            bannerDrawable = try { stdResolve?.activityInfo?.loadBanner(pm) } catch (_: Throwable) { null }
+                        }
+                    }
+                }
+                // 4. Try application banner
+                if (bannerDrawable == null) {
+                    bannerDrawable = try { pm.getApplicationBanner(packageName) } catch (_: Throwable) { null }
+                }
 
                 val isRealBanner = bannerDrawable != null &&
                     isBannerShaped(bannerDrawable.intrinsicWidth, bannerDrawable.intrinsicHeight)
 
                 if (isRealBanner && bannerDrawable != null) {
-                    val bannerBmp = drawableToImageBitmap(bannerDrawable, 320, 180)
+                    val bannerBmp = drawableToImageBitmap(bannerDrawable, 384, 216)
                     if (bannerBmp != null) {
                         val visuals = AppVisuals(
                             bitmap = bannerBmp,
@@ -65,10 +84,10 @@ object IconCache {
                     }
                 }
 
-                // Fallback to application icon with tinted plate
+                // Fallback to high-res application icon with tinted plate
                 val appDrawable = pm.getApplicationIcon(packageName)
                 val (topCol, botCol) = extractPlateColors(appDrawable)
-                val iconBmp = drawableToImageBitmap(appDrawable, 128, 128)
+                val iconBmp = drawableToImageBitmap(appDrawable, 256, 256)
 
                 if (iconBmp != null) {
                     val visuals = AppVisuals(
@@ -124,29 +143,29 @@ object IconCache {
     }
 
     private fun isBannerShaped(width: Int, height: Int): Boolean {
-        return width <= 0 || height <= 0 || width >= height * 1.35f
+        if (width <= 0 || height <= 0) return false
+        val ratio = width.toFloat() / height.toFloat()
+        return ratio in 1.35f..2.5f
     }
 
     private fun drawableToImageBitmap(drawable: Drawable, targetWidth: Int, targetHeight: Int): ImageBitmap? {
         return try {
             if (drawable is BitmapDrawable && drawable.bitmap != null) {
                 val orig = drawable.bitmap
-                if (orig.width <= targetWidth && orig.height <= targetHeight && orig.width > 0 && orig.height > 0) {
+                if (orig.width == targetWidth && orig.height == targetHeight) {
                     orig.asImageBitmap()
                 } else {
                     val scaled = Bitmap.createScaledBitmap(orig, targetWidth, targetHeight, true)
                     scaled.asImageBitmap()
                 }
             } else {
-                val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else targetWidth
-                val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else targetHeight
                 val bitmap = Bitmap.createBitmap(
-                    minOf(width, targetWidth).coerceAtLeast(1),
-                    minOf(height, targetHeight).coerceAtLeast(1),
+                    targetWidth,
+                    targetHeight,
                     Bitmap.Config.ARGB_8888,
                 )
                 val canvas = Canvas(bitmap)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.setBounds(0, 0, targetWidth, targetHeight)
                 drawable.draw(canvas)
                 bitmap.asImageBitmap()
             }

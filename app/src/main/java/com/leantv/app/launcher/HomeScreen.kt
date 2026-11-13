@@ -1,6 +1,23 @@
 package com.leantv.app.launcher
 
 import android.view.KeyEvent
+import android.view.SoundEffectConstants
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.mutableLongStateOf
+import com.leantv.app.R
+import com.leantv.app.ui.TvSound
+import com.leantv.app.ui.CleanTvScreen
+import com.leantv.app.ui.AppleTvScreensaver
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.automirrored.rounded.Input
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PersonAdd
@@ -17,6 +34,8 @@ import com.leantv.app.ui.glassCard
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -123,7 +142,6 @@ import com.leantv.app.ui.WALLPAPER_THEMES
 import com.leantv.app.ui.rememberAutoFocus
 import kotlinx.coroutines.delay
 import java.util.Locale
-
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreen(vm: LauncherViewModel) {
@@ -133,12 +151,15 @@ fun HomeScreen(vm: LauncherViewModel) {
     // Handle Back key: close any open dialog/screen first, never exit launcher
     BackHandler(
         enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
+                s.showCleanTvScreen || s.showScreensaver ||
                 s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare || s.showInputsDialog ||
                 s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
                 s.debloatSuccessSummary != null || s.actionMenuApp != null ||
                 s.uninstallConfirmApp != null || s.showDefaultPrompt
     ) {
         when {
+            s.showScreensaver -> vm.closeScreensaver()
+            s.showCleanTvScreen -> vm.closeCleanTvScreen()
             s.showStorageManager -> vm.closeStorageManager()
             s.showFileManager -> vm.closeFileManager()
             s.showPersonalization -> vm.closePersonalization()
@@ -159,10 +180,31 @@ fun HomeScreen(vm: LauncherViewModel) {
     BackHandler(enabled = showTools) { showTools = false }
 
     // Fullscreen Overlay Screens
+    if (s.showScreensaver) {
+        TvCanvas {
+            AppleTvScreensaver(onDismiss = vm::closeScreensaver)
+        }
+        return
+    }
+
+    if (s.showCleanTvScreen) {
+        TvCanvas {
+            CleanTvScreen(
+                adbClient = vm.adb,
+                journal = vm.journal,
+                scanner = vm.scanner,
+                tweaks = vm.tweaks,
+                onClose = vm::closeCleanTvScreen
+            )
+        }
+        return
+    }
+
     if (s.showStorageManager) {
         TvCanvas {
             StorageManagerScreen(
                 adbClient = vm.adb,
+                journal = vm.journal,
                 onClose = vm::closeStorageManager
             )
         }
@@ -180,6 +222,7 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     val modalOpen = s.showPersonalization || s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
+            s.showCleanTvScreen || s.showScreensaver ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
             s.uninstallConfirmApp != null || s.showDefaultPrompt || showTools
     val focusManager = LocalFocusManager.current
@@ -191,6 +234,14 @@ fun HomeScreen(vm: LauncherViewModel) {
             runCatching { focusManager.moveFocus(FocusDirection.Enter) }
         }
         wasModalOpen = modalOpen
+    }
+
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lastInteractionTime) {
+        delay(3 * 60 * 1000L) // 3 mins of idle activates Apple TV Aerial screen saver
+        if (!modalOpen && !s.showScreensaver && !s.showStorageManager && !s.showFileManager && !s.showCleanTvScreen) {
+            vm.openScreensaver()
+        }
     }
 
     TvCanvas {
@@ -211,14 +262,15 @@ fun HomeScreen(vm: LauncherViewModel) {
 
                 val dock = s.dockApps.ifEmpty { s.allApps.take(cols) }.take(cols)
                 val dockPkgSet = dock.map { it.packageName }.toSet()
-                val frequent = s.frequentApps.filter { it.packageName !in dockPkgSet }.take(cols)
-                val recent = s.recentApps.filter { it.packageName !in dockPkgSet && it !in frequent }.take(cols)
                 val gridApps = s.allApps.filter { it.packageName !in dockPkgSet }
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
                 val heroName = s.focusedApp?.appName
                     ?: dock.firstOrNull()?.appName
                     ?: s.allApps.firstOrNull()?.appName
                     ?: ""
+
+                var isDockVisible by remember { mutableStateOf(true) }
+                var showSortMenu by remember { mutableStateOf(false) }
 
                 Column(
                     Modifier
@@ -232,21 +284,24 @@ fun HomeScreen(vm: LauncherViewModel) {
                         timeText = s.timeText,
                         dateText = s.dateText,
                         networkLabel = s.networkLabel,
+                        sortMode = s.appSortMode,
+                        onOpenQuickShare = { vm.openQuickShareHub() },
                         onOpenInputs = vm::openInputs,
                         onOpenNetwork = vm::openNetworkSettings,
                         onOpenCleanTv = vm::requestCleanTv,
+                        onToggleSort = { vm.toggleAppSortMode() },
                         onOpenTools = { showTools = true },
-                        onOpenSettings = vm::openSystemSettings,
+                        onOpenSettings = vm::openSystemSettings
                     )
 
-                    Spacer(Modifier.height(22.dp))
+                    Spacer(Modifier.height(14.dp))
 
                     Text(
                         text = heroName,
-                        style = Ty.Display.copy(fontSize = 64.sp, lineHeight = 76.sp, letterSpacing = (-1.3).sp),
+                        style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 6.dp).height(84.dp)
+                        modifier = Modifier.padding(start = 6.dp).height(72.dp)
                     )
 
                     if (s.isLoading) {
@@ -260,65 +315,59 @@ fun HomeScreen(vm: LauncherViewModel) {
                             }
                         }
                     } else {
-                        // Pinned dock: a dark glass band behind the first row (concentric corners)
-                        if (dock.isNotEmpty()) {
-                            val bandShape = RoundedCornerShape(radius + bandPad)
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xE6141416), bandShape)
-                                    .border(1.dp, Color(0x1FFFFFFF), bandShape)
-                                    .padding(bandPad)
-                            ) {
-                                AppRow(
-                                    apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                    focusScale = 1.03f, showNames = false,
-                                    onFocus = { vm.setFocusedApp(it) },
-                                    onClick = { vm.launch(it) },
-                                    onLongClick = { vm.showActionMenu(it) },
-                                )
-                            }
-                        }
-
                         LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            contentPadding = PaddingValues(top = 26.dp, bottom = 56.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            if (frequent.isNotEmpty()) {
-                                item(key = "h_frequent") { SectionTitle("Frequently Used", bandPad) }
-                                item(key = "r_frequent") {
-                                    AppRow(
-                                        apps = frequent, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                        focusScale = 1.06f, showNames = true,
-                                        modifier = Modifier.padding(start = bandPad),
-                                        badge = { "${vm.journal.getLaunchCount(it.packageName)}x" },
-                                        onFocus = { vm.setFocusedApp(it) },
-                                        onClick = { vm.launch(it) },
-                                        onLongClick = { vm.showActionMenu(it) },
-                                    )
+                            // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
+                            if (dock.isNotEmpty()) {
+                                item(key = "dock_bar") {
+                                    val bandShape = RoundedCornerShape(radius + bandPad)
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 6.dp)
+                                            .background(Color(0xE6141416), bandShape)
+                                            .border(1.dp, Color(0x1FFFFFFF), bandShape)
+                                            .padding(bandPad)
+                                    ) {
+                                        AppRow(
+                                            apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
+                                            focusScale = 1.03f, showNames = false,
+                                            onFocus = { vm.setFocusedApp(it) },
+                                            onClick = { vm.launch(it) },
+                                            onLongClick = { vm.showActionMenu(it) },
+                                        )
+                                    }
                                 }
                             }
-                            if (recent.isNotEmpty()) {
-                                item(key = "h_recent") { SectionTitle("Recently Used", bandPad) }
-                                item(key = "r_recent") {
-                                    AppRow(
-                                        apps = recent, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                        focusScale = 1.06f, showNames = true,
-                                        modifier = Modifier.padding(start = bandPad),
-                                        onFocus = { vm.setFocusedApp(it) },
-                                        onClick = { vm.launch(it) },
-                                        onLongClick = { vm.showActionMenu(it) },
-                                    )
-                                }
-                            }
+
+                            // ─── Grid Section Title ───
                             if (gridRows.isNotEmpty()) {
-                                item(key = "h_all") { SectionTitle("All Applications (${s.allApps.size})", bandPad) }
+                                item(key = "h_all") {
+                                    Text(
+                                        text = if (s.appSortMode == AppSortMode.RECENCY) "Recent Applications (${s.allApps.size})" else "All Applications (${s.allApps.size})",
+                                        style = Ty.Heading.copy(
+                                            color = Color(0xB3FFFFFF),
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            letterSpacing = 0.4.sp
+                                        ),
+                                        modifier = Modifier.padding(start = bandPad + 6.dp, top = 6.dp, bottom = 4.dp)
+                                    )
+                                }
                                 items(gridRows, key = { row -> "g_" + row.first().packageName }) { rowApps ->
                                     AppRow(
                                         apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                         focusScale = 1.06f, showNames = true,
                                         modifier = Modifier.padding(start = bandPad),
+                                        badge = if (s.appSortMode == AppSortMode.RECENCY) {
+                                            { app ->
+                                                val count = vm.journal.getLaunchCount(app.packageName)
+                                                if (count > 0) "${count}x" else null
+                                            }
+                                        } else null,
                                         onFocus = { vm.setFocusedApp(it) },
                                         onClick = { vm.launch(it) },
                                         onLongClick = { vm.showActionMenu(it) },
@@ -333,11 +382,12 @@ fun HomeScreen(vm: LauncherViewModel) {
             if (showTools) {
                 ToolsMenuDialog(
                     accountName = s.tvProfile.displayName,
-                    onQuickShare = { showTools = false; vm.handleQuickShareClick() },
+                    onQuickShare = { showTools = false; vm.openQuickShareHub() },
                     onStorage = { showTools = false; vm.openStorageManager() },
                     onFiles = { showTools = false; vm.openFileManager() },
                     onTheme = { showTools = false; vm.openPersonalization() },
                     onAccount = { showTools = false; vm.openProfile() },
+                    onScreensaver = { showTools = false; vm.openScreensaver() },
                     onDismiss = { showTools = false },
                 )
             }
@@ -545,9 +595,12 @@ private fun CleanTvTopBar(
     timeText: String,
     dateText: String,
     networkLabel: String,
+    sortMode: AppSortMode,
+    onOpenQuickShare: () -> Unit,
     onOpenInputs: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenCleanTv: () -> Unit,
+    onToggleSort: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -556,25 +609,16 @@ private fun CleanTvTopBar(
     val ampm = parts.getOrNull(1).orEmpty()
     val netIcon = if (networkLabel.contains("Ethernet", ignoreCase = true)) Icons.Rounded.SettingsEthernet else Icons.Rounded.Wifi
 
-    Row(
+    Column(
         Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(Modifier.weight(1f).padding(end = 20.dp)) {
-            if (greeting.isNotBlank()) {
-                Text(
-                    text = greeting.uppercase(),
-                    style = Ty.Small.copy(
-                        color = Color(0x8CFFFFFF),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 3.4.sp
-                    ),
-                    maxLines = 1,
-                    modifier = Modifier.padding(start = 5.dp)
-                )
-            }
+        // ─── Row 1: Clock, Greeting & Date (Full width row, zero overlap with options) ───
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = clock,
@@ -594,7 +638,7 @@ private fun CleanTvTopBar(
                 }
                 Box(
                     Modifier
-                        .padding(start = 21.dp, end = 21.dp, bottom = 13.dp)
+                        .padding(start = 20.dp, end = 20.dp, bottom = 14.dp)
                         .width(1.dp)
                         .height(34.dp)
                         .background(Color(0x33FFFFFF))
@@ -602,62 +646,112 @@ private fun CleanTvTopBar(
                 Text(
                     text = dateText.uppercase(),
                     style = Ty.Small.copy(
-                        color = Color(0xA6FFFFFF),
-                        fontSize = 18.sp,
-                        lineHeight = 28.sp,
-                        fontWeight = FontWeight.Normal,
-                        letterSpacing = 2.6.sp
+                        color = Color(0xC0FFFFFF),
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 2.0.sp
                     ),
-                    maxLines = 2,
-                    modifier = Modifier.weight(1f, fill = false).padding(bottom = 12.dp)
+                    maxLines = 1,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
+            if (greeting.isNotBlank()) {
+                Text(
+                    text = greeting.uppercase(),
+                    style = Ty.Small.copy(
+                        color = Color(0x8CFFFFFF),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 3.2.sp
+                    ),
+                    maxLines = 1,
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
         }
 
+        // ─── Row 2: Top Action Pills & Settings Row ───
         Row(
-            Modifier.padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TvPill(label = "Inputs", icon = Icons.Rounded.Input, onClick = onOpenInputs)
+            // Real Quick Share icon pill
             TvPill(
-                label = networkLabel.ifBlank { "Wi-Fi" }, icon = netIcon, onClick = onOpenNetwork,
-                maxLabelWidth = 220.dp
+                label = null,
+                iconRes = R.drawable.ic_quick_share,
+                contentDescription = "Quick Share",
+                onClick = onOpenQuickShare,
             )
-            TvPill(label = null, icon = Icons.Rounded.AutoAwesome, onClick = onOpenCleanTv, contentDescription = "CleanTV")
-            TvPill(label = null, icon = Icons.Rounded.Apps, onClick = onOpenTools, contentDescription = "Tools")
-            TvPill(label = "Settings", icon = Icons.Rounded.Settings, onClick = onOpenSettings)
+            TvPill(
+                label = "Clean TV",
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = onOpenCleanTv,
+            )
+            TvPill(
+                label = "Inputs",
+                icon = Icons.AutoMirrored.Rounded.Input,
+                onClick = onOpenInputs,
+            )
+            TvPill(
+                label = if (sortMode == AppSortMode.RECENCY) "Recent" else "A-Z",
+                icon = if (sortMode == AppSortMode.RECENCY) Icons.Rounded.Schedule else Icons.AutoMirrored.Rounded.Sort,
+                isSelected = true,
+                onClick = onToggleSort,
+            )
+            TvPill(
+                label = networkLabel.ifBlank { "Wi-Fi" },
+                icon = netIcon,
+                onClick = onOpenNetwork,
+                maxLabelWidth = 140.dp,
+            )
+            TvPill(
+                label = null,
+                icon = Icons.Rounded.Apps,
+                onClick = onOpenTools,
+                contentDescription = "Tools",
+            )
+            TvPill(
+                label = "Settings",
+                icon = Icons.Rounded.Settings,
+                onClick = onOpenSettings,
+            )
         }
     }
 }
 
-/** Glass pill (reference: pill_bg). Unfocused: frosted white gradient. Focused: solid white, dark text. */
+/** Glass pill: Apple TV soft elevation, hairline border, subtle audio feedback. */
 @Composable
 private fun TvPill(
     label: String?,
-    icon: ImageVector,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    iconRes: Int? = null,
     height: Dp = 56.dp,
     textSize: TextUnit = 20.sp,
     maxLabelWidth: Dp = 240.dp,
     fill: Boolean = false,
     contentDescription: String? = null,
+    isSelected: Boolean = false,
+    onPillFocus: () -> Unit = {},
 ) {
+    val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         if (focused) 1.07f else 1f,
-        spring(dampingRatio = 0.75f, stiffness = 420f),
+        spring(dampingRatio = 0.78f, stiffness = 420f),
         label = "pillScale"
     )
     val fg by animateColorAsState(
-        if (focused) Color.Black else Color(0xEBFFFFFF), tween(120), label = "pillFg"
+        if (focused) Color.Black else if (isSelected) Color.White else Color(0xEBFFFFFF), tween(120), label = "pillFg"
     )
     val shape = RoundedCornerShape(50)
-    val bg = if (focused) {
-        Brush.verticalGradient(listOf(Color(0xF5FFFFFF), Color(0xF5FFFFFF)))
-    } else {
-        Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x14FFFFFF)))
+    val bg = when {
+        focused -> Brush.verticalGradient(listOf(Color(0xF5FFFFFF), Color(0xF5FFFFFF)))
+        isSelected -> Brush.verticalGradient(listOf(Color(0x4DFFFFFF), Color(0x24FFFFFF)))
+        else -> Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x14FFFFFF)))
     }
     Row(
         modifier
@@ -667,31 +761,53 @@ private fun TvPill(
                 scaleY = scale
             }
             .shadow(
-                if (focused) 18.dp else 0.dp, shape, clip = false,
-                ambientColor = Color.White, spotColor = Color.White
+                elevation = if (focused) 16.dp else 0.dp, shape = shape, clip = false,
+                ambientColor = Color(0x66000000), spotColor = Color(0x99000000)
             )
             .clip(shape)
             .background(bg)
-            .border(if (focused) 0.dp else 1.dp, Color(0x38FFFFFF), shape)
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
+            .border(
+                if (focused) 1.5.dp else if (isSelected) 1.5.dp else 1.dp,
+                if (focused) Color.White.copy(alpha = 0.95f) else if (isSelected) Color.White.copy(alpha = 0.65f) else Color(0x38FFFFFF),
+                shape
+            )
+            .onFocusChanged {
+                if (it.isFocused && !focused) {
+                    TvSound.playMove(view)
+                    onPillFocus()
+                }
+                focused = it.isFocused
+            }
+            .clickable {
+                TvSound.playClick(view)
+                onClick()
+            }
             .then(if (label == null) Modifier.width(height) else Modifier.padding(start = 21.dp, end = 27.dp)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (fill) Arrangement.Start else Arrangement.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription ?: label,
-            tint = fg,
-            modifier = Modifier.size(28.dp)
-        )
+        if (iconRes != null) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = contentDescription ?: label,
+                tint = fg,
+                modifier = Modifier.size(26.dp)
+            )
+        } else if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription ?: label,
+                tint = fg,
+                modifier = Modifier.size(26.dp)
+            )
+        }
         if (label != null) {
             Text(
                 text = label,
-                style = Ty.Button.copy(fontSize = textSize, fontWeight = FontWeight.Medium, color = fg),
+                style = Ty.Button.copy(fontSize = textSize, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium, color = fg),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 12.dp).widthIn(max = maxLabelWidth)
+                modifier = Modifier.padding(start = 10.dp).widthIn(max = maxLabelWidth)
             )
         }
     }
@@ -706,6 +822,7 @@ private fun ToolsMenuDialog(
     onFiles: () -> Unit,
     onTheme: () -> Unit,
     onAccount: () -> Unit,
+    onScreensaver: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -729,6 +846,7 @@ private fun ToolsMenuDialog(
             TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
+            TvPill("Aerial Screen Saver", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true, maxLabelWidth = 380.dp)
         }
     }
@@ -747,7 +865,7 @@ private fun AppRow(
     onClick: (InstalledAppInfo) -> Unit,
     onLongClick: (InstalledAppInfo) -> Unit,
     modifier: Modifier = Modifier,
-    badge: ((InstalledAppInfo) -> String)? = null,
+    badge: ((InstalledAppInfo) -> String?)? = null,
 ) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap)) {
         apps.forEach { app ->
@@ -782,6 +900,7 @@ private fun CleanTvAppTile(
     onLongClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var visuals by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
     LaunchedEffect(app.packageName) {
         if (visuals == null) visuals = IconCache.loadVisuals(context, app.packageName)
@@ -825,19 +944,28 @@ private fun CleanTvAppTile(
                     scaleY = scale
                 }
                 .shadow(
-                    if (focused) 28.dp else 0.dp, shape, clip = false,
-                    ambientColor = Color.White, spotColor = Color.White
+                    elevation = if (focused) 24.dp else 0.dp,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = Color(0x66000000),
+                    spotColor = Color(0x99000000)
                 )
                 .clip(shape)
                 .background(Color(0xFF1C1C1E))
                 .onFocusChanged {
+                    if (it.isFocused && !focused) {
+                        TvSound.playMove(view)
+                    }
                     focused = it.isFocused
                     if (it.isFocused) onFocus()
                 }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onClick
+                    onClick = {
+                        TvSound.playClick(view)
+                        onClick()
+                    }
                 )
         ) {
             val v = visuals
@@ -851,31 +979,75 @@ private fun CleanTvAppTile(
             } else {
                 val plateTop = v?.topColor ?: extractFallbackHue(app)
                 val plateBottom = v?.bottomColor ?: Color(0xFF101216)
+                // Large icon centred in plate with a frosted name strip at the bottom
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Brush.verticalGradient(listOf(plateTop, plateBottom)))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    plateTop.copy(alpha = 0.95f),
+                                    plateBottom.copy(alpha = 1f)
+                                )
+                            )
+                        )
                 ) {
-                    v?.bitmap?.let { bmp ->
-                        Image(
-                            bitmap = bmp,
-                            contentDescription = app.appName,
-                            modifier = Modifier
-                                .size(tileH * 0.46f)
+                    // ── Icon ──────────────────────────────────────────────
+                    // No bitmap yet: show a placeholder initial circle
+                    if (v?.bitmap == null) {
+                        Box(
+                            Modifier
+                                .size(tileH * 0.56f)
                                 .align(Alignment.Center)
-                                .padding(bottom = 18.dp)
+                                .absoluteOffset(y = (-10).dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color.White.copy(alpha = 0.08f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = app.appName.take(1).uppercase(),
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 36.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Image(
+                            bitmap = v.bitmap,
+                            contentDescription = app.appName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .size(tileH * 0.60f)        // bigger – fills ~60 % of tile height
+                                .align(Alignment.Center)
+                                .absoluteOffset(y = (-10).dp)        // shift up slightly to leave room for name strip
                         )
                     }
-                    Text(
-                        text = app.appName,
-                        style = Ty.Small.copy(color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
+
+                    // ── Name strip ────────────────────────────────────────
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
                             .align(Alignment.BottomCenter)
-                            .padding(horizontal = 13.dp)
-                            .padding(bottom = 10.dp)
-                    )
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Transparent, Color(0xCC000000))
+                                )
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = app.appName,
+                            style = Ty.Small.copy(
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.1.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
@@ -892,13 +1064,13 @@ private fun CleanTvAppTile(
                 }
             }
 
-            // Glass highlight + crisp white rim while focused
+            // Apple TV style soft specular highlight + delicate rim border
             if (focused) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Brush.verticalGradient(listOf(Color(0x40FFFFFF), Color(0x08FFFFFF))))
-                        .border(3.dp, Color(0xF2FFFFFF), shape)
+                        .background(Brush.verticalGradient(listOf(Color(0x28FFFFFF), Color(0x04FFFFFF), Color.Transparent)))
+                        .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.5f))), shape)
                 )
             }
         }
@@ -1378,8 +1550,17 @@ private fun LauncherActionDialog(
             TvPill("Clear Data", Icons.Rounded.DeleteSweep, onClearData, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
             TvPill("Clear Cache", Icons.Rounded.CleaningServices, onClearCache, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
             TvPill("Hide from Home", Icons.Rounded.VisibilityOff, onHideApp, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
-            if (app.canUninstall) {
-                TvPill("Uninstall", Icons.Rounded.Delete, onUninstall, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            val currentContext = LocalContext.current
+            if (app.packageName != currentContext.packageName) {
+                TvPill(
+                    label = if (app.isSystemApp) "Uninstall / Remove Bloatware" else "Uninstall",
+                    icon = Icons.Rounded.Delete,
+                    onClick = onUninstall,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = h,
+                    textSize = ts,
+                    fill = true
+                )
             }
             TvPill("App Info", Icons.Rounded.Info, onDetails, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
         }

@@ -49,6 +49,11 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+enum class AppSortMode(val label: String) {
+    RECENCY("Recent"),
+    ALPHABETICAL("A-Z"),
+}
+
 data class LauncherState(
     val featuredApps: List<InstalledAppInfo> = emptyList(),
     val favoriteApps: List<InstalledAppInfo> = emptyList(),
@@ -56,6 +61,7 @@ data class LauncherState(
     val recentApps: List<InstalledAppInfo> = emptyList(),
     val dockApps: List<InstalledAppInfo> = emptyList(),
     val allApps: List<InstalledAppInfo> = emptyList(),
+    val appSortMode: AppSortMode = AppSortMode.RECENCY,
     val focusedApp: InstalledAppInfo? = null,
     val greetingText: String = "GOOD AFTERNOON",
     val timeText: String = "",
@@ -92,6 +98,12 @@ data class LauncherState(
     // File Manager Screen (Samsung My Files style)
     val showFileManager: Boolean = false,
 
+    // Clean TV Full Screen Debloater Menu
+    val showCleanTvScreen: Boolean = false,
+
+    // Apple TV Aerial Live Screensaver
+    val showScreensaver: Boolean = false,
+
     // Personalization & Wallpapers
     val showPersonalization: Boolean = false,
     val wallpaperTheme: String = "aurora",
@@ -122,9 +134,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val journal = Journal(ctx)
     private val systemMonitor = SystemMonitor(ctx)
     val adb = AdbClient(ctx.filesDir)
-    private val catalog = Catalog.load(ctx)
-    private val scanner = Scanner(ctx, catalog)
-    private val tweaks = TweakEngine(adb, journal)
+    val catalog = Catalog.load(ctx)
+    val scanner = Scanner(ctx, catalog)
+    val tweaks = TweakEngine(adb, journal)
 
     private var monitorJob: Job? = null
     private var shareServer: com.leantv.app.share.QuickShareServer? = null
@@ -151,6 +163,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         loadProfile()
         checkDefaultLauncherPrompt()
         checkFirstRunDebloat()
+        startNativeQuickShare(openDialog = false, silent = true)
     }
 
     private fun detectDevice() {
@@ -259,7 +272,69 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         adb.close()
     }
 
-    // ---------- App Organization: Frequently Used, Recently Used, Dock, All Apps ----------
+    // ---------- App Organization: Frequently Used, Recently Used, Dock, All Apps (Usage-based) ----------
+
+    private data class SysUsage(val timeInForeground: Long, val lastTimeUsed: Long)
+
+    private fun getSystemUsageMap(): Map<String, SysUsage> {
+        return try {
+            val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+                ?: return emptyMap()
+            val now = System.currentTimeMillis()
+            val thirtyDaysAgo = now - 30L * 24 * 60 * 60 * 1000
+            val stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_WEEKLY, thirtyDaysAgo, now)
+            val map = mutableMapOf<String, SysUsage>()
+            stats?.forEach { s ->
+                val prev = map[s.packageName]
+                val time = (prev?.timeInForeground ?: 0L) + s.totalTimeInForeground
+                val last = maxOf(prev?.lastTimeUsed ?: 0L, s.lastTimeUsed)
+                map[s.packageName] = SysUsage(time, last)
+            }
+            map
+        } catch (_: Throwable) {
+            emptyMap()
+        }
+    }
+
+    private fun computeUsageScore(pkg: String, sys: SysUsage?): Long {
+        val internalCount = journal.getLaunchCount(pkg)
+        val internalLast = journal.getLastLaunchTime(pkg)
+        val effectiveLast = maxOf(internalLast, sys?.lastTimeUsed ?: 0L)
+        val fgTime = sys?.timeInForeground ?: 0L
+
+        val now = System.currentTimeMillis()
+        val recencyScore = when {
+            effectiveLast <= 0L -> 0L
+            now - effectiveLast < 24L * 60 * 60 * 1000 -> 500_000L
+            now - effectiveLast < 7L * 24 * 60 * 60 * 1000 -> 200_000L
+            now - effectiveLast < 30L * 24 * 60 * 60 * 1000 -> 50_000L
+            else -> 10_000L
+        }
+
+        // TV streaming and entertainment apps get a welcoming initial boost if brand new install
+        val streamingBoost = if (internalCount == 0 && fgTime == 0L) {
+            when {
+                pkg.contains("netflix") || pkg.contains("youtube") || pkg.contains("amazonvideo") ||
+                pkg.contains("hulu") || pkg.contains("disney") || pkg.contains("hotstar") ||
+                pkg.contains("plex") || pkg.contains("kodi") || pkg.contains("smarttube") ||
+                pkg.contains("spotify") || pkg.contains("twitch") || pkg.contains("vlc") -> 40_000L
+                else -> 0L
+            }
+        } else 0L
+
+        return (internalCount * 100_000L) + (fgTime / 60_000L * 1_000L) + recencyScore + streamingBoost
+    }
+
+    fun setAppSortMode(mode: AppSortMode) {
+        journal.appSortMode = mode.name
+        _state.update { it.copy(appSortMode = mode) }
+        loadApps(silent = true)
+    }
+
+    fun toggleAppSortMode() {
+        val next = if (_state.value.appSortMode == AppSortMode.RECENCY) AppSortMode.ALPHABETICAL else AppSortMode.RECENCY
+        setAppSortMode(next)
+    }
 
     fun loadApps(silent: Boolean = false) {
         if (!silent) _state.update { it.copy(isLoading = true) }
@@ -278,29 +353,59 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val favPackages = journal.favorites()
             val favorites = launchable.filter { it.packageName in favPackages }
 
-            // Dock apps: first 4 favorites or top launchable
+            val currentSortMode = try {
+                AppSortMode.valueOf(journal.appSortMode)
+            } catch (_: Exception) {
+                AppSortMode.RECENCY
+            }
+
+            val sysUsage = withContext(Dispatchers.IO) { getSystemUsageMap() }
+
+            // Dock apps: first 4 favorites or top launchable ranked by usage
             val dock = if (favorites.isNotEmpty()) {
                 favorites.take(4)
             } else {
-                launchable.filter { !it.isSystemApp }.take(4).ifEmpty { launchable.take(4) }
+                launchable
+                    .sortedWith(
+                        compareByDescending<InstalledAppInfo> { computeUsageScore(it.packageName, sysUsage[it.packageName]) }
+                            .thenBy { it.appName.lowercase(Locale.ROOT) }
+                    )
+                    .take(4)
             }
 
-            // Frequently Used: ranked by launch count > 0
+            // Frequently Used: ranked by launch count > 0 or usage score
             val frequent = launchable
-                .filter { journal.getLaunchCount(it.packageName) > 0 }
-                .sortedByDescending { journal.getLaunchCount(it.packageName) }
+                .filter { journal.getLaunchCount(it.packageName) > 0 || (sysUsage[it.packageName]?.timeInForeground ?: 0L) > 0L }
+                .sortedWith(
+                    compareByDescending<InstalledAppInfo> { computeUsageScore(it.packageName, sysUsage[it.packageName]) }
+                        .thenBy { it.appName.lowercase(Locale.ROOT) }
+                )
                 .take(6)
 
             // Recently Used: ranked by last launch timestamp > 0
             val recent = launchable
-                .filter { journal.getLastLaunchTime(it.packageName) > 0L }
-                .sortedByDescending { journal.getLastLaunchTime(it.packageName) }
+                .filter { journal.getLastLaunchTime(it.packageName) > 0L || (sysUsage[it.packageName]?.lastTimeUsed ?: 0L) > 0L }
+                .sortedByDescending {
+                    maxOf(journal.getLastLaunchTime(it.packageName), sysUsage[it.packageName]?.lastTimeUsed ?: 0L)
+                }
                 .take(6)
 
-            val sortedAll = launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
+            val sortedAll = when (currentSortMode) {
+                AppSortMode.RECENCY -> launchable.sortedWith(
+                    compareByDescending<InstalledAppInfo> {
+                        maxOf(
+                            journal.getLastLaunchTime(it.packageName),
+                            sysUsage[it.packageName]?.lastTimeUsed ?: 0L,
+                            if (journal.getLaunchCount(it.packageName) > 0) 1000L else 0L
+                        )
+                    }.thenBy { it.appName.lowercase(Locale.ROOT) }
+                )
+                AppSortMode.ALPHABETICAL -> launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
+            }
 
             _state.update {
                 it.copy(
+                    appSortMode = currentSortMode,
                     featuredApps = favorites.take(5),
                     favoriteApps = favorites,
                     dockApps = dock,
@@ -324,7 +429,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         if (intent != null) {
             try {
-                ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_TASK_ON_HOME
+                )
+                intent.putExtra("leantv_launched", true)
+                ctx.startActivity(intent)
             } catch (e: Exception) {
                 toast("Couldn't open app: ${e.message}")
             }
@@ -409,7 +520,29 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun confirmUninstall(app: InstalledAppInfo) {
         dismissUninstallConfirm()
-        StorageHelper.requestUninstall(ctx, app.packageName)
+        viewModelScope.launch {
+            toast("Uninstalling ${app.appName}...")
+            val res = com.leantv.app.data.SystemDebloater.uninstallOrDisable(
+                ctx = ctx,
+                pkg = app.packageName,
+                label = app.appName,
+                isSystemApp = app.isSystemApp,
+                adbClient = adb,
+                journal = journal
+            )
+            when (res) {
+                is com.leantv.app.data.DebloatResult.Success -> {
+                    toast(res.message)
+                    loadApps(silent = true)
+                }
+                is com.leantv.app.data.DebloatResult.NeedsPrivilege -> {
+                    toast(res.message)
+                }
+                is com.leantv.app.data.DebloatResult.Failure -> {
+                    toast(res.reason)
+                }
+            }
+        }
     }
 
     // ---------- Hardware TV Input Switcher (Feature #3) ----------
@@ -549,10 +682,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchNativeQuickShare() {
         closeQuickShareHub()
-        startNativeQuickShare()
+        startNativeQuickShare(openDialog = true, silent = false)
     }
 
-    fun startNativeQuickShare() {
+    fun startNativeQuickShare(openDialog: Boolean = true, silent: Boolean = false) {
         // Start the foreground service if not already running
         val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -562,27 +695,43 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // Bind to the service to observe its state flow
-        val conn = object : android.content.ServiceConnection {
-            override fun onServiceConnected(name: android.content.ComponentName?, binder: android.os.IBinder?) {
-                val svc = (binder as? com.leantv.app.share.NativeQuickShareReceiver.LocalBinder)?.service
-                nativeQsService = svc
-                if (svc != null) {
-                    viewModelScope.launch {
-                        svc.state.collect { qsState ->
-                            _state.update { it.copy(nativeQuickShareState = qsState) }
+        if (nativeQsConnection == null) {
+            val conn = object : android.content.ServiceConnection {
+                override fun onServiceConnected(name: android.content.ComponentName?, binder: android.os.IBinder?) {
+                    val svc = (binder as? com.leantv.app.share.NativeQuickShareReceiver.LocalBinder)?.service
+                    nativeQsService = svc
+                    if (svc != null) {
+                        viewModelScope.launch {
+                            svc.state.collect { qsState ->
+                                val incoming = qsState.incomingTransfer
+                                _state.update { current ->
+                                    current.copy(
+                                        nativeQuickShareState = qsState,
+                                        // When an incoming file transfer arrives from any phone, POP UP INSTANTLY
+                                        showNativeQuickShare = if (incoming != null) true else current.showNativeQuickShare
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+                override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                    nativeQsService = null
+                    nativeQsConnection = null
+                    // Service crashed/killed — rebind silently so incoming transfers keep working
+                    startNativeQuickShare(openDialog = false, silent = true)
+                }
             }
-            override fun onServiceDisconnected(name: android.content.ComponentName?) {
-                nativeQsService = null
-            }
+            nativeQsConnection = conn
+            ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
         }
-        nativeQsConnection = conn
-        ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
 
-        _state.update { it.copy(showNativeQuickShare = true) }
-        toast("TV is now visible in Quick Share on nearby phones!")
+        if (openDialog) {
+            _state.update { it.copy(showNativeQuickShare = true) }
+        }
+        if (!silent) {
+            toast("TV is discoverable in Quick Share!")
+        }
     }
 
     fun acceptNativeTransfer() {
@@ -594,9 +743,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeNativeQuickShare() {
-        // Unbind (service keeps running in background so TV stays discoverable)
-        nativeQsConnection?.let { ctx.unbindService(it) }
-        nativeQsConnection = null
+        // Only hide the dialog — keep the service bound so new incoming transfers still trigger the popup
         _state.update { it.copy(showNativeQuickShare = false) }
     }
 
@@ -657,7 +804,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val intent = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
         if (intent != null) {
             try {
-                ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                    Intent.FLAG_ACTIVITY_TASK_ON_HOME
+                )
+                intent.putExtra("leantv_launched", true)
+                ctx.startActivity(intent)
             } catch (e: Exception) {
                 toast("Couldn't open LocalSend: ${e.message}")
             }
@@ -780,10 +933,27 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---------- ⚡ CleanYourTV 1-Click Auto Debloater Wizard (Feature #9) ----------
+    // ---------- ⚡ CleanYourTV Debloater Menu (Feature #9) ----------
 
     fun requestCleanTv() {
-        _state.update { it.copy(showCleanTvWizard = true) }
+        _state.update { it.copy(showCleanTvScreen = true) }
+    }
+
+    fun openCleanTvScreen() {
+        _state.update { it.copy(showCleanTvScreen = true) }
+    }
+
+    fun closeCleanTvScreen() {
+        _state.update { it.copy(showCleanTvScreen = false) }
+        loadApps(silent = true)
+    }
+
+    fun openScreensaver() {
+        _state.update { it.copy(showScreensaver = true) }
+    }
+
+    fun closeScreensaver() {
+        _state.update { it.copy(showScreensaver = false) }
     }
 
     fun dismissCleanTvWizard() {

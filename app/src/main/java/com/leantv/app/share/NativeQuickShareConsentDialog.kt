@@ -129,27 +129,71 @@ fun NativeQuickShareConsentDialog(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        LinearProgressIndicator(
-                            progress = { transfer.progressFraction },
-                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                            color = Pal.Mint,
-                            trackColor = Pal.Line,
-                        )
-                        if (transfer.bytesPerSecond > 0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "${formatBytes(transfer.bytesPerSecond)}/s",
-                                style = Ty.Small,
-                                modifier = Modifier.fillMaxWidth(),
-                                textAlign = TextAlign.End,
+                                text = "Receiving file...",
+                                style = Ty.Body.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
                             )
+                            val pct = (transfer.progressFraction * 100).toInt()
+                            Text(
+                                text = if (pct > 0) "$pct%" else "Connecting...",
+                                style = Ty.Body.copy(fontWeight = FontWeight.Bold, color = Pal.Mint)
+                            )
+                        }
+
+                        if (transfer.progressFraction > 0f) {
+                            LinearProgressIndicator(
+                                progress = { transfer.progressFraction },
+                                modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                                color = Pal.Mint,
+                                trackColor = Pal.Line,
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                                color = Pal.Mint,
+                                trackColor = Pal.Line,
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "📁 Downloads / LeanTv quick share",
+                                style = Ty.Small.copy(color = Pal.Dim)
+                            )
+                            if (transfer.bytesPerSecond > 0) {
+                                Text(
+                                    text = "${formatBytes(transfer.bytesPerSecond)}/s",
+                                    style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
+                                )
+                            }
                         }
                     }
                 }
 
                 // ─── Status messages (terminal states) ───────────────────────
                 when (transfer.phase) {
-                    TransferPhase.COMPLETED -> StatusChip("✓  Transfer complete", Pal.Mint)
-                    TransferPhase.FAILED    -> StatusChip("✗  Transfer failed", Pal.Coral)
+                    TransferPhase.COMPLETED -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            StatusChip("✓  Transfer Complete!", Pal.Mint)
+                            Text(
+                                text = "Saved in Downloads > LeanTv quick share",
+                                style = Ty.Small.copy(color = Pal.Dim),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                    TransferPhase.FAILED    -> StatusChip("✗  Transfer Failed or Cancelled", Pal.Coral)
                     TransferPhase.REJECTED  -> StatusChip("Declined", Pal.Dim)
                     else -> {}
                 }

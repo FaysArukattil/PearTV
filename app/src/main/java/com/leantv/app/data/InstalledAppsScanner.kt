@@ -29,6 +29,7 @@ object InstalledAppsScanner {
 
         for (pi in packages) {
             val ai = pi.applicationInfo ?: continue
+            if (!ai.enabled) continue
             val pkg = pi.packageName
 
             val isSystem = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
