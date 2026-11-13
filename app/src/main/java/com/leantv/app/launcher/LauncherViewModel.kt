@@ -82,6 +82,10 @@ data class LauncherState(
     val showQuickShare: Boolean = false,
     val quickShareState: com.leantv.app.share.QuickShareState = com.leantv.app.share.QuickShareState(),
 
+    // Native Quick Share (mDNS / BLE receiver)
+    val showNativeQuickShare: Boolean = false,
+    val nativeQuickShareState: com.leantv.app.share.NativeQuickShareState = com.leantv.app.share.NativeQuickShareState(),
+
     // Storage Manager Screen (Samsung Device Care style)
     val showStorageManager: Boolean = false,
 
@@ -124,6 +128,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private var monitorJob: Job? = null
     private var shareServer: com.leantv.app.share.QuickShareServer? = null
+
+    // Native Quick Share receiver service binding
+    private var nativeQsService: com.leantv.app.share.NativeQuickShareReceiver? = null
+    private var nativeQsConnection: android.content.ServiceConnection? = null
 
     private val _state = MutableStateFlow(
         LauncherState(
@@ -526,10 +534,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Quick Share Dual-Mode (Feature #8) ----------
 
     fun handleQuickShareClick() {
-        val launched = launchNativeGoogleQuickShareDirect()
-        if (!launched) {
-            _state.update { it.copy(showQuickShareHub = true) }
-        }
+        // Open the Hub so user can pick: Native QS (this TV appears in phone picker)
+        // or the web-based fallback.
+        _state.update { it.copy(showQuickShareHub = true) }
     }
 
     fun openQuickShareHub() {
@@ -542,11 +549,63 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun launchNativeQuickShare() {
         closeQuickShareHub()
-        val launched = launchNativeGoogleQuickShareDirect()
-        if (!launched) {
-            toast("Google Quick Share not preinstalled on this TV. Opening Universal Wi-Fi AirShare...")
-            openQuickShare()
+        startNativeQuickShare()
+    }
+
+    fun startNativeQuickShare() {
+        // Start the foreground service if not already running
+        val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ctx.startForegroundService(intent)
+        } else {
+            ctx.startService(intent)
         }
+
+        // Bind to the service to observe its state flow
+        val conn = object : android.content.ServiceConnection {
+            override fun onServiceConnected(name: android.content.ComponentName?, binder: android.os.IBinder?) {
+                val svc = (binder as? com.leantv.app.share.NativeQuickShareReceiver.LocalBinder)?.service
+                nativeQsService = svc
+                if (svc != null) {
+                    viewModelScope.launch {
+                        svc.state.collect { qsState ->
+                            _state.update { it.copy(nativeQuickShareState = qsState) }
+                        }
+                    }
+                }
+            }
+            override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                nativeQsService = null
+            }
+        }
+        nativeQsConnection = conn
+        ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+
+        _state.update { it.copy(showNativeQuickShare = true) }
+        toast("TV is now visible in Quick Share on nearby phones!")
+    }
+
+    fun acceptNativeTransfer() {
+        nativeQsService?.submitConsent(true)
+    }
+
+    fun rejectNativeTransfer() {
+        nativeQsService?.submitConsent(false)
+    }
+
+    fun closeNativeQuickShare() {
+        // Unbind (service keeps running in background so TV stays discoverable)
+        nativeQsConnection?.let { ctx.unbindService(it) }
+        nativeQsConnection = null
+        _state.update { it.copy(showNativeQuickShare = false) }
+    }
+
+    fun stopNativeQuickShare() {
+        nativeQsConnection?.let { ctx.unbindService(it) }
+        nativeQsConnection = null
+        nativeQsService = null
+        ctx.stopService(android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java))
+        _state.update { it.copy(showNativeQuickShare = false, nativeQuickShareState = com.leantv.app.share.NativeQuickShareState()) }
     }
 
     private fun launchNativeGoogleQuickShareDirect(): Boolean {

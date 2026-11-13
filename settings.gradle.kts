@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "LeanTV"
 include(":app")
+include(":core-protocol")
+include(":discovery-android")

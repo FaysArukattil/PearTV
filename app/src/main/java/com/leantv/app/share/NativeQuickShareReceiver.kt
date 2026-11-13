@@ -1,0 +1,360 @@
+package com.leantv.app.share
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.os.Binder
+import android.os.Build
+import android.os.IBinder
+import androidx.annotation.RequiresApi
+import com.leantv.app.HomeActivity
+import com.leantv.app.R
+import dev.bluehouse.bada.discovery.Discovery
+import dev.bluehouse.bada.discovery.ble.BleQuickShareAdvertiser
+import dev.bluehouse.bada.discovery.medium.MediumRegistries
+import dev.bluehouse.bada.protocol.connection.InboundConnection
+import dev.bluehouse.bada.protocol.connection.InboundConnectionState
+import dev.bluehouse.bada.protocol.connection.TransferItem
+import dev.bluehouse.bada.protocol.endpoint.DeviceType
+import dev.bluehouse.bada.protocol.endpoint.EndpointInfo
+import dev.bluehouse.bada.protocol.server.TcpReceiverServer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.security.SecureRandom
+
+class NativeQuickShareReceiver : Service() {
+
+    // ─── Binder ───────────────────────────────────────────────────────────────
+
+    inner class LocalBinder : Binder() {
+        val service: NativeQuickShareReceiver get() = this@NativeQuickShareReceiver
+    }
+
+    private val binder = LocalBinder()
+    override fun onBind(intent: Intent?): IBinder = binder
+
+    // ─── State ────────────────────────────────────────────────────────────────
+
+    private val _state = MutableStateFlow(NativeQuickShareState())
+    val state: StateFlow<NativeQuickShareState> = _state.asStateFlow()
+
+    // ─── Coroutine scope ──────────────────────────────────────────────────────
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // ─── Protocol objects ─────────────────────────────────────────────────────
+
+    private var tcpServer: TcpReceiverServer? = null
+    private var advertiseHandle: dev.bluehouse.bada.discovery.AdvertiseHandle? = null
+    private var bleAdvertiser: BleQuickShareAdvertiser? = null
+    private var discovery: Discovery? = null
+
+    /** Shared 4-byte endpoint id so BLE and mDNS correlate to the same peer. */
+    private val endpointId: ByteArray = ByteArray(4).also { SecureRandom().nextBytes(it) }
+
+    // ─── Lifecycle ────────────────────────────────────────────────────────────
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIF_ID, buildRunningNotification())
+        startReceiving()
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        stopReceiving()
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
+    // ─── Core start / stop ────────────────────────────────────────────────────
+
+    private fun startReceiving() {
+        val ctx = applicationContext
+        val mediumRegistry = MediumRegistries.defaultForContext(ctx)
+
+        val server = TcpReceiverServer(
+            parentScope = serviceScope,
+            factoryProvider = { TvFileDestinationFactory(ctx) },
+            mediumRegistry = mediumRegistry,
+        )
+        tcpServer = server
+
+        val endpointInfo = EndpointInfo(
+            version = 1,
+            hidden = false,
+            deviceType = DeviceType.LAPTOP,  // "Laptop" shows in picker without touch requirement
+            reserved = false,
+            metadata = ByteArray(EndpointInfo.METADATA_LEN).also { SecureRandom().nextBytes(it) },
+            deviceName = android.os.Build.MODEL.take(EndpointInfo.MAX_NAME_LEN),
+        )
+
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val port = server.start()
+
+                // mDNS advertisement – returns a closeable handle
+                val disc = Discovery(ctx, instanceEndpointIdProvider = { endpointId })
+                discovery = disc
+                val handle = disc.advertise(endpointInfo, port)
+                advertiseHandle = handle
+
+                // BLE advertisement for Samsung/stock Pixel picker visibility
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    tryStartBleAdvertise(ctx, endpointInfo)
+                }
+
+                _state.update { it.copy(isAdvertising = true) }
+
+                // Collect new connections
+                launch {
+                    server.activeConnections.collect { conn ->
+                        observeConnection(conn)
+                    }
+                }
+
+                // Collect completed connections (for file-received notifications)
+                launch {
+                    server.results.collect { completion ->
+                        handleCompletion(completion)
+                    }
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to start Quick Share receiver", e)
+                _state.update { it.copy(isAdvertising = false) }
+            }
+        }
+    }
+
+    private fun stopReceiving() {
+        advertiseHandle?.close()
+        advertiseHandle = null
+
+        bleAdvertiser?.stop()
+        bleAdvertiser = null
+
+        discovery = null
+
+        serviceScope.launch(Dispatchers.IO) {
+            tcpServer?.stop()
+            tcpServer = null
+        }
+
+        _state.update { NativeQuickShareState(isAdvertising = false) }
+    }
+
+    // ─── Connection observation ───────────────────────────────────────────────
+
+    private fun observeConnection(conn: InboundConnection) {
+        serviceScope.launch {
+            conn.state.collect { connState ->
+                when (connState) {
+                    is InboundConnectionState.WaitingForUserConsent -> {
+                        val meta = connState.metadata
+                        val files = meta.items.mapNotNull { it.toFileInfo() }
+                        _state.update {
+                            it.copy(
+                                incomingTransfer = IncomingTransfer(
+                                    senderName = meta.sourceDeviceName,
+                                    pin = meta.pin,
+                                    files = files,
+                                    phase = TransferPhase.WAITING_CONSENT,
+                                    connection = conn,
+                                )
+                            )
+                        }
+                    }
+
+                    is InboundConnectionState.Receiving -> {
+                        val progress = connState.progress
+                        val fraction = if (progress.totalSize > 0)
+                            (progress.bytesTransferred.toFloat() / progress.totalSize.toFloat()).coerceIn(0f, 1f)
+                        else 0f
+                        _state.update { s ->
+                            s.copy(
+                                incomingTransfer = s.incomingTransfer?.copy(
+                                    phase = TransferPhase.RECEIVING,
+                                    progressFraction = fraction,
+                                    bytesPerSecond = progress.bytesPerSecond,
+                                )
+                            )
+                        }
+                    }
+
+                    is InboundConnectionState.Completed -> {
+                        val received = connState.items.mapNotNull { item ->
+                            when (item) {
+                                is dev.bluehouse.bada.protocol.connection.ReceivedItem.File ->
+                                    ReceivedFile(
+                                        name = item.header.fileName.ifEmpty { "file_${item.payloadId}" },
+                                        path = "", // Actual path managed by TvFileDestinationFactory
+                                        sizeBytes = item.bytesWritten,
+                                        timestamp = System.currentTimeMillis(),
+                                    )
+                                else -> null
+                            }
+                        }
+                        _state.update { s ->
+                            s.copy(
+                                incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.COMPLETED),
+                                lastReceivedFiles = received + s.lastReceivedFiles,
+                            )
+                        }
+                        // Show notification for each received file
+                        received.forEach { showFileReceivedNotification(it) }
+                        // Auto-clear the consent dialog after 2 s
+                        launch {
+                            kotlinx.coroutines.delay(2_000)
+                            _state.update { it.copy(incomingTransfer = null) }
+                        }
+                    }
+
+                    is InboundConnectionState.Rejected -> {
+                        _state.update { s ->
+                            s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.REJECTED))
+                        }
+                        launch {
+                            kotlinx.coroutines.delay(1_500)
+                            _state.update { it.copy(incomingTransfer = null) }
+                        }
+                    }
+
+                    is InboundConnectionState.Cancelled,
+                    is InboundConnectionState.Failed -> {
+                        _state.update { s ->
+                            s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.FAILED))
+                        }
+                        launch {
+                            kotlinx.coroutines.delay(1_500)
+                            _state.update { it.copy(incomingTransfer = null) }
+                        }
+                    }
+
+                    else -> { /* Idle / Handshaking / Negotiating — no UI change */ }
+                }
+            }
+        }
+    }
+
+    private fun handleCompletion(completion: dev.bluehouse.bada.protocol.server.InboundConnectionCompletion) {
+        // Results are already handled per-connection via observeConnection; this is a belt-and-braces
+        android.util.Log.i(TAG, "Transfer #${completion.connectionId} finished: ${completion.result::class.simpleName}")
+    }
+
+    // ─── User consent (called from ViewModel) ────────────────────────────────
+
+    fun submitConsent(accepted: Boolean) {
+        val conn = _state.value.incomingTransfer?.connection ?: return
+        conn.submitUserConsent(accepted)
+        if (!accepted) {
+            _state.update { s ->
+                s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.REJECTED))
+            }
+        }
+    }
+
+    // ─── BLE advertising (API ≥ 26) ──────────────────────────────────────────
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun tryStartBleAdvertise(ctx: android.content.Context, endpointInfo: EndpointInfo) {
+        try {
+            val adv = BleQuickShareAdvertiser(ctx)
+            bleAdvertiser = adv
+            adv.start(endpointInfo, endpointId)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "BLE advertise failed (non-fatal): ${e.message}")
+        }
+    }
+
+    // ─── Notifications ────────────────────────────────────────────────────────
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_RUNNING, "Quick Share Receiver", NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = "TV is discoverable via Quick Share" }
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_RECEIVED, "Quick Share – File Received", NotificationManager.IMPORTANCE_DEFAULT)
+            )
+        }
+    }
+
+    private fun buildRunningNotification(): Notification {
+        val tapIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, HomeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_RUNNING)
+                .setContentTitle("Quick Share active")
+                .setContentText("Your TV is visible in nearby Quick Share pickers")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentIntent(tapIntent)
+                .setOngoing(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            android.app.Notification.Builder(this)
+                .setContentTitle("Quick Share active")
+                .setContentText("Your TV is visible in nearby Quick Share pickers")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentIntent(tapIntent)
+                .setOngoing(true)
+                .build()
+        }
+    }
+
+    private fun showFileReceivedNotification(file: ReceivedFile) {
+        val nm = getSystemService(NotificationManager::class.java)
+        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_RECEIVED)
+                .setContentTitle("📥 ${file.name}")
+                .setContentText("Saved to Downloads (${formatBytes(file.sizeBytes)})")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setAutoCancel(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            android.app.Notification.Builder(this)
+                .setContentTitle("📥 ${file.name}")
+                .setContentText("Saved to Downloads (${formatBytes(file.sizeBytes)})")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setAutoCancel(true)
+                .build()
+        }
+        nm.notify(NOTIF_FILE_BASE + (file.timestamp % 1000).toInt(), notif)
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "${bytes} B"
+        bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024f)} KB"
+        bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024f * 1024))} MB"
+        else -> "${"%.2f".format(bytes / (1024f * 1024 * 1024))} GB"
+    }
+
+    companion object {
+        private const val TAG = "NativeQSReceiver"
+        private const val CHANNEL_RUNNING = "qs_receiver_running"
+        private const val CHANNEL_RECEIVED = "qs_receiver_received"
+        private const val NOTIF_ID = 9001
+        private const val NOTIF_FILE_BASE = 9100
+    }
+}

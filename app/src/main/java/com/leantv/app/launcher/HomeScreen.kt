@@ -133,7 +133,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     // Handle Back key: close any open dialog/screen first, never exit launcher
     BackHandler(
         enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
-                s.showQuickShare || s.showQuickShareHub || s.showInputsDialog ||
+                s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare || s.showInputsDialog ||
                 s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
                 s.debloatSuccessSummary != null || s.actionMenuApp != null ||
                 s.uninstallConfirmApp != null || s.showDefaultPrompt
@@ -144,6 +144,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showPersonalization -> vm.closePersonalization()
             s.showQuickShare -> vm.closeQuickShare()
             s.showQuickShareHub -> vm.closeQuickShareHub()
+            s.showNativeQuickShare -> vm.closeNativeQuickShare()
             s.showInputsDialog -> vm.closeInputs()
             s.showProfileDialog -> vm.closeProfile()
             s.showCleanTvWizard -> vm.dismissCleanTvWizard()
@@ -177,7 +178,7 @@ fun HomeScreen(vm: LauncherViewModel) {
         return
     }
 
-    val modalOpen = s.showPersonalization || s.showQuickShare || s.showQuickShareHub ||
+    val modalOpen = s.showPersonalization || s.showQuickShare || s.showQuickShareHub || s.showNativeQuickShare ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
             s.uninstallConfirmApp != null || s.showDefaultPrompt || showTools
@@ -400,6 +401,16 @@ fun HomeScreen(vm: LauncherViewModel) {
                     state = s.quickShareState,
                     onClose = vm::closeQuickShare,
                     onOpenUrl = vm::openUrl
+                )
+            }
+
+            // Native Quick Share – consent dialog (TV appears in phone picker)
+            if (s.showNativeQuickShare) {
+                com.leantv.app.share.NativeQuickShareConsentDialog(
+                    state = s.nativeQuickShareState,
+                    onAccept = vm::acceptNativeTransfer,
+                    onDecline = vm::rejectNativeTransfer,
+                    onDismiss = vm::closeNativeQuickShare,
                 )
             }
 

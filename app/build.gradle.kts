@@ -58,4 +58,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("dev.mobile:dadb:1.2.10")
     implementation("com.google.zxing:core:3.5.3")
+    implementation(project(":core-protocol"))
+    implementation(project(":discovery-android"))
 }
