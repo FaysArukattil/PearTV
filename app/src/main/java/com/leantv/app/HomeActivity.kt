@@ -17,7 +17,21 @@ class HomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         TvSound.init(applicationContext)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
+        window.setFormat(android.graphics.PixelFormat.RGBA_8888)
         setContent { HomeScreen(vm) }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_UP) {
+                if (onBackPressedDispatcher.hasEnabledCallbacks()) {
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+            return true // Consume back key: Home is the root, never exit or pop to previous app!
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {

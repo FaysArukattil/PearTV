@@ -27,7 +27,13 @@ class TvFileDestinationFactory(
         const val FOLDER_NAME = "Quickshare"
 
         fun getDownloadDir(ctx: Context): File {
+            val primary = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
+            if (primary.exists() && (primary.canWrite() || primary.setWritable(true))) {
+                return primary
+            }
+
             val candidates = mutableListOf<File>()
+            candidates.add(primary)
 
             // 1. Primary: /storage/emulated/0/Quickshare (Directly in internal storage root)
             val extRoot = Environment.getExternalStorageDirectory()

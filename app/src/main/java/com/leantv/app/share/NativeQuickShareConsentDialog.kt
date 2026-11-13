@@ -194,9 +194,6 @@ fun NativeQuickShareConsentDialog(
                         textAlign = TextAlign.Center,
                     )
 
-                    // ─── PIN confirmation ─────────────────────────────────────────
-                    PinDisplay(pin = transfer.pin)
-
                     // ─── File list ────────────────────────────────────────────────
                     if (transfer.files.isNotEmpty()) {
                         LazyColumn(
@@ -344,32 +341,6 @@ fun NativeQuickShareConsentDialog(
 }
 
 // ─── Sub-composables ──────────────────────────────────────────────────────────
-
-@Composable
-private fun PinDisplay(pin: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Confirm PIN", style = Ty.Small)
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            pin.forEach { digit ->
-                Box(
-                    modifier = Modifier
-                        .size(width = 48.dp, height = 60.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Pal.SurfaceHi),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = digit.toString(),
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Pal.Text,
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun FileRow(file: TransferFileInfo) {

@@ -13,6 +13,10 @@ import com.leantv.app.R
 import com.leantv.app.ui.TvSound
 import com.leantv.app.ui.CleanTvScreen
 import com.leantv.app.ui.AppleTvScreensaver
+import com.leantv.app.ui.ScreensaverSettingsDialog
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInVertically
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Schedule
@@ -155,7 +159,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     // Handle Back key: close any open dialog/screen first, never exit launcher
     BackHandler(
         enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
-                s.showCleanTvScreen || s.showScreensaver ||
+                s.showCleanTvScreen || s.showScreensaver || s.showScreensaverSettings ||
                 s.showNativeQuickShare || s.showInputsDialog ||
                 s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
                 s.debloatSuccessSummary != null || s.actionMenuApp != null ||
@@ -163,6 +167,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     ) {
         when {
             s.showScreensaver -> vm.closeScreensaver()
+            s.showScreensaverSettings -> vm.closeScreensaverSettings()
             s.showCleanTvScreen -> vm.closeCleanTvScreen()
             s.showStorageManager -> vm.closeStorageManager()
             s.showFileManager -> vm.closeFileManager()
@@ -181,10 +186,19 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     BackHandler(enabled = showTools) { showTools = false }
 
+    // Root BackHandler: On Home root, back press is safely consumed so it never pops to last opened app!
+    BackHandler(enabled = true) {
+        // Stay on Home screen root
+    }
+
     // Fullscreen Overlay Screens
     if (s.showScreensaver) {
         TvCanvas {
-            AppleTvScreensaver(onDismiss = vm::closeScreensaver)
+            AppleTvScreensaver(
+                mode = s.screensaverMode,
+                customPath = s.screensaverCustomPath,
+                onDismiss = vm::closeScreensaver
+            )
         }
         return
     }
@@ -226,7 +240,7 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     val modalOpen = s.showPersonalization || s.showNativeQuickShare ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
-            s.showCleanTvScreen || s.showScreensaver ||
+            s.showCleanTvScreen || s.showScreensaver || s.showScreensaverSettings ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
             s.uninstallConfirmApp != null || s.showDefaultPrompt || showTools
     val focusManager = LocalFocusManager.current
@@ -241,10 +255,13 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(lastInteractionTime) {
-        delay(3 * 60 * 1000L) // 3 mins of idle activates Apple TV Aerial screen saver
-        if (!modalOpen && !s.showScreensaver && !s.showStorageManager && !s.showFileManager && !s.showCleanTvScreen) {
-            vm.openScreensaver()
+    val idleMinutes = s.screensaverIdleMinutes
+    LaunchedEffect(lastInteractionTime, idleMinutes, modalOpen) {
+        if (idleMinutes > 0) {
+            delay(idleMinutes * 60 * 1000L)
+            if (!modalOpen && !s.showScreensaver && !s.showStorageManager && !s.showFileManager && !s.showCleanTvScreen) {
+                vm.openScreensaver()
+            }
         }
     }
 
@@ -284,6 +301,12 @@ fun HomeScreen(vm: LauncherViewModel) {
                         .fillMaxSize()
                         .focusProperties { canFocus = !modalOpen }
                         .focusRestorer()
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                lastInteractionTime = System.currentTimeMillis()
+                            }
+                            false
+                        }
                         .padding(start = sideMargin, end = sideMargin, top = 34.dp)
                 ) {
                     CleanTvTopBar(
@@ -306,13 +329,21 @@ fun HomeScreen(vm: LauncherViewModel) {
 
                     Spacer(Modifier.height(14.dp))
 
-                    Text(
-                        text = heroName,
-                        style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 6.dp).height(72.dp)
-                    )
+                    AnimatedContent(
+                        targetState = heroName,
+                        transitionSpec = {
+                            fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                        },
+                        label = "heroNameAnim"
+                    ) { targetName ->
+                        Text(
+                            text = targetName,
+                            style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 6.dp).height(72.dp)
+                        )
+                    }
 
                     if (s.isLoading) {
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -333,52 +364,57 @@ fun HomeScreen(vm: LauncherViewModel) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
                                 item(key = "dock_bar") {
-                                    val bandShape = RoundedCornerShape(radius + bandPad)
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(bottom = 6.dp)
-                                            .background(Color(0xE6141416), bandShape)
-                                            .border(1.dp, Color(0x1FFFFFFF), bandShape)
-                                            .padding(bandPad)
+                                    AnimatedVisibility(
+                                        visible = true,
+                                        enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 4 } + fadeIn(tween(220))
                                     ) {
-                                        AppRow(
-                                            apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                            focusScale = 1.03f, showNames = false,
-                                            tileModifier = { index, _ ->
-                                                val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
-                                                val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
-                                                Modifier
-                                                    .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
-                                                    .focusProperties {
-                                                        up = topBarPillRequesters[topIdx]
-                                                        if (gridRows.isNotEmpty()) {
-                                                            down = gridRow0ColRequesters[gridTargetCol]
-                                                        }
-                                                    }
-                                                    .onPreviewKeyEvent { ev ->
-                                                        val k = ev.nativeKeyEvent
-                                                        if (k.action == KeyEvent.ACTION_DOWN) {
-                                                            when (k.keyCode) {
-                                                                KeyEvent.KEYCODE_DPAD_UP -> {
-                                                                    topBarPillRequesters[topIdx].requestFocus()
-                                                                    true
-                                                                }
-                                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                                                    if (gridRows.isNotEmpty()) {
-                                                                        gridRow0ColRequesters[gridTargetCol].requestFocus()
-                                                                        true
-                                                                    } else false
-                                                                }
-                                                                else -> false
+                                        val bandShape = RoundedCornerShape(radius + bandPad)
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 6.dp)
+                                                .background(Color(0xE6141416), bandShape)
+                                                .border(1.dp, Color(0x1FFFFFFF), bandShape)
+                                                .padding(bandPad)
+                                        ) {
+                                            AppRow(
+                                                apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
+                                                focusScale = 1.03f, showNames = false,
+                                                tileModifier = { index, _ ->
+                                                    val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
+                                                    val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
+                                                    Modifier
+                                                        .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
+                                                        .focusProperties {
+                                                            up = topBarPillRequesters[topIdx]
+                                                            if (gridRows.isNotEmpty()) {
+                                                                down = gridRow0ColRequesters[gridTargetCol]
                                                             }
-                                                        } else false
-                                                    }
-                                            },
-                                            onFocus = { vm.setFocusedApp(it) },
-                                            onClick = { vm.launch(it) },
-                                            onLongClick = { vm.showActionMenu(it) },
-                                        )
+                                                        }
+                                                        .onPreviewKeyEvent { ev ->
+                                                            val k = ev.nativeKeyEvent
+                                                            if (k.action == KeyEvent.ACTION_DOWN) {
+                                                                when (k.keyCode) {
+                                                                    KeyEvent.KEYCODE_DPAD_UP -> {
+                                                                        topBarPillRequesters[topIdx].requestFocus()
+                                                                        true
+                                                                    }
+                                                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                                        if (gridRows.isNotEmpty()) {
+                                                                            gridRow0ColRequesters[gridTargetCol].requestFocus()
+                                                                            true
+                                                                        } else false
+                                                                    }
+                                                                    else -> false
+                                                                }
+                                                            } else false
+                                                        }
+                                                },
+                                                onFocus = { vm.setFocusedApp(it) },
+                                                onClick = { vm.launch(it) },
+                                                onLongClick = { vm.showActionMenu(it) },
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -398,39 +434,39 @@ fun HomeScreen(vm: LauncherViewModel) {
                                     )
                                 }
                                 itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }) { rowIndex, rowApps ->
-                                    AppRow(
-                                        apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                        focusScale = 1.06f, showNames = true,
-                                        modifier = Modifier.padding(start = bandPad),
-                                        tileModifier = if (rowIndex == 0) { index, _ ->
-                                            val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
-                                            Modifier
-                                                .focusRequester(gridRow0ColRequesters[index.coerceIn(0, cols - 1)])
-                                                .focusProperties {
-                                                    if (dock.isNotEmpty()) {
-                                                        up = dockColRequesters[dockTargetCol]
-                                                    }
-                                                }
-                                                .onPreviewKeyEvent { ev ->
-                                                    val k = ev.nativeKeyEvent
-                                                    if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                    AnimatedVisibility(
+                                        visible = true,
+                                        enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 3 } + fadeIn(tween(200))
+                                    ) {
+                                        AppRow(
+                                            apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
+                                            focusScale = 1.06f, showNames = true,
+                                            modifier = Modifier.padding(start = bandPad),
+                                            tileModifier = if (rowIndex == 0) { index, _ ->
+                                                val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
+                                                Modifier
+                                                    .focusRequester(gridRow0ColRequesters[index.coerceIn(0, cols - 1)])
+                                                    .focusProperties {
                                                         if (dock.isNotEmpty()) {
-                                                            dockColRequesters[dockTargetCol].requestFocus()
-                                                            true
+                                                            up = dockColRequesters[dockTargetCol]
+                                                        }
+                                                    }
+                                                    .onPreviewKeyEvent { ev ->
+                                                        val k = ev.nativeKeyEvent
+                                                        if (k.action == KeyEvent.ACTION_DOWN && k.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                                            if (dock.isNotEmpty()) {
+                                                                dockColRequesters[dockTargetCol].requestFocus()
+                                                                true
+                                                            } else false
                                                         } else false
-                                                    } else false
-                                                }
-                                        } else null,
-                                        badge = if (s.appSortMode == AppSortMode.RECENCY) {
-                                            { app ->
-                                                val count = vm.journal.getLaunchCount(app.packageName)
-                                                if (count > 0) "${count}x" else null
-                                            }
-                                        } else null,
-                                        onFocus = { vm.setFocusedApp(it) },
-                                        onClick = { vm.launch(it) },
-                                        onLongClick = { vm.showActionMenu(it) },
-                                    )
+                                                    }
+                                            } else null,
+                                            badge = null,
+                                            onFocus = { vm.setFocusedApp(it) },
+                                            onClick = { vm.launch(it) },
+                                            onLongClick = { vm.showActionMenu(it) },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -446,7 +482,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                     onFiles = { showTools = false; vm.openFileManager() },
                     onTheme = { showTools = false; vm.openPersonalization() },
                     onAccount = { showTools = false; vm.openProfile() },
-                    onScreensaver = { showTools = false; vm.openScreensaver() },
+                    onScreensaver = { showTools = false; vm.openScreensaverSettings() },
                     onDismiss = { showTools = false },
                 )
             }
@@ -471,12 +507,33 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Inputs Switcher Modal (Live physical hardware ports only)
+            // Inputs Switcher Modal (Live physical hardware ports + native source picker)
             if (s.showInputsDialog) {
                 InputsSwitcherDialog(
                     ports = s.tvPorts,
                     onSelectPort = vm::switchToPort,
+                    onOpenNativeInputs = vm::openNativeTvInputs,
                     onDismiss = vm::closeInputs
+                )
+            }
+
+            // Screensaver Configuration Modal
+            if (s.showScreensaverSettings) {
+                ScreensaverSettingsDialog(
+                    currentMode = s.screensaverMode,
+                    customPath = s.screensaverCustomPath,
+                    idleMinutes = s.screensaverIdleMinutes,
+                    onSelectMode = vm::setScreensaverMode,
+                    onSelectIdleMinutes = vm::setScreensaverIdleMinutes,
+                    onPickPath = {
+                        vm.closeScreensaverSettings()
+                        vm.openFileManager(
+                            initialDir = android.os.Environment.getExternalStorageDirectory() ?: java.io.File("/storage/emulated/0"),
+                            highlightFile = null
+                        )
+                    },
+                    onStartScreensaverNow = vm::startScreensaverNow,
+                    onDismiss = vm::closeScreensaverSettings
                 )
             }
 
@@ -920,7 +977,7 @@ private fun ToolsMenuDialog(
             TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill("Aerial Screen Saver", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
+            TvPill("Screensaver Settings", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
             TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true, maxLabelWidth = 380.dp)
         }
     }
@@ -990,9 +1047,10 @@ private fun CleanTvAppTile(
 
     val scale by animateFloatAsState(
         if (focused) focusScale else 1f,
-        spring(dampingRatio = 0.8f, stiffness = 420f),
+        spring(dampingRatio = 0.75f, stiffness = 380f),
         label = "tileScale"
     )
+    val ringAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(180), label = "tileRing")
     val nameAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(160), label = "tileName")
     val shape = RoundedCornerShape(radius)
 
@@ -1014,6 +1072,7 @@ private fun CleanTvAppTile(
                     spotColor = Color(0x99000000)
                 )
                 .clip(shape)
+                .border(if (focused) 2.5.dp else 0.dp, Color.White.copy(alpha = ringAlpha * 0.9f), shape)
                 .background(Color(0xFF1C1C1E))
                 .onFocusChanged {
                     if (it.isFocused && !focused) {
@@ -1346,6 +1405,7 @@ private fun CleanTvSuccessDialog(
 private fun InputsSwitcherDialog(
     ports: List<TvPort>,
     onSelectPort: (TvPort) -> Unit,
+    onOpenNativeInputs: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -1364,19 +1424,13 @@ private fun InputsSwitcherDialog(
                 .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
                 .padding(horizontal = 40.dp, vertical = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Inputs", style = Ty.Title.copy(color = Color.White, fontSize = 34.sp))
-            Text("Switch to a TV source", style = Ty.Dim.copy(fontSize = 18.sp))
-            Spacer(Modifier.height(14.dp))
+            Text("Inputs & Sources", style = Ty.Title.copy(color = Color.White, fontSize = 34.sp))
+            Text("Switch to TV hardware inputs or system source picker", style = Ty.Dim.copy(fontSize = 18.sp))
+            Spacer(Modifier.height(10.dp))
 
-            if (ports.isEmpty()) {
-                Text(
-                    "No hardware inputs on this device",
-                    style = Ty.Dim.copy(fontSize = 18.sp),
-                    modifier = Modifier.padding(vertical = 28.dp)
-                )
-            } else {
+            if (ports.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     ports.chunked(3).forEachIndexed { rowIdx, rowPorts ->
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -1392,9 +1446,33 @@ private fun InputsSwitcherDialog(
                         }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
             }
 
-            Spacer(Modifier.height(18.dp))
+            // Always show native TV Source selector button
+            Focusable(
+                onClick = onOpenNativeInputs,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .let { if (ports.isEmpty()) it.focusRequester(autoFocus) else it },
+                shape = RoundedCornerShape(18.dp),
+                idle = Color(0x260A84FF)
+            ) { focused ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Tv, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "Open System TV Inputs",
+                        style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
             TvButton(
                 text = "Close",
                 onClick = onDismiss,
@@ -1572,14 +1650,37 @@ private fun LauncherActionDialog(
     onUninstall: () -> Unit,
     onDetails: () -> Unit,
 ) {
+    // Prevent the held down OK/Enter key from immediately triggering "Open"!
+    var hasKeyReleasedAfterOpen by remember { mutableStateOf(false) }
+    var armedByTimer by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(400) // Grace period for the physical long-press release
+        armedByTimer = true
+    }
+
+    val isArmed = hasKeyReleasedAfterOpen || armedByTimer
+
+    fun guardAction(action: () -> Unit): () -> Unit = {
+        if (isArmed) action()
+    }
+
+    val firstFocus = rememberAutoFocus(app.packageName)
+
     Box(
         Modifier
             .fillMaxSize()
             .background(Color(0xE6000000))
-            .modalTrap(),
+            .modalTrap()
+            .onPreviewKeyEvent { ev ->
+                val k = ev.nativeKeyEvent
+                if (k.action == KeyEvent.ACTION_UP && (k.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || k.keyCode == KeyEvent.KEYCODE_ENTER)) {
+                    hasKeyReleasedAfterOpen = true
+                }
+                false
+            },
         contentAlignment = Alignment.Center
     ) {
-        val firstFocus = rememberAutoFocus(app.packageName)
         Column(
             Modifier
                 .width(560.dp)
@@ -1597,24 +1698,24 @@ private fun LauncherActionDialog(
 
             val h = 52.dp
             val ts = 20.sp
-            TvPill("Open", Icons.Rounded.PlayArrow, onOpen, Modifier.fillMaxWidth().focusRequester(firstFocus), height = h, textSize = ts, fill = true)
-            TvPill(if (isFavorite) "Unpin from Dock" else "Pin to Dock", Icons.Rounded.PushPin, onToggleFavorite, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
-            TvPill("Clear Data", Icons.Rounded.DeleteSweep, onClearData, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
-            TvPill("Clear Cache", Icons.Rounded.CleaningServices, onClearCache, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
-            TvPill("Hide from Home", Icons.Rounded.VisibilityOff, onHideApp, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Open", Icons.Rounded.PlayArrow, guardAction(onOpen), Modifier.fillMaxWidth().focusRequester(firstFocus), height = h, textSize = ts, fill = true)
+            TvPill(if (isFavorite) "Unpin from Dock" else "Pin to Dock", Icons.Rounded.PushPin, guardAction(onToggleFavorite), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Clear Data", Icons.Rounded.DeleteSweep, guardAction(onClearData), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Clear Cache", Icons.Rounded.CleaningServices, guardAction(onClearCache), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("Hide from Home", Icons.Rounded.VisibilityOff, guardAction(onHideApp), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
             val currentContext = LocalContext.current
             if (app.packageName != currentContext.packageName) {
                 TvPill(
                     label = if (app.isSystemApp) "Uninstall / Remove Bloatware" else "Uninstall",
                     icon = Icons.Rounded.Delete,
-                    onClick = onUninstall,
+                    onClick = guardAction(onUninstall),
                     modifier = Modifier.fillMaxWidth(),
                     height = h,
                     textSize = ts,
                     fill = true
                 )
             }
-            TvPill("App Info", Icons.Rounded.Info, onDetails, Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+            TvPill("App Info", Icons.Rounded.Info, guardAction(onDetails), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
         }
     }
 }

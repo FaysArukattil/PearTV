@@ -183,4 +183,16 @@ class Journal(ctx: Context) {
     var appSortMode: String
         get() = sp.getString("app_sort_mode", "USAGE") ?: "USAGE"
         set(v) = sp.edit().putString("app_sort_mode", v).apply()
+
+    var screensaverMode: String
+        get() = sp.getString("screensaver_mode", "aerial") ?: "aerial"
+        set(v) = sp.edit().putString("screensaver_mode", v).apply()
+
+    var screensaverCustomPath: String?
+        get() = sp.getString("screensaver_custom_path", null)
+        set(v) = sp.edit().putString("screensaver_custom_path", v).apply()
+
+    var screensaverIdleMinutes: Int
+        get() = sp.getInt("screensaver_idle_minutes", 3)
+        set(v) = sp.edit().putInt("screensaver_idle_minutes", v).apply()
 }

@@ -58,21 +58,25 @@ object TvInputHelper {
             val presentIds = all.map { it.id }.toSet()
 
             val kept = all.filter { info ->
-                if (isHiddenInput(ctx, info)) return@filter false
                 val parent = parentIdOf(info)
                 if (parent != null && parent in presentIds) return@filter false // child of a listed port
                 when (info.type) {
                     TvInputInfo.TYPE_HDMI,
                     TvInputInfo.TYPE_COMPOSITE,
-                    TvInputInfo.TYPE_COMPONENT -> true
-                    TvInputInfo.TYPE_TUNER -> isSystemTuner(ctx, info)
-                    else -> false
+                    TvInputInfo.TYPE_COMPONENT,
+                    TvInputInfo.TYPE_DISPLAY_PORT,
+                    TvInputInfo.TYPE_VGA,
+                    TvInputInfo.TYPE_DVI -> true
+                    TvInputInfo.TYPE_TUNER -> true
+                    else -> info.isPassthroughInput
                 }
             }
 
+            val listToUse = if (kept.isNotEmpty()) kept else all.filter { parentIdOf(it) == null }
+
             // Only one "TV" entry, even if the OEM registers several tuner services.
             var tunerSeen = false
-            val unique = kept.filter { info ->
+            val unique = listToUse.filter { info ->
                 if (info.type != TvInputInfo.TYPE_TUNER) true
                 else if (tunerSeen) false
                 else { tunerSeen = true; true }
@@ -227,6 +231,28 @@ object TvInputHelper {
         )
 
         for (intent in fallbacks) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(intent)
+                return true
+            } catch (_: Exception) {}
+        }
+        return false
+    }
+
+    /**
+     * Opens the native TV input / source selector UI.
+     */
+    fun openNativeTvInputs(ctx: Context): Boolean {
+        val intents = listOf(
+            Intent("android.media.tv.action.VIEW_INPUTS"),
+            Intent("com.android.tv.action.VIEW_INPUTS"),
+            Intent("com.google.android.tv.action.VIEW_INPUTS"),
+            Intent("android.intent.action.VIEW", TvContract.Channels.CONTENT_URI),
+            Intent("android.settings.TV_INPUT_SETTINGS"),
+            Intent(android.provider.Settings.ACTION_SETTINGS)
+        )
+        for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 ctx.startActivity(intent)

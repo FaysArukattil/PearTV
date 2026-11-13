@@ -103,8 +103,12 @@ data class LauncherState(
     // Clean TV Full Screen Debloater Menu
     val showCleanTvScreen: Boolean = false,
 
-    // Apple TV Aerial Live Screensaver
+    // Apple TV Aerial Live Screensaver & Settings
     val showScreensaver: Boolean = false,
+    val showScreensaverSettings: Boolean = false,
+    val screensaverMode: com.leantv.app.ui.ScreensaverSource = com.leantv.app.ui.ScreensaverSource.AERIAL,
+    val screensaverCustomPath: String? = null,
+    val screensaverIdleMinutes: Int = 3,
 
     // Personalization & Wallpapers
     val showPersonalization: Boolean = false,
@@ -166,6 +170,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         checkDefaultLauncherPrompt()
         checkFirstRunDebloat()
         startNativeQuickShare(openDialog = false, silent = true)
+        val savedModeStr = journal.screensaverMode
+        val savedMode = com.leantv.app.ui.ScreensaverSource.entries.find { it.id == savedModeStr } ?: com.leantv.app.ui.ScreensaverSource.AERIAL
+        _state.update {
+            it.copy(
+                screensaverMode = savedMode,
+                screensaverCustomPath = journal.screensaverCustomPath,
+                screensaverIdleMinutes = journal.screensaverIdleMinutes
+            )
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 com.leantv.app.files.FileManagerHelper.autoGrantStoragePermission(ctx)
@@ -268,6 +281,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun onResume() {
         loadApps(silent = true)
         loadProfile()
+        killBackgroundApps()
         if (_state.value.showMonitorPanel) {
             startMonitorPolling()
         }
@@ -460,6 +474,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 intent.putExtra("leantv_launched", true)
                 ctx.startActivity(intent)
+                killBackgroundApps(exceptPackage = app.packageName)
             } catch (e: Exception) {
                 toast("Couldn't open app: ${e.message}")
             }
@@ -863,6 +878,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 intent.putExtra("leantv_launched", true)
                 ctx.startActivity(intent)
+                killBackgroundApps(exceptPackage = pkg)
             } catch (e: Exception) {
                 toast("Couldn't open LocalSend: ${e.message}")
             }
@@ -1006,6 +1022,56 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeScreensaver() {
         _state.update { it.copy(showScreensaver = false) }
+    }
+
+    fun openScreensaverSettings() {
+        _state.update { it.copy(showScreensaverSettings = true) }
+    }
+
+    fun closeScreensaverSettings() {
+        _state.update { it.copy(showScreensaverSettings = false) }
+    }
+
+    fun setScreensaverMode(mode: com.leantv.app.ui.ScreensaverSource) {
+        journal.screensaverMode = mode.id
+        _state.update { it.copy(screensaverMode = mode) }
+    }
+
+    fun setScreensaverCustomPath(path: String) {
+        journal.screensaverCustomPath = path
+        _state.update { it.copy(screensaverCustomPath = path) }
+    }
+
+    fun setScreensaverIdleMinutes(mins: Int) {
+        journal.screensaverIdleMinutes = mins
+        _state.update { it.copy(screensaverIdleMinutes = mins) }
+    }
+
+    fun startScreensaverNow() {
+        closeScreensaverSettings()
+        openScreensaver()
+    }
+
+    fun openNativeTvInputs() {
+        com.leantv.app.inputs.TvInputHelper.openNativeTvInputs(ctx)
+    }
+
+    fun killBackgroundApps(exceptPackage: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return@launch
+                val myPkg = ctx.packageName
+                val procs = am.runningAppProcesses ?: return@launch
+                for (p in procs) {
+                    val pkgs = p.pkgList ?: emptyArray()
+                    for (pkg in pkgs) {
+                        if (pkg != myPkg && pkg != exceptPackage) {
+                            am.killBackgroundProcesses(pkg)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun dismissCleanTvWizard() {

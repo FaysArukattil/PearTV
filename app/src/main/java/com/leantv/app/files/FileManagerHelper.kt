@@ -52,6 +52,9 @@ object FileManagerHelper {
         if (!dir.exists()) {
             dir.mkdirs()
         }
+        try {
+            com.leantv.app.data.SystemDebloater.runPrivilegedCommand("mkdir -p \"${dir.absolutePath}\" && chmod 777 \"${dir.absolutePath}\"")
+        } catch (_: Exception) {}
         return dir
     }
 
