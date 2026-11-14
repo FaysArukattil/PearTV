@@ -566,13 +566,16 @@ object FileManagerHelper {
         }
     }
 
-    suspend fun copyFile(source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun copyFile(ctx: Context? = null, source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
         try {
             val dest = File(targetDir, source.name)
             if (source.isDirectory) {
                 source.copyRecursively(dest, overwrite = true)
             } else {
                 source.copyTo(dest, overwrite = true)
+            }
+            ctx?.let {
+                try { MediaScannerConnection.scanFile(it, arrayOf(dest.absolutePath), null, null) } catch (_: Exception) {}
             }
             true
         } catch (e: Exception) {
@@ -581,18 +584,23 @@ object FileManagerHelper {
         }
     }
 
-    suspend fun moveFile(source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
+    suspend fun copyFile(source: File, targetDir: File): Boolean = copyFile(null, source, targetDir)
+
+    suspend fun moveFile(ctx: Context? = null, source: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
         try {
             val dest = File(targetDir, source.name)
             val success = source.renameTo(dest)
             if (!success) {
                 if (source.isDirectory) {
                     source.copyRecursively(dest, overwrite = true)
-                    source.deleteRecursively()
+                    deleteFile(ctx, source)
                 } else {
                     source.copyTo(dest, overwrite = true)
-                    source.delete()
+                    deleteFile(ctx, source)
                 }
+            }
+            ctx?.let {
+                try { MediaScannerConnection.scanFile(it, arrayOf(dest.absolutePath), null, null) } catch (_: Exception) {}
             }
             true
         } catch (e: Exception) {
@@ -600,6 +608,8 @@ object FileManagerHelper {
             false
         }
     }
+
+    suspend fun moveFile(source: File, targetDir: File): Boolean = moveFile(null, source, targetDir)
 
     suspend fun createFolder(parentDir: File, name: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -736,42 +746,29 @@ object FileManagerHelper {
 
     suspend fun batchDelete(files: List<File>): Int = batchDelete(null, files)
 
-    suspend fun batchCopy(sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
+    suspend fun batchCopy(ctx: Context? = null, sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
         var count = 0
         for (f in sources) {
-            try {
-                val dest = File(targetDir, f.name)
-                if (f.isDirectory) {
-                    f.copyRecursively(dest, overwrite = true)
-                } else {
-                    f.copyTo(dest, overwrite = true)
-                }
+            if (copyFile(ctx, f, targetDir)) {
                 count++
-            } catch (_: Exception) {}
+            }
         }
         count
     }
 
-    suspend fun batchMove(sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
+    suspend fun batchCopy(sources: List<File>, targetDir: File): Int = batchCopy(null, sources, targetDir)
+
+    suspend fun batchMove(ctx: Context? = null, sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
         var count = 0
         for (f in sources) {
-            try {
-                val dest = File(targetDir, f.name)
-                val success = f.renameTo(dest)
-                if (!success) {
-                    if (f.isDirectory) {
-                        f.copyRecursively(dest, overwrite = true)
-                        f.deleteRecursively()
-                    } else {
-                        f.copyTo(dest, overwrite = true)
-                        f.delete()
-                    }
-                }
+            if (moveFile(ctx, f, targetDir)) {
                 count++
-            } catch (_: Exception) {}
+            }
         }
         count
     }
+
+    suspend fun batchMove(sources: List<File>, targetDir: File): Int = batchMove(null, sources, targetDir)
 
     fun readText(file: File, maxBytes: Int = 120_000): String {
         return try {

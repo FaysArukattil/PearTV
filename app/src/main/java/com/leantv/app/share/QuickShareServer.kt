@@ -5,6 +5,7 @@ import android.media.MediaScannerConnection
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,9 +24,89 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+object QuickShareHost {
+    @Volatile
+    var activeServer: QuickShareServer? = null
+    val hostedFiles = CopyOnWriteArrayList<File>()
+
+    fun stageFiles(files: List<File>) {
+        hostedFiles.clear()
+        hostedFiles.addAll(files)
+    }
+
+    fun clear() {
+        hostedFiles.clear()
+    }
+
+    fun getLocalIpAddress(): String? {
+        val server = activeServer
+        if (server != null) {
+            val ip = server.getLocalIpAddress()
+            if (ip != null) return ip
+        }
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            for (intf in interfaces) {
+                if (intf.isLoopback || !intf.isUp) continue
+                val addrs = intf.inetAddresses
+                for (addr in addrs) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        val host = addr.hostAddress ?: continue
+                        if (!host.startsWith("127.")) return host
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    fun getNetworkLabel(ctx: Context): String {
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val active = cm?.activeNetwork ?: return "Not Connected"
+            val caps = cm.getNetworkCapabilities(active) ?: return "Connected"
+            when {
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> {
+                    val wifiMgr = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                    val info = wifiMgr?.connectionInfo
+                    val ssid = info?.ssid?.removeSurrounding("\"")
+                    if (!ssid.isNullOrEmpty() && ssid != "<unknown ssid>") ssid else "Wi-Fi"
+                }
+                else -> "Local Network"
+            }
+        } catch (_: Exception) {
+            "Wi-Fi"
+        }
+    }
+
+    fun ensureServer(context: Context, scope: CoroutineScope): QuickShareServer {
+        val current = activeServer
+        if (current != null && current.isRunning) {
+            return current
+        }
+        val server = QuickShareServer(
+            context = context.applicationContext,
+            scope = scope,
+            onRequestConsent = { _, _, _ -> true },
+            onTransferProgress = { _, _ -> },
+            onTransferComplete = { _ -> },
+            onItemReceived = { _ -> }
+        )
+        server.start()
+        activeServer = server
+        return server
+    }
+}
 
 class QuickShareServer(
     private val context: Context,
@@ -45,6 +126,9 @@ class QuickShareServer(
         private const val TAG = "QuickShareServer"
     }
 
+    val isRunning: Boolean
+        get() = serverJob != null && serverJob?.isActive == true && serverSocket != null && !serverSocket!!.isClosed
+
     fun getLocalIpAddress(): String? {
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
@@ -63,7 +147,7 @@ class QuickShareServer(
     }
 
     fun start(): Boolean {
-        if (serverJob != null && serverJob?.isActive == true) return true
+        if (isRunning) return true
 
         return try {
             val socket = ServerSocket(port)
@@ -80,7 +164,7 @@ class QuickShareServer(
                     }
                 }
             }
-
+            QuickShareHost.activeServer = this
             Log.i(TAG, "QuickShareServer started on port $port")
             true
         } catch (e: Exception) {
@@ -97,6 +181,9 @@ class QuickShareServer(
         serverSocket = null
         serverJob = null
         approvedSessions.clear()
+        if (QuickShareHost.activeServer == this) {
+            QuickShareHost.activeServer = null
+        }
         Log.i(TAG, "QuickShareServer stopped")
     }
 
@@ -128,8 +215,14 @@ class QuickShareServer(
                 }
 
                 when {
-                    method == "GET" && (uri == "/" || uri.startsWith("/?")) -> {
+                    method == "GET" && (uri == "/" || uri.startsWith("/?") || uri.startsWith("/share")) -> {
                         serveWebPage(output)
+                    }
+                    method == "GET" && (uri.startsWith("/download") || uri.startsWith("/api/download")) -> {
+                        handleDownloadGet(uri, output)
+                    }
+                    method == "GET" && uri.startsWith("/api/shared-files") -> {
+                        handleSharedFilesApi(output)
                     }
                     method == "POST" && uri.startsWith("/api/request-transfer") -> {
                         handleRequestTransferPost(headers, reader, output)
@@ -332,6 +425,112 @@ class QuickShareServer(
         }
     }
 
+    private fun formatFileSize(bytes: Long): String = when {
+        bytes <= 0L -> "0 B"
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024f)
+        bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024f * 1024f))
+        else -> "%.2f GB".format(bytes / (1024f * 1024f * 1024f))
+    }
+
+    private fun handleDownloadGet(uri: String, output: OutputStream) {
+        val files = QuickShareHost.hostedFiles.toList()
+        if (files.isEmpty()) {
+            sendResponse(output, 404, "text/plain", "No files currently staged for download on TV")
+            return
+        }
+
+        if (uri.contains("zip=true") || uri.contains("/zip")) {
+            serveZipDownload(files, output)
+            return
+        }
+
+        val idx = uri.substringAfter("index=", "0").substringBefore("&").toIntOrNull() ?: 0
+        val file = files.getOrNull(idx) ?: files.firstOrNull()
+        if (file == null || !file.exists()) {
+            sendResponse(output, 404, "text/plain", "File not found")
+            return
+        }
+
+        serveFileDownload(file, output)
+    }
+
+    private fun handleSharedFilesApi(output: OutputStream) {
+        val files = QuickShareHost.hostedFiles.toList()
+        val jsonArray = org.json.JSONArray()
+        files.forEachIndexed { i, f ->
+            val obj = org.json.JSONObject().apply {
+                put("index", i)
+                put("name", f.name)
+                put("size", f.length())
+                put("formattedSize", formatFileSize(f.length()))
+            }
+            jsonArray.put(obj)
+        }
+        sendResponse(output, 200, "application/json", jsonArray.toString())
+    }
+
+    private fun serveFileDownload(file: File, output: OutputStream) {
+        try {
+            val length = file.length()
+            val ext = file.extension.lowercase(Locale.ROOT)
+            val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+            val encodedName = URLEncoder.encode(file.name, "UTF-8").replace("+", "%20")
+
+            val header = "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: $mime\r\n" +
+                "Content-Length: $length\r\n" +
+                "Content-Disposition: attachment; filename=\"$encodedName\"; filename*=UTF-8''$encodedName\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Connection: close\r\n\r\n"
+            output.write(header.toByteArray(StandardCharsets.UTF_8))
+
+            file.inputStream().use { fileIn ->
+                val buffer = ByteArray(64 * 1024)
+                var read: Int
+                while (fileIn.read(buffer).also { read = it } != -1) {
+                    output.write(buffer, 0, read)
+                }
+            }
+            output.flush()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error streaming download for ${file.name}", e)
+        }
+    }
+
+    private fun serveZipDownload(files: List<File>, output: OutputStream) {
+        try {
+            val zipName = "LeanTV_Files_${System.currentTimeMillis()}.zip"
+            val header = "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: application/zip\r\n" +
+                "Content-Disposition: attachment; filename=\"$zipName\"\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "Connection: close\r\n\r\n"
+            output.write(header.toByteArray(StandardCharsets.UTF_8))
+
+            ZipOutputStream(output).use { zos ->
+                val buffer = ByteArray(64 * 1024)
+                for (file in files) {
+                    if (!file.exists() || file.isDirectory) continue
+                    val entry = ZipEntry(file.name)
+                    entry.time = file.lastModified()
+                    zos.putNextEntry(entry)
+                    file.inputStream().use { fileIn ->
+                        var read: Int
+                        while (fileIn.read(buffer).also { read = it } != -1) {
+                            zos.write(buffer, 0, read)
+                        }
+                    }
+                    zos.closeEntry()
+                }
+                zos.finish()
+            }
+            output.flush()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error streaming zip download", e)
+        }
+    }
+
     private fun sendOptionsResponse(output: OutputStream) {
         val header = "HTTP/1.1 200 OK\r\n" +
             "Access-Control-Allow-Origin: *\r\n" +
@@ -358,6 +557,34 @@ class QuickShareServer(
     }
 
     private fun serveWebPage(output: OutputStream) {
+        val hostedFiles = QuickShareHost.hostedFiles.toList()
+        val filesHtml = if (hostedFiles.isNotEmpty()) {
+            val itemsHtml = hostedFiles.mapIndexed { idx, file ->
+                """
+                <div style="display:flex; justify-content:space-between; align-items:center; background:#2C2C2E; padding:14px 16px; border-radius:14px; border:1px solid rgba(255,255,255,0.08); margin-bottom:8px;">
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:12px;">
+                        <div style="font-size:16px; font-weight:600; color:white; overflow:hidden; text-overflow:ellipsis;">${file.name}</div>
+                        <div style="font-size:13px; color:#8E8E93; margin-top:2px;">${formatFileSize(file.length())}</div>
+                    </div>
+                    <a href="/download?index=$idx" download="${file.name}" style="background:#0A84FF; color:white; padding:10px 18px; border-radius:12px; text-decoration:none; font-weight:700; font-size:14px; white-space:nowrap; box-shadow:0 4px 12px rgba(10,132,255,0.3);">Download</a>
+                </div>
+                """.trimIndent()
+            }.joinToString("\n")
+
+            """
+            <div class="card" style="border: 1.5px solid #0A84FF; background: rgba(10, 132, 255, 0.08); margin-bottom: 20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                    <h2 style="color:#64D2FF; font-size:18px;">⚡ Files from TV</h2>
+                    ${if (hostedFiles.size > 1) "<a href='/download?zip=true' style='background:#30D158; color:black; padding:8px 14px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:700;'>Download All (.zip)</a>" else ""}
+                </div>
+                <p class="sub" style="margin-bottom: 14px;">LeanTV shared ${hostedFiles.size} item(s) with your phone. Tap below to download:</p>
+                <div style="display:flex; flex-direction:column;">
+                    $itemsHtml
+                </div>
+            </div>
+            """.trimIndent()
+        } else ""
+
         val html = """
             <!DOCTYPE html>
             <html lang="en">
@@ -499,6 +726,33 @@ class QuickShareServer(
                     textarea:focus { border-color: var(--accent); }
 
                     .tabs {
+                        display: flex; background: var(--card-sub);
+                        border-radius: 12px; padding: 4px; gap: 4px;
+                    }
+                    .tab-btn {
+                        flex: 1; padding: 8px; border: none; background: transparent;
+                        color: var(--dim); font-size: 14px; font-weight: 600;
+                        border-radius: 8px; cursor: pointer;
+                    }
+                    .tab-btn.active {
+                        background: var(--card); color: var(--text);
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="wrap">
+                    <header>
+                        <div class="logo-icon">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14v-4H8l4-4 4 4h-3v4h-2z"/></svg>
+                        </div>
+                        <h1>LeanTV Quick Share</h1>
+                        <p class="sub">Send files, photos, videos or notes to your TV</p>
+                    </header>
+
+                    $filesHtml
+
+                    <div class="tabs">
                         display: flex; background: var(--card-sub);
                         border-radius: 12px; padding: 4px; gap: 4px;
                     }

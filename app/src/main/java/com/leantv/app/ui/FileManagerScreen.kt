@@ -65,6 +65,27 @@ import com.leantv.app.files.FileItem
 import com.leantv.app.files.FileManagerHelper
 import com.leantv.app.files.MultiClipboard
 import com.leantv.app.files.StorageDrive
+import com.leantv.app.share.QrGenerator
+import com.leantv.app.share.QuickShareHost
+import android.net.wifi.WifiManager
+import android.util.Log
+import dev.bluehouse.bada.discovery.NearbyPeer
+import dev.bluehouse.bada.discovery.NearbyPeerDiscovery
+import dev.bluehouse.bada.discovery.NearbyPeerEvent
+import dev.bluehouse.bada.discovery.NearbyPeerRoute
+import dev.bluehouse.bada.discovery.bootstrap.BleGattInitialControlClient
+import dev.bluehouse.bada.discovery.bootstrap.BleL2capInitialControlClient
+import dev.bluehouse.bada.discovery.bootstrap.BluetoothClassicBootstrapClient
+import dev.bluehouse.bada.discovery.medium.MediumRegistries
+import dev.bluehouse.bada.discovery.wifi.AndroidWifiCapabilities
+import dev.bluehouse.bada.protocol.connection.FileSource
+import dev.bluehouse.bada.protocol.connection.OutboundConnection
+import dev.bluehouse.bada.protocol.connection.OutboundConnectionState
+import dev.bluehouse.bada.protocol.endpoint.DeviceType
+import dev.bluehouse.bada.protocol.endpoint.EndpointInfo
+import dev.bluehouse.bada.protocol.medium.MediumRegistry
+import java.io.IOException
+import java.security.SecureRandom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -111,6 +132,7 @@ fun FileManagerScreen(
     var newFolderInput by remember { mutableStateOf("") }
     var showDetailsDialog by remember { mutableStateOf<FileItem?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var quickShareSendFiles by remember { mutableStateOf<List<File>?>(null) }
 
     var hasPermission by remember { mutableStateOf(FileManagerHelper.hasStoragePermission(ctx)) }
     var showPermissionPrompt by remember { mutableStateOf(false) }
@@ -141,8 +163,25 @@ fun FileManagerScreen(
             currentFiles = files
             isLoading = false
             if (focusFirstItem) {
-                delay(60)
-                runCatching { firstGridItemFocusRequester.requestFocus() }
+                delay(100)
+                val ok = runCatching {
+                    if (files.isNotEmpty()) {
+                        firstGridItemFocusRequester.requestFocus()
+                        true
+                    } else false
+                }.getOrDefault(false)
+                if (!ok) {
+                    delay(100)
+                    val retry = runCatching {
+                        if (files.isNotEmpty()) {
+                            firstGridItemFocusRequester.requestFocus()
+                            true
+                        } else false
+                    }.getOrDefault(false)
+                    if (!retry) {
+                        runCatching { internalStorageFocusRequester.requestFocus() }
+                    }
+                }
             }
         }
     }
@@ -158,8 +197,25 @@ fun FileManagerScreen(
             currentFiles = files
             isLoading = false
             if (focusFirstItem) {
-                delay(60)
-                runCatching { firstGridItemFocusRequester.requestFocus() }
+                delay(100)
+                val ok = runCatching {
+                    if (files.isNotEmpty()) {
+                        firstGridItemFocusRequester.requestFocus()
+                        true
+                    } else false
+                }.getOrDefault(false)
+                if (!ok) {
+                    delay(100)
+                    val retry = runCatching {
+                        if (files.isNotEmpty()) {
+                            firstGridItemFocusRequester.requestFocus()
+                            true
+                        } else false
+                    }.getOrDefault(false)
+                    if (!retry) {
+                        runCatching { internalStorageFocusRequester.requestFocus() }
+                    }
+                }
             }
         }
     }
@@ -202,7 +258,7 @@ fun FileManagerScreen(
     val isAnyModalOpen = actionFile != null || viewerImageFiles != null || viewerPdfFile != null ||
             viewerTextFile != null || playingAudioFile != null || showBatchDeleteDialog ||
             showRenameDialog != null || showDeleteDialog != null || showNewFolderDialog ||
-            showDetailsDialog != null || showPermissionPrompt
+            showDetailsDialog != null || showPermissionPrompt || quickShareSendFiles != null
 
     var wasAnyModalOpen by remember { mutableStateOf(false) }
     LaunchedEffect(isAnyModalOpen) {
@@ -217,9 +273,31 @@ fun FileManagerScreen(
         wasAnyModalOpen = isAnyModalOpen
     }
 
+    // Safety focus guard when clipboard is cleared (e.g. after pasting)
+    var hadClipboard by remember { mutableStateOf(false) }
+    LaunchedEffect(multiClipboard) {
+        if (hadClipboard && multiClipboard == null) {
+            delay(120)
+            val ok = runCatching {
+                if (currentFiles.isNotEmpty()) {
+                    firstGridItemFocusRequester.requestFocus()
+                    true
+                } else false
+            }.getOrDefault(false)
+            if (!ok) {
+                runCatching { internalStorageFocusRequester.requestFocus() }
+            }
+        }
+        hadClipboard = (multiClipboard != null)
+    }
+
     // Intercept Back button: navigate up directory, exit multi-select, or close file manager
     BackHandler {
         when {
+            quickShareSendFiles != null -> {
+                quickShareSendFiles = null
+                QuickShareHost.clear()
+            }
             viewerImageFiles != null -> viewerImageFiles = null
             viewerTextFile != null -> viewerTextFile = null
             viewerPdfFile != null -> viewerPdfFile = null
@@ -304,14 +382,10 @@ fun FileManagerScreen(
                             }
                         }
                     },
-                    onShare = {
+                    onQuickShare = {
                         if (selectedFiles.isNotEmpty()) {
-                            FileManagerHelper.shareFiles(ctx, selectedFiles.toList())
-                        }
-                    },
-                    onBluetooth = {
-                        if (selectedFiles.isNotEmpty()) {
-                            FileManagerHelper.shareViaBluetooth(ctx, selectedFiles.toList())
+                            val files = selectedFiles.toList()
+                            quickShareSendFiles = files
                         }
                     },
                     onDelete = {
@@ -410,6 +484,7 @@ fun FileManagerScreen(
                         multiClipboard?.let { clip ->
                             val count = clip.files.size
                             val pasteLabel = if (clip.isCut) "Paste ($count items) [Move]" else "Paste ($count items) [Copy]"
+                            val pasteFirstFileName = clip.files.firstOrNull()?.name
                             TvHeaderButton(
                                 label = pasteLabel,
                                 icon = Icons.Rounded.ContentPaste,
@@ -418,15 +493,21 @@ fun FileManagerScreen(
                                 onClick = {
                                     val target = currentDir
                                     if (target != null) {
+                                        // Immediately rescue focus before Paste button disappears
+                                        runCatching { headerActionFocusRequester.requestFocus() }
                                         scope.launch {
                                             val done = if (clip.isCut) {
-                                                FileManagerHelper.batchMove(clip.files, target)
+                                                FileManagerHelper.batchMove(ctx, clip.files, target)
                                             } else {
-                                                FileManagerHelper.batchCopy(clip.files, target)
+                                                FileManagerHelper.batchCopy(ctx, clip.files, target)
                                             }
                                             statusMessage = if (clip.isCut) "Moved $done items" else "Copied $done items"
                                             multiClipboard = null
-                                            loadDir(target)
+                                            loadDir(target, focusFirstItem = true)
+                                            if (pasteFirstFileName != null) {
+                                                delay(150)
+                                                runCatching { highlightedFileFocusRequester.requestFocus() }
+                                            }
                                         }
                                     }
                                 }
@@ -712,13 +793,9 @@ fun FileManagerScreen(
                         else -> FileManagerHelper.openFile(ctx, item.file)
                     }
                 },
-                onShare = {
+                onQuickShare = {
                     actionFile = null
-                    FileManagerHelper.shareFiles(ctx, listOf(item.file))
-                },
-                onBluetooth = {
-                    actionFile = null
-                    FileManagerHelper.shareViaBluetooth(ctx, listOf(item.file))
+                    quickShareSendFiles = listOf(item.file)
                 },
                 onSelectMultiple = {
                     actionFile = null
@@ -764,7 +841,7 @@ fun FileManagerScreen(
                             val ok = FileManagerHelper.renameFile(item.file, renameInput.trim())
                             if (ok) {
                                 statusMessage = "Renamed to ${renameInput.trim()}"
-                                currentDir?.let { loadDir(it) } ?: activeCategory?.let { loadCategory(it) }
+                                currentDir?.let { loadDir(it, focusFirstItem = true) } ?: activeCategory?.let { loadCategory(it, focusFirstItem = true) }
                             } else {
                                 statusMessage = "Rename failed"
                             }
@@ -790,7 +867,7 @@ fun FileManagerScreen(
                             val ok = FileManagerHelper.createFolder(currentDir!!, name)
                             if (ok) {
                                 statusMessage = "Folder '$name' created"
-                                loadDir(currentDir!!)
+                                loadDir(currentDir!!, focusFirstItem = true)
                             } else {
                                 statusMessage = "Failed to create folder"
                             }
@@ -906,6 +983,16 @@ fun FileManagerScreen(
                 onClose = { viewerTextFile = null }
             )
         }
+
+        // ─── Quick Share Send to Phone Dialog ───
+        quickShareSendFiles?.let { files ->
+            TvQuickShareSendDialog(
+                files = files,
+                onDismiss = {
+                    quickShareSendFiles = null
+                }
+            )
+        }
     }
 }
 
@@ -919,8 +1006,7 @@ private fun TvMultiSelectActionBar(
     onSelectAll: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
-    onShare: () -> Unit,
-    onBluetooth: () -> Unit,
+    onQuickShare: () -> Unit,
     onDelete: () -> Unit,
     onDone: () -> Unit,
     onMoveDown: (() -> Unit)? = null
@@ -984,18 +1070,11 @@ private fun TvMultiSelectActionBar(
                     onClick = onMove
                 )
                 TvHeaderButton(
-                    label = "Share",
-                    icon = Icons.Rounded.Share,
+                    label = "Quick Share",
+                    icon = Icons.Rounded.Bolt,
                     accentColor = Color(0xFF0A84FF),
                     onMoveDown = onMoveDown,
-                    onClick = onShare
-                )
-                TvHeaderButton(
-                    label = "Bluetooth",
-                    icon = Icons.Rounded.Bluetooth,
-                    accentColor = Color(0xFF30D158),
-                    onMoveDown = onMoveDown,
-                    onClick = onBluetooth
+                    onClick = onQuickShare
                 )
                 TvHeaderButton(
                     label = "Delete",
@@ -1214,8 +1293,7 @@ private fun TvFileActionModal(
     item: FileItem,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
-    onShare: () -> Unit,
-    onBluetooth: () -> Unit,
+    onQuickShare: () -> Unit,
     onSelectMultiple: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
@@ -1259,16 +1337,10 @@ private fun TvFileActionModal(
                 onClick = onOpen
             )
             TvModalActionButton(
-                label = "Share (Quick Share / Apps)",
-                icon = Icons.Rounded.Share,
+                label = "Quick Share to Phone",
+                icon = Icons.Rounded.Bolt,
                 accentColor = Color(0xFF0A84FF),
-                onClick = onShare
-            )
-            TvModalActionButton(
-                label = "Send via Bluetooth",
-                icon = Icons.Rounded.Bluetooth,
-                accentColor = Color(0xFF30D158),
-                onClick = onBluetooth
+                onClick = onQuickShare
             )
             TvModalActionButton(
                 label = "Select Multiple",
@@ -2201,6 +2273,792 @@ private fun TvFileDetailsDialog(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Text("OK", style = Ty.Button.copy(color = Color.White))
+                }
+            }
+        }
+    }
+}
+
+// ─── Native Quick Share Send to Phone Dialog ───
+
+@Composable
+private fun TvQuickShareSendDialog(
+    files: List<File>,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val autoFocus = rememberAutoFocus()
+    val firstPeerFocus = remember { FocusRequester() }
+
+    val wifiName = remember { QuickShareHost.getNetworkLabel(ctx) }
+    val totalBytes = remember(files) { files.sumOf { if (it.isDirectory) 0L else it.length() } }
+    val formattedTotalSize = remember(totalBytes) { FileManagerHelper.formatFileSize(totalBytes) }
+
+    val peers = remember { mutableStateMapOf<String, NearbyPeer>() }
+    var isBrowsing by remember { mutableStateOf(true) }
+    var targetPeer by remember { mutableStateOf<NearbyPeer?>(null) }
+    var connectionState by remember { mutableStateOf<OutboundConnectionState>(OutboundConnectionState.Idle) }
+    var activeConnection by remember { mutableStateOf<OutboundConnection?>(null) }
+    var scanIteration by remember { mutableIntStateOf(0) }
+
+    // Intercept Back: cancel active transfer or dismiss dialog
+    BackHandler(enabled = true) {
+        if (targetPeer != null) {
+            activeConnection?.cancel()
+            targetPeer = null
+            activeConnection = null
+            connectionState = OutboundConnectionState.Idle
+        } else {
+            onDismiss()
+        }
+    }
+
+    // Auto-focus first discovered peer when available
+    LaunchedEffect(peers.size, targetPeer) {
+        if (targetPeer == null && peers.isNotEmpty()) {
+            delay(120)
+            runCatching { firstPeerFocus.requestFocus() }
+        }
+    }
+
+    // Continuous peer discovery (LAN mDNS + BLE fast advertisements)
+    LaunchedEffect(scanIteration) {
+        peers.clear()
+        isBrowsing = true
+        val wifi = ctx.getSystemService(android.content.Context.WIFI_SERVICE) as? WifiManager
+        val mLock = wifi?.createMulticastLock("LeanTvQuickShareBrowse")?.apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        try {
+            val discovery = NearbyPeerDiscovery(ctx)
+            discovery.browse().collect { event ->
+                when (event) {
+                    is NearbyPeerEvent.Resolved -> {
+                        peers[event.peer.stableId] = event.peer
+                    }
+                    is NearbyPeerEvent.Lost -> {
+                        peers.remove(event.stableId)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("QuickShareSend", "Peer discovery error: ${e.message}")
+        } finally {
+            isBrowsing = false
+            try { mLock?.release() } catch (_: Exception) {}
+        }
+    }
+
+    // Outbound Transfer Lifecycle
+    LaunchedEffect(targetPeer) {
+        val peer = targetPeer ?: return@LaunchedEffect
+        connectionState = OutboundConnectionState.Connecting
+
+        val wifi = ctx.getSystemService(android.content.Context.WIFI_SERVICE) as? WifiManager
+        val mLock = wifi?.createMulticastLock("LeanTvQuickShareSend")?.apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+
+        withContext(Dispatchers.IO) {
+            try {
+                val route = peer.preferredRoute()
+                if (route == null) {
+                    withContext(Dispatchers.Main) {
+                        connectionState = OutboundConnectionState.Failed(
+                            "No connectable route found for ${peer.endpointInfo?.deviceName ?: "device"}"
+                        )
+                    }
+                    return@withContext
+                }
+
+                // Exclude BLE_L2CAP on TV to avoid hardware stalls; include Wi-Fi Direct and Hotspot for superfast speeds
+                val providers = MediumRegistries.defaultProviders(ctx).filterNot {
+                    it.medium == dev.bluehouse.bada.protocol.medium.Medium.BLE_L2CAP
+                }
+                val mediumRegistry = MediumRegistry(providers = providers)
+                val wifiCaps = AndroidWifiCapabilities.read(ctx)
+
+                val friendlyName = try {
+                    android.provider.Settings.Global.getString(ctx.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+                        ?: android.provider.Settings.Secure.getString(ctx.contentResolver, "bluetooth_name")
+                        ?: android.os.Build.MODEL
+                } catch (_: Exception) {
+                    android.os.Build.MODEL
+                }
+
+                val myEndpointInfo = EndpointInfo(
+                    version = 1,
+                    hidden = false,
+                    deviceType = DeviceType.LAPTOP,
+                    reserved = false,
+                    metadata = ByteArray(EndpointInfo.METADATA_LEN).also { SecureRandom().nextBytes(it) },
+                    deviceName = friendlyName.take(EndpointInfo.MAX_NAME_LEN),
+                ).serialize()
+
+                val epId = peer.endpointId ?: "TV01"
+
+                val conn = when (route) {
+                    is NearbyPeerRoute.Lan -> {
+                        OutboundConnection(
+                            targetAddress = route.address,
+                            port = route.port,
+                            endpointId = epId,
+                            endpointInfo = myEndpointInfo,
+                            mediumRegistry = mediumRegistry,
+                            logger = { Log.d("QuickShareSend", "BadaOutbound: $it") },
+                            wifiCapabilities = wifiCaps
+                        )
+                    }
+                    is NearbyPeerRoute.BluetoothClassic -> {
+                        val client = BluetoothClassicBootstrapClient(ctx)
+                        val transport = client.connect(route.macAddress)
+                            ?: throw IOException("Could not connect via Bluetooth Classic")
+                        OutboundConnection(
+                            transport = transport,
+                            endpointId = epId,
+                            endpointInfo = myEndpointInfo,
+                            mediumRegistry = mediumRegistry,
+                            logger = { Log.d("QuickShareSend", "BadaOutbound: $it") },
+                            wifiCapabilities = wifiCaps
+                        )
+                    }
+                    is NearbyPeerRoute.BleL2cap -> {
+                        val client = BleL2capInitialControlClient(ctx)
+                        val transport = client.connect(route.macAddress, route.psm)
+                            ?: throw IOException("Could not connect via BLE L2CAP")
+                        OutboundConnection(
+                            transport = transport,
+                            endpointId = epId,
+                            endpointInfo = myEndpointInfo,
+                            mediumRegistry = mediumRegistry,
+                            logger = { Log.d("QuickShareSend", "BadaOutbound: $it") },
+                            wifiCapabilities = wifiCaps
+                        )
+                    }
+                    is NearbyPeerRoute.BleGatt -> {
+                        val client = BleGattInitialControlClient(ctx)
+                        val transport = client.connect(route.macAddress)
+                            ?: throw IOException("Could not connect via BLE GATT")
+                        OutboundConnection(
+                            transport = transport,
+                            endpointId = epId,
+                            endpointInfo = myEndpointInfo,
+                            mediumRegistry = mediumRegistry,
+                            logger = { Log.d("QuickShareSend", "BadaOutbound: $it") },
+                            wifiCapabilities = wifiCaps
+                        )
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    activeConnection = conn
+                }
+
+                val stateJob = launch {
+                    conn.state.collect { s ->
+                        withContext(Dispatchers.Main) {
+                            connectionState = s
+                        }
+                    }
+                }
+
+                // Flatten files in case directories were passed
+                val flattened = mutableListOf<Pair<File, String>>()
+                fun collectFiles(f: File, relDir: String) {
+                    if (f.isDirectory) {
+                        val ch = f.listFiles() ?: return
+                        val p = if (relDir.isEmpty()) f.name else "$relDir/${f.name}"
+                        for (c in ch) collectFiles(c, p)
+                    } else if (f.isFile && f.length() > 0) {
+                        flattened.add(f to relDir)
+                    }
+                }
+                for (f in files) collectFiles(f, "")
+
+                val sources = flattened.mapIndexed { idx, (f, rel) ->
+                    FileSource(
+                        name = f.name,
+                        size = f.length(),
+                        mimeType = FileManagerHelper.getMimeType(f.extension.lowercase(Locale.ROOT)),
+                        lastModifiedTimestampMillis = f.lastModified(),
+                        payloadId = kotlin.math.abs(SecureRandom().nextLong()).coerceAtLeast(1L) + idx,
+                        parentFolder = rel,
+                        open = { java.io.FileInputStream(f).channel }
+                    )
+                }
+
+                val res = conn.run(sources)
+                stateJob.cancel()
+                Log.i("QuickShareSend", "Transfer finished with: $res")
+            } catch (e: Exception) {
+                Log.e("QuickShareSend", "Transfer error", e)
+                withContext(Dispatchers.Main) {
+                    connectionState = OutboundConnectionState.Failed(e.message ?: e::class.java.simpleName)
+                }
+            } finally {
+                try { mLock?.release() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .modalTrap(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(760.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(Color(0xFF16181E))
+                .border(1.5.dp, Color(0x330A84FF), RoundedCornerShape(32.dp))
+                .padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF0051C7)))),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Rounded.Bolt,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = "QUICK SHARE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF388AF6),
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = if (targetPeer != null) {
+                                targetPeer?.endpointInfo?.deviceName ?: "Sending..."
+                            } else {
+                                "Send to Nearby Devices"
+                            },
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                // File count & size badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0x240A84FF))
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${files.size} ${if (files.size == 1) "file" else "files"} • $formattedTotalSize",
+                        color = Color(0xFF64D2FF),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            if (targetPeer == null) {
+                // ─── Device Selection View ───
+
+                // Connectivity info banner (explains Wi-Fi / Hotspot & Direct support)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0x1F0A84FF))
+                        .border(1.dp, Color(0x4D0A84FF), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x330A84FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.Wifi,
+                                contentDescription = null,
+                                tint = Color(0xFF64D2FF),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "Wi-Fi & Direct High-Speed Transfer",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "Keep phone unlocked with Quick Share set to 'Everyone'. Works on same Wi-Fi or directly via Wi-Fi Direct.",
+                                color = Color(0xCC64D2FF),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+
+                if (peers.isEmpty()) {
+                    // Scanning state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0x0FFFFFFF))
+                            .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x240A84FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF64D2FF),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            text = "Looking for nearby devices...",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Swipe down your phone's Quick Settings and tap 'Quick Share' to make it visible.",
+                            fontSize = 13.sp,
+                            color = Color(0xFF8E8E93),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    // Discovered devices list
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "AVAILABLE RECIPIENTS (${peers.size}):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF64D2FF),
+                            letterSpacing = 1.sp
+                        )
+
+                        val peerList = peers.values.toList()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            peerList.forEachIndexed { index, peer ->
+                                val deviceName = peer.endpointInfo?.deviceName ?: "Nearby Phone"
+                                val deviceType = peer.endpointInfo?.deviceType
+                                val deviceIcon = when (deviceType) {
+                                    DeviceType.PHONE, DeviceType.FOLDABLE -> Icons.Rounded.Smartphone
+                                    DeviceType.TABLET -> Icons.Rounded.Tablet
+                                    DeviceType.LAPTOP -> Icons.Rounded.Laptop
+                                    else -> Icons.Rounded.Devices
+                                }
+                                val isFirst = (index == 0)
+
+                                Focusable(
+                                    onClick = {
+                                        targetPeer = peer
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(if (isFirst) Modifier.focusRequester(firstPeerFocus) else Modifier),
+                                    shape = RoundedCornerShape(18.dp),
+                                    idle = Color(0x14FFFFFF),
+                                    scaleOnFocus = 1.03f
+                                ) { isFocused ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isFocused) Color(0xFF0A84FF) else Color(0x260A84FF)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    deviceIcon,
+                                                    contentDescription = null,
+                                                    tint = if (isFocused) Color.White else Color(0xFF64D2FF),
+                                                    modifier = Modifier.size(26.dp)
+                                                )
+                                            }
+                                            Spacer(Modifier.width(16.dp))
+                                            Column {
+                                                Text(
+                                                    text = deviceName,
+                                                    fontSize = 17.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    text = "Quick Share • Tap to send",
+                                                    fontSize = 13.sp,
+                                                    color = if (isFocused) Color(0xCCFFFFFF) else Color(0xFF8E8E93)
+                                                )
+                                            }
+                                        }
+
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.ArrowForward,
+                                            contentDescription = null,
+                                            tint = if (isFocused) Color.White else Color(0x66FFFFFF),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons (Rescan & Close)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Focusable(
+                        onClick = { scanIteration++ },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50),
+                        idle = Color(0x1AFFFFFF)
+                    ) { isFocused ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Rescan", style = Ty.Button.copy(color = Color.White))
+                        }
+                    }
+
+                    Focusable(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(if (peers.isEmpty()) Modifier.focusRequester(autoFocus) else Modifier),
+                        shape = RoundedCornerShape(50),
+                        idle = Color(0x1AFFFFFF)
+                    ) { isFocused ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text("Close", style = Ty.Button.copy(color = Color.White))
+                        }
+                    }
+                }
+            } else {
+                // ─── Active In-Flight Transfer View ───
+                val peerName = targetPeer?.endpointInfo?.deviceName ?: "Recipient"
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0x14FFFFFF))
+                        .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(22.dp))
+                        .padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    when (val s = connectionState) {
+                        is OutboundConnectionState.Idle,
+                        is OutboundConnectionState.Connecting,
+                        is OutboundConnectionState.Handshaking -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(52.dp),
+                                color = Color(0xFF0A84FF),
+                                strokeWidth = 4.dp
+                            )
+                            Text(
+                                text = "Connecting to $peerName...",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Establishing secure Quick Share connection",
+                                fontSize = 14.sp,
+                                color = Color(0xFF8E8E93)
+                            )
+                        }
+
+                        is OutboundConnectionState.AwaitingRemoteAcceptance -> {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x260A84FF)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.TouchApp,
+                                    contentDescription = null,
+                                    tint = Color(0xFF64D2FF),
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "Check your phone",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            Text(
+                                text = "A Quick Share request has popped up on $peerName.\nTap Accept on your phone to start the transfer.",
+                                fontSize = 15.sp,
+                                color = Color(0xFFE5E5EA),
+                                textAlign = TextAlign.Center,
+                                lineHeight = 22.sp
+                            )
+
+                            if (s.pin.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color(0x330A84FF))
+                                        .border(1.dp, Color(0x660A84FF), RoundedCornerShape(14.dp))
+                                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Verification PIN: ${s.pin}",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF64D2FF)
+                                    )
+                                }
+                            }
+                        }
+
+                        is OutboundConnectionState.Sending -> {
+                            val fraction = if (s.progress.totalSize > 0L) {
+                                (s.progress.bytesTransferred.toFloat() / s.progress.totalSize.toFloat()).coerceIn(0f, 1f)
+                            } else 0f
+                            val percent = (fraction * 100).toInt()
+
+                            Text(
+                                text = "Sending to $peerName...",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            LinearProgressIndicator(
+                                progress = { fraction },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .clip(RoundedCornerShape(5.dp)),
+                                color = Color(0xFF0A84FF),
+                                trackColor = Color(0x33FFFFFF)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${FileManagerHelper.formatFileSize(s.progress.bytesTransferred)} / $formattedTotalSize ($percent%)",
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${FileManagerHelper.formatFileSize(s.progress.bytesPerSecond)}/s",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF64D2FF),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        is OutboundConnectionState.Completed -> {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF30D158),
+                                modifier = Modifier.size(60.dp)
+                            )
+
+                            Text(
+                                text = "Sent successfully!",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            Text(
+                                text = "${files.size} ${if (files.size == 1) "file" else "files"} ($formattedTotalSize) delivered to $peerName.",
+                                fontSize = 14.sp,
+                                color = Color(0xFF8E8E93),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        is OutboundConnectionState.Rejected -> {
+                            Icon(
+                                Icons.Rounded.Cancel,
+                                contentDescription = null,
+                                tint = Color(0xFFFF453A),
+                                modifier = Modifier.size(60.dp)
+                            )
+
+                            Text(
+                                text = "Transfer Declined",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            Text(
+                                text = "The transfer request was declined on $peerName.",
+                                fontSize = 14.sp,
+                                color = Color(0xFF8E8E93)
+                            )
+                        }
+
+                        is OutboundConnectionState.Cancelled -> {
+                            Icon(
+                                Icons.Rounded.Info,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(60.dp)
+                            )
+
+                            Text(
+                                text = "Transfer Cancelled",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        is OutboundConnectionState.Failed -> {
+                            Icon(
+                                Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFFF9F0A),
+                                modifier = Modifier.size(60.dp)
+                            )
+
+                            Text(
+                                text = "Transfer Failed",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            Text(
+                                text = s.reason,
+                                fontSize = 14.sp,
+                                color = Color(0xFF8E8E93),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Bottom control button
+                val isFinished = connectionState is OutboundConnectionState.Completed ||
+                        connectionState is OutboundConnectionState.Rejected ||
+                        connectionState is OutboundConnectionState.Cancelled ||
+                        connectionState is OutboundConnectionState.Failed
+
+                Focusable(
+                    onClick = {
+                        if (isFinished) {
+                            if (connectionState is OutboundConnectionState.Completed) {
+                                onDismiss()
+                            } else {
+                                // Reset to device picker
+                                targetPeer = null
+                                connectionState = OutboundConnectionState.Idle
+                            }
+                        } else {
+                            // Cancel in-flight transfer
+                            activeConnection?.cancel()
+                            targetPeer = null
+                            connectionState = OutboundConnectionState.Idle
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(autoFocus),
+                    shape = RoundedCornerShape(50),
+                    idle = if (connectionState is OutboundConnectionState.Completed) Color(0xFF0A84FF) else Color(0x26FFFFFF)
+                ) { isFocused ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (connectionState is OutboundConnectionState.Completed) "Done"
+                            else if (isFinished) "Back to Devices"
+                            else "Cancel",
+                            style = Ty.Button.copy(color = Color.White, fontWeight = FontWeight.Bold)
+                        )
+                    }
                 }
             }
         }
