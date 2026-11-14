@@ -1055,7 +1055,8 @@ private fun TvInputDialog(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(autoFocus),
+                    .focusRequester(autoFocus)
+                    .tvKeyboard(),
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color(0x26FFFFFF),

@@ -174,7 +174,7 @@ fun InstalledAppsScreen(s: UiState, vm: MainViewModel) {
                         onValueChange = { vm.setAppSearchQuery(it) },
                         textStyle = Ty.Body.copy(color = Pal.Text),
                         cursorBrush = SolidColor(Pal.Amber),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).tvKeyboard(),
                         decorationBox = { innerTextField ->
                             if (s.appSearchQuery.isEmpty()) {
                                 Text("Type app or package name...", style = Ty.Dim)

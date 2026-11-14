@@ -52,6 +52,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
@@ -62,6 +64,9 @@ import androidx.compose.material.icons.rounded.Input
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SettingsEthernet
 import androidx.compose.material.icons.rounded.SettingsInputHdmi
 import androidx.compose.material.icons.rounded.Storage
@@ -171,17 +176,15 @@ fun HomeScreen(vm: LauncherViewModel) {
     val s by vm.state.collectAsState()
     var showTools by remember { mutableStateOf(false) }
 
-    // Handle Back key: close any open dialog/screen first, never exit launcher
-    BackHandler(
-        enabled = s.showStorageManager || s.showFileManager || s.showPersonalization ||
-                s.showCleanTvScreen || s.showScreensaver || s.showScreensaverSettings ||
-                s.showNativeQuickShare || s.showInputsDialog ||
-                s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
-                s.debloatSuccessSummary != null || s.actionMenuApp != null ||
-                s.uninstallConfirmApp != null || s.showDefaultPrompt
-    ) {
+    // Home key pressed on the remote: drop local popups too.
+    LaunchedEffect(s.homeResetTick) { showTools = false }
+
+    // Back: close the top-most popup/page first. With nothing open we are on Home, the last stop,
+    // so Back is consumed there (the launcher never exits). One handler, so priority can't get mixed up.
+    BackHandler(enabled = true) {
         when {
             s.showScreensaver -> vm.closeScreensaver()
+            s.showTvPlayer -> vm.closeTvPlayer()
             s.showScreensaverSettings -> vm.closeScreensaverSettings()
             s.showCleanTvScreen -> vm.closeCleanTvScreen()
             s.showStorageManager -> vm.closeStorageManager()
@@ -196,14 +199,11 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.uninstallConfirmApp != null -> vm.dismissUninstallConfirm()
             s.actionMenuApp != null -> vm.dismissActionMenu()
             s.showDefaultPrompt -> vm.dismissDefaultPrompt(dontAskAgain = false)
+            s.showQuickShare -> vm.closeQuickShare()
+            s.showQuickShareHub -> vm.closeQuickShareHub()
+            showTools -> showTools = false
+            else -> Unit // Home is the root
         }
-    }
-
-    BackHandler(enabled = showTools) { showTools = false }
-
-    // Root BackHandler: On Home root, back press is safely consumed so it never pops to last opened app!
-    BackHandler(enabled = true) {
-        // Stay on Home screen root
     }
 
     // Fullscreen Overlay Screens
@@ -213,6 +213,19 @@ fun HomeScreen(vm: LauncherViewModel) {
                 mode = s.screensaverMode,
                 customPath = s.screensaverCustomPath,
                 onDismiss = vm::closeScreensaver
+            )
+        }
+        return
+    }
+
+    if (s.showTvPlayer) {
+        TvCanvas {
+            TvInputPlayer(
+                ports = s.tvPorts,
+                activeId = s.activeInputId,
+                onSelect = vm::switchToPort,
+                onFailed = vm::tvPlayerFailed,
+                onClose = vm::closeTvPlayer
             )
         }
         return
@@ -350,6 +363,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                         timeText = s.timeText,
                         dateText = s.dateText,
                         networkLabel = s.networkLabel,
+                        accountLabel = s.tvProfile.email ?: "Sign in",
+                        onOpenAccount = vm::openAccountsNative,
                         sortMode = s.appSortMode,
                         pillRequesters = topBarPillRequesters,
                         dockRequesters = dockColRequesters,
@@ -509,7 +524,9 @@ fun HomeScreen(vm: LauncherViewModel) {
                     onStorage = { showTools = false; vm.openStorageManager() },
                     onFiles = { showTools = false; vm.openFileManager() },
                     onTheme = { showTools = false; vm.openPersonalization() },
-                    onAccount = { showTools = false; vm.openProfile() },
+                    onAccount = { showTools = false; vm.openAccountsNative() },
+                    onKeyboard = { showTools = false; vm.fixKeyboard() },
+                    onSyncAccounts = { showTools = false; vm.syncAccountsToApps(userInitiated = true) },
                     onScreensaver = { showTools = false; vm.openScreensaverSettings() },
                     onDismiss = { showTools = false },
                 )
@@ -540,6 +557,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                 InputsSwitcherDialog(
                     ports = s.tvPorts,
                     onSelectPort = vm::switchToPort,
+                    onSystemMenu = { vm.closeInputs(); vm.openNativeTvInputs() },
                     onDismiss = vm::closeInputs
                 )
             }
@@ -759,6 +777,8 @@ private fun CleanTvTopBar(
     timeText: String,
     dateText: String,
     networkLabel: String,
+    accountLabel: String,
+    onOpenAccount: () -> Unit,
     sortMode: AppSortMode,
     pillRequesters: List<FocusRequester> = emptyList(),
     dockRequesters: List<FocusRequester> = emptyList(),
@@ -844,17 +864,26 @@ private fun CleanTvTopBar(
                 )
             }
 
-            if (greeting.isNotBlank()) {
-                Text(
-                    text = greeting.uppercase(),
-                    style = Ty.Small.copy(
-                        color = Color(0x8CFFFFFF),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 3.2.sp
-                    ),
-                    maxLines = 1,
-                    modifier = Modifier.padding(bottom = 12.dp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                if (greeting.isNotBlank()) {
+                    Text(
+                        text = greeting.uppercase(),
+                        style = Ty.Small.copy(
+                            color = Color(0x8CFFFFFF),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 3.2.sp
+                        ),
+                        maxLines = 1,
+                    )
+                }
+                // Signed-in Google account (from the TV's system settings). One tap -> native add / switch account.
+                TvPill(
+                    label = accountLabel,
+                    icon = Icons.Rounded.AccountCircle,
+                    contentDescription = "Google account",
+                    onClick = onOpenAccount,
+                    maxLabelWidth = 280.dp,
                 )
             }
         }
@@ -1017,6 +1046,8 @@ private fun ToolsMenuDialog(
     onFiles: () -> Unit,
     onTheme: () -> Unit,
     onAccount: () -> Unit,
+    onKeyboard: () -> Unit,
+    onSyncAccounts: () -> Unit,
     onScreensaver: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1033,16 +1064,18 @@ private fun ToolsMenuDialog(
                 .width(560.dp)
                 .clip(RoundedCornerShape(36.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
-                .padding(horizontal = 36.dp, vertical = 34.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 36.dp, vertical = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Tools", style = Ty.Title.copy(fontSize = 38.sp), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
-            TvPill("Quick Share", Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill("Screensaver Settings", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true)
-            TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 64.dp, textSize = 22.sp, fill = true, maxLabelWidth = 380.dp)
+            TvPill("Quick Share", Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill("Screensaver Settings", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true, maxLabelWidth = 380.dp)
+            TvPill("Sync account to apps", Icons.Rounded.Sync, onSyncAccounts, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
+            TvPill("Fix keyboard", Icons.Rounded.Keyboard, onKeyboard, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
         }
     }
 }
@@ -1499,6 +1532,7 @@ private fun CleanTvSuccessDialog(
 private fun InputsSwitcherDialog(
     ports: List<TvPort>,
     onSelectPort: (TvPort) -> Unit,
+    onSystemMenu: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -1558,12 +1592,20 @@ private fun InputsSwitcherDialog(
             }
 
             Spacer(Modifier.height(8.dp))
-            TvButton(
-                text = "Close",
-                onClick = onDismiss,
-                primary = false,
-                modifier = Modifier.width(240.dp)
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TvButton(
+                    text = "System sources",
+                    onClick = onSystemMenu,
+                    primary = false,
+                    modifier = Modifier.width(240.dp)
+                )
+                TvButton(
+                    text = "Close",
+                    onClick = onDismiss,
+                    primary = false,
+                    modifier = Modifier.width(240.dp)
+                )
+            }
         }
     }
 }
@@ -1600,14 +1642,16 @@ private fun TvPortCard(
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (port.isConnected && port.kind != "TV") {
+                if (port.isConnected && port.kind != "TV" && !port.statusUnknown) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(Pal.Mint))
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(
                     text = port.subtitle
                         ?: if (port.kind == "TV") "Live TV"
-                        else if (port.isConnected) "Connected" else "No signal",
+                        else if (port.statusUnknown) "Tap to switch"
+                        else if (port.isStandby) "Device on standby"
+                        else if (port.isConnected) "Device connected" else "Nothing plugged in",
                     style = Ty.Dim.copy(fontSize = 14.sp),
                     maxLines = 1
                 )
@@ -1922,6 +1966,127 @@ private fun LauncherUninstallDialog(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 TvButton("Cancel", onClick = onDismiss, primary = false, modifier = Modifier.weight(1f).focusRequester(cancelFocus))
                 TvButton("Uninstall", onClick = onConfirm, primary = true, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+
+/**
+ * Full-screen player for a real hardware input (HDMI / AV / component). Shows the live picture through
+ * the TV's own input service, and lets the user flip between ports without leaving the screen.
+ * Back (or the remote's Home key) returns to Home.
+ */
+@Composable
+private fun TvInputPlayer(
+    ports: List<TvPort>,
+    activeId: String?,
+    onSelect: (TvPort) -> Unit,
+    onFailed: (TvPort?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val active = ports.firstOrNull { it.id == activeId }
+    var overlayVisible by remember { mutableStateOf(true) }
+    var interactionTick by remember { mutableIntStateOf(0) }
+    var status by remember { mutableStateOf<String?>("Connecting...") }
+    val rootFocus = remember { FocusRequester() }
+    val activeFocus = remember { FocusRequester() }
+
+    val tvView = remember {
+        android.media.tv.TvView(ctx).apply { setZOrderMediaOverlay(true) }
+    }
+    val currentActive by rememberUpdatedState(active)
+    val currentOnFailed by rememberUpdatedState(onFailed)
+
+    DisposableEffect(tvView) {
+        tvView.setCallback(object : android.media.tv.TvView.TvInputCallback() {
+            override fun onConnectionFailed(inputId: String?) { currentOnFailed(currentActive) }
+            override fun onDisconnected(inputId: String?) { status = "Disconnected" }
+            override fun onVideoAvailable(inputId: String?) { status = null }
+            override fun onVideoUnavailable(inputId: String?, reason: Int) {
+                status = if (reason == android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING ||
+                    reason == android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_BUFFERING) "Connecting..." else "No signal"
+            }
+        })
+        onDispose { runCatching { tvView.reset() } }
+    }
+
+    LaunchedEffect(activeId) {
+        val port = ports.firstOrNull { it.id == activeId } ?: return@LaunchedEffect
+        status = "Connecting..."
+        try {
+            tvView.tune(port.id, android.media.tv.TvContract.buildChannelUriForPassthroughInput(port.id))
+        } catch (_: Exception) {
+            currentOnFailed(port)
+        }
+    }
+
+    // Auto-hide the port bar after a few seconds without a key press; any key brings it back.
+    LaunchedEffect(overlayVisible, interactionTick) {
+        if (overlayVisible) {
+            delay(5000)
+            overlayVisible = false
+        }
+    }
+    LaunchedEffect(overlayVisible) {
+        runCatching { if (overlayVisible) activeFocus.requestFocus() else rootFocus.requestFocus() }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(rootFocus)
+            .onPreviewKeyEvent { ev ->
+                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                    ev.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_BACK
+                ) {
+                    interactionTick++
+                    if (!overlayVisible) {
+                        overlayVisible = true
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .focusable()
+    ) {
+        androidx.compose.ui.viewinterop.AndroidView(factory = { tvView }, modifier = Modifier.fillMaxSize())
+
+        status?.let {
+            Text(
+                it,
+                style = Ty.Heading.copy(color = Color.White, fontSize = 28.sp),
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
+        if (overlayVisible) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF2000000))))
+                    .padding(horizontal = 48.dp, vertical = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Now watching: ${active?.label ?: "-"}   (Back = Home)",
+                    style = Ty.Dim.copy(fontSize = 18.sp)
+                )
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    items(ports.size) { i ->
+                        val port = ports[i]
+                        TvPortCard(
+                            port = port,
+                            onClick = { if (port.id != activeId) onSelect(port) },
+                            modifier = Modifier
+                                .width(190.dp)
+                                .let { if (port.id == activeId) it.focusRequester(activeFocus) else it }
+                        )
+                    }
+                }
             }
         }
     }

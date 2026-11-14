@@ -61,6 +61,27 @@ class HomeActivity : ComponentActivity() {
         // Non-essential start-up work happens after Home is on its way to the screen.
         lifecycleScope.launch(Dispatchers.Default) { TvSound.init(applicationContext) }
         checkInitialStoragePermissions()
+        checkAccountPermission()
+    }
+
+    /** Lets Home see the TV's signed-in Google account (shown in the top-right chip). */
+    private fun checkAccountPermission() {
+        val storagePending = Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
+            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        if (!storagePending && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            checkSelfPermission(android.Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.GET_ACCOUNTS), 102)
+        }
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 102 || requestCode == 101) {
+            vm.loadProfile()
+            vm.syncAccountsToApps()
+        }
     }
 
     private fun checkInitialStoragePermissions() {
@@ -72,7 +93,8 @@ class HomeActivity : ComponentActivity() {
                 requestPermissions(
                     arrayOf(
                         android.Manifest.permission.READ_EXTERNAL_STORAGE,
-                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        android.Manifest.permission.GET_ACCOUNTS
                     ),
                     101
                 )
@@ -99,6 +121,10 @@ class HomeActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page.
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) {
+            vm.goHome()
+        }
     }
 
     override fun onResume() {

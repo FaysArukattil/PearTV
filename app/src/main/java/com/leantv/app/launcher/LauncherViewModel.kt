@@ -85,6 +85,10 @@ data class LauncherState(
     // Live TV Hardware Inputs
     val showInputsDialog: Boolean = false,
     val tvPorts: List<TvPort> = emptyList(),
+    val showTvPlayer: Boolean = false,
+    val activeInputId: String? = null,
+    /** Bumped whenever the remote's Home key is pressed so Home can reset its own local UI. */
+    val homeResetTick: Int = 0,
 
     // Google Account Profile
     val showProfileDialog: Boolean = false,
@@ -210,6 +214,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             launch(Dispatchers.IO) { detectDevice() }
             checkDefaultLauncherPrompt()
             loadProfile()
+            fixKeyboard(userInitiated = false)
+            syncAccountsToApps()
             startObservingTvInputs()
             delay(1000)
             startNativeQuickShare(openDialog = false, silent = true)
@@ -300,20 +306,51 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Starts the first intent an installed app can handle. Back from it always lands on our Home. */
+    private fun launchFirstResolvable(intents: List<Intent>): Boolean =
+        TvInputHelper.startFirstResolvable(ctx, intents)
+
     fun openNetworkSettings() {
-        val intents = listOf(
-            Intent("android.settings.WIFI_SETTINGS"),
-            Intent(Settings.ACTION_WIFI_SETTINGS),
-            Intent(Settings.ACTION_WIRELESS_SETTINGS),
-            Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
+        val ok = launchFirstResolvable(
+            listOf(
+                Intent("android.settings.WIFI_SETTINGS"),
+                Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.connectivity.NetworkActivity")),
+                Intent(Settings.ACTION_WIFI_SETTINGS),
+                Intent(Settings.ACTION_WIRELESS_SETTINGS),
+                Intent(Settings.ACTION_SETTINGS)
+            )
         )
-        for (intent in intents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                ctx.startActivity(intent)
-                return
-            } catch (_: Exception) {}
+        if (!ok) toast("Couldn't open Network settings.")
+    }
+
+    /** Remote Home key: close every popup / full-screen page and show plain Home. */
+    fun goHome() {
+        if (_state.value.showMonitorPanel) stopMonitorPolling()
+        _state.update {
+            it.copy(
+                showStorageManager = false,
+                showFileManager = false,
+                fileManagerInitialDir = null,
+                fileManagerHighlightFile = null,
+                showPersonalization = false,
+                showCleanTvScreen = false,
+                showScreensaver = false,
+                showScreensaverSettings = false,
+                showNativeQuickShare = false,
+                showInputsDialog = false,
+                showTvPlayer = false,
+                activeInputId = null,
+                showProfileDialog = false,
+                showMonitorPanel = false,
+                showCleanTvWizard = false,
+                showQuickShareHub = false,
+                showQuickShare = false,
+                debloatSuccessSummary = null,
+                actionMenuApp = null,
+                uninstallConfirmApp = null,
+                showDefaultPrompt = false,
+                homeResetTick = it.homeResetTick + 1
+            )
         }
     }
 
@@ -322,6 +359,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (resumedOnce) {
             loadApps(silent = true)
             loadProfile()
+            syncAccountsToApps() // e.g. YouTube was just installed from the Play Store
         }
         resumedOnce = true
         killBackgroundApps()
@@ -791,16 +829,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openInputs() {
-        val ports = TvInputHelper.queryHardwareInputs(ctx)
-        if (ports.isEmpty()) {
-            // Try to open native TV input selector directly
-            val opened = TvInputHelper.openNativeTvInputs(ctx)
-            if (!opened) {
-                // Show dialog with empty state
-                _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
-            }
-        } else {
-            _state.update { it.copy(tvPorts = ports, showInputsDialog = true) }
+        // Show the dialog straight away with what we already know, then refresh off the main thread.
+        _state.update { it.copy(showInputsDialog = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ports = TvInputHelper.queryHardwareInputs(ctx)
+            _state.update { it.copy(tvPorts = ports) }
         }
     }
 
@@ -808,13 +841,37 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(showInputsDialog = false) }
     }
 
+    fun closeTvPlayer() {
+        _state.update { it.copy(showTvPlayer = false, activeInputId = null) }
+    }
+
+    /** Ports we can show inside our own player (real passthrough inputs: HDMI, AV, component). */
+    private fun canPlayInApp(port: TvPort) =
+        port.isPassthrough && port.kind != "TV" && !port.id.startsWith("default_")
+
     fun switchToPort(port: TvPort) {
+        if (canPlayInApp(port)) {
+            _state.update { it.copy(showInputsDialog = false, showTvPlayer = true, activeInputId = port.id) }
+            return
+        }
+        closeTvPlayer()
         closeInputs()
-        val switched = TvInputHelper.switchToPort(ctx, port)
-        if (switched) {
-            toast("Switched to ${port.label}")
-        } else {
-            toast("Unable to switch directly to ${port.label}")
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.Default) { TvInputHelper.switchToPort(ctx, port) }
+            if (!ok && !pressRemoteKey(178)) { // 178 = KEYCODE_TV_INPUT
+                toast("Unable to switch directly to ${port.label}")
+            }
+        }
+    }
+
+    /** The in-app player could not open this input: hand over to the system source picker. */
+    fun tvPlayerFailed(port: TvPort?) {
+        closeTvPlayer()
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.Default) {
+                if (port != null) TvInputHelper.switchToPort(ctx, port) else TvInputHelper.openNativeTvInputs(ctx)
+            }
+            if (!ok && !pressRemoteKey(178)) toast("Couldn't open this input.")
         }
     }
 
@@ -828,6 +885,52 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     tvProfile = profile,
                     currentAccountName = profile.displayName
                 )
+            }
+        }
+    }
+
+    /** Corner account chip: go straight to the TV's own account screens (no separate sign-in in this app). */
+    fun openAccountsNative() {
+        val has = _state.value.tvProfile.email != null
+        if (!TvAccountHelper.openAccountsNative(ctx, has)) toast("Couldn't open Accounts.")
+    }
+
+    private var lastAccountSyncMs = 0L
+
+    /**
+     * Lets apps like YouTube see the TV's Google account. Silent (Shizuku/root only) unless the user
+     * asked for it, in which case it may also connect to on-device ADB.
+     */
+    fun syncAccountsToApps(userInitiated: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!userInitiated && now - lastAccountSyncMs < 120_000L) return
+        lastAccountSyncMs = now
+        viewModelScope.launch(Dispatchers.IO) {
+            val n = TvAccountHelper.grantAccountAccessToApps(ctx, adb, allowAdbConnect = userInitiated)
+            if (userInitiated) {
+                val hasAccount = TvAccountHelper.getConnectedProfile(ctx).email != null
+                toast(
+                    when {
+                        !hasAccount -> "No Google account on this TV yet. Tap the account chip to add one."
+                        n > 0 -> "Account shared with $n app(s). Reopen YouTube / Play Store."
+                        else -> "Apps already have access. If YouTube still asks to sign in, it can't use the system account."
+                    }
+                )
+            }
+        }
+    }
+
+    /** Fixes the on-screen keyboard (Gboard). Silent at start-up; user-triggered may use on-device ADB. */
+    fun fixKeyboard(userInitiated: Boolean = true) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!userInitiated && com.leantv.app.ui.KeyboardHelper.isReady(ctx)) return@launch
+            val ok = com.leantv.app.ui.KeyboardHelper.repair(ctx, adb, allowAdbConnect = userInitiated)
+            if (!userInitiated) return@launch
+            if (ok) {
+                toast("Keyboard is ready. Click any text box to type.")
+            } else {
+                toast("Please enable Gboard in the keyboard settings that open now.")
+                withContext(Dispatchers.Main) { com.leantv.app.ui.KeyboardHelper.openKeyboardSettings(ctx) }
             }
         }
     }
@@ -1049,7 +1152,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         for (intent in intents) {
             try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
                 ctx.startActivity(intent)
                 toast("Opening Google Quick Share...")
                 return true
@@ -1062,7 +1165,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         closeQuickShareHub()
         try {
             val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.gms")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
             ctx.startActivity(storeIntent)
         } catch (_: Exception) {
@@ -1092,7 +1195,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             try {
                 val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
                 }
                 ctx.startActivity(storeIntent)
             } catch (_: Exception) {
@@ -1163,7 +1266,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun openUrl(url: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
             ctx.startActivity(intent)
         } catch (e: Exception) {
@@ -1174,20 +1277,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Native TV Settings (Feature #5) ----------
 
     fun openSystemSettings() {
-        val settingsIntents = listOf(
-            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
-            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
-            Intent("android.settings.SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
+        val ok = launchFirstResolvable(
+            listOf(
+                Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
+                Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
+                Intent("android.settings.SETTINGS"),
+                Intent(Settings.ACTION_SETTINGS)
+            )
         )
-        for (intent in settingsIntents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                ctx.startActivity(intent)
-                return
-            } catch (_: Exception) {}
-        }
-
+        if (ok) return
         viewModelScope.launch {
             if (!pressRemoteKey(176)) { // 176 = KEYCODE_SETTINGS
                 toast("Couldn't open Settings.")
@@ -1263,15 +1361,23 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun killBackgroundApps(exceptPackage: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Wait for the app/Settings transition to finish so this never competes with it.
+                delay(1500)
                 val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return@launch
+                val pm = ctx.packageManager
                 val myPkg = ctx.packageName
                 val procs = am.runningAppProcesses ?: return@launch
                 for (p in procs) {
                     val pkgs = p.pkgList ?: emptyArray()
                     for (pkg in pkgs) {
-                        if (pkg != myPkg && pkg != exceptPackage) {
-                            am.killBackgroundProcesses(pkg)
-                        }
+                        if (pkg == myPkg || pkg == exceptPackage) continue
+                        // System apps (TV Settings, Live TV, input services, Play services...) are left alone:
+                        // killing them is what made Settings / Wi-Fi cold-start and lag on every open.
+                        val isSystem = try {
+                            val f = pm.getApplicationInfo(pkg, 0).flags
+                            (f and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                        } catch (_: Exception) { true }
+                        if (!isSystem) am.killBackgroundProcesses(pkg)
                     }
                 }
             } catch (_: Exception) {}
@@ -1320,7 +1426,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                             )
                         }
                         try {
-                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME))
                         } catch (_: Exception) {}
                         return@launch
                     }
@@ -1392,7 +1498,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun openDeveloperOptions() {
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
             ctx.startActivity(intent)
         } catch (_: Exception) {
@@ -1508,7 +1614,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val roleManager = ctx.getSystemService(Context.ROLE_SERVICE) as? RoleManager
                 if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
                     val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
                     ctx.startActivity(intent)
                     return
                 }
@@ -1517,13 +1623,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         try {
             val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
             ctx.startActivity(homeSettingsIntent)
         } catch (_: Exception) {
             try {
                 val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
                 }
                 ctx.startActivity(settingsIntent)
                 toast("Go to Apps -> Default Apps -> Home app to set CleanYourTV as default.")
