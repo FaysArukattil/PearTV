@@ -89,6 +89,36 @@ object TvInputHelper {
                     else { tunerSeen = true; true }
                 }
 
+                // Determine hardware HDMI port numbers via TvInputManager.getHardwareList()
+                val hwPortMap = HashMap<Int, Int>() // hardwareId -> hdmiPort
+                try {
+                    val method = manager.javaClass.getMethod("getHardwareList")
+                    val list = method.invoke(manager) as? List<*>
+                    list?.forEach { item ->
+                        if (item != null) {
+                            val id = runCatching { item.javaClass.getMethod("getId").invoke(item) as? Int }.getOrNull()
+                            val port = runCatching { item.javaClass.getMethod("getHdmiPort").invoke(item) as? Int }.getOrNull() ?: 0
+                            if (id != null && port > 0) {
+                                hwPortMap[id] = port
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                val hdmiInfos = unique.filter { it.type == TvInputInfo.TYPE_HDMI }
+                    .sortedBy { info ->
+                        val hwId = Regex("HW(\\d+)").find(info.id)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                        hwPortMap[hwId] ?: hwId
+                    }
+                val hdmiPortNumbers = HashMap<String, Int>()
+                hdmiInfos.forEachIndexed { idx, info ->
+                    val hwId = Regex("HW(\\d+)").find(info.id)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+                    val port = hwPortMap[hwId] ?: (idx + 1)
+                    hdmiPortNumbers[info.id] = port
+                }
+
+                val hasTvChannels = hasScannedChannels(ctx)
+
                 unique.map { info ->
                     val state = try { manager.getInputState(info.id) } catch (_: Exception) { TvInputManager.INPUT_STATE_DISCONNECTED }
                     val kind = when (info.type) {
@@ -103,25 +133,54 @@ object TvInputHelper {
                         if (!custom.isNullOrBlank()) custom else info.loadLabel(ctx)?.toString()
                     } catch (_: Exception) { null }
                     val label = when (kind) {
-                        "TV" -> "TV"
+                        "TV" -> "Live TV"
                         "AV" -> "AV"
                         "COMPONENT" -> "Component"
+                        "HDMI" -> {
+                            val portNum = hdmiPortNumbers[info.id] ?: 1
+                            if (!rawLabel.isNullOrBlank() &&
+                                !rawLabel.equals("HDMI", ignoreCase = true) &&
+                                !rawLabel.equals("HDMI Input", ignoreCase = true) &&
+                                !rawLabel.startsWith("com.", ignoreCase = true)
+                            ) {
+                                rawLabel
+                            } else {
+                                "HDMI $portNum"
+                            }
+                        }
                         else -> if (!rawLabel.isNullOrBlank()) rawLabel else getHumanReadablePortName(info)
                     }
+
+                    // STRICT CONNECTION STATUS:
+                    // Only mark connected when there is a live active signal / physical cable connected.
+                    // INPUT_STATE_CONNECTED_STANDBY (1) and INPUT_STATE_DISCONNECTED (2) are considered NOT connected (greyed out).
+                    val isConnected = when (kind) {
+                        "TV" -> state == TvInputManager.INPUT_STATE_CONNECTED && hasTvChannels
+                        else -> state == TvInputManager.INPUT_STATE_CONNECTED
+                    }
+
+                    val subtitle = when {
+                        cecNames[info.id] != null -> cecNames[info.id]
+                        kind == "TV" && hasTvChannels -> "Live TV Channels"
+                        kind == "TV" -> "No channels / Antenna"
+                        isConnected -> "Connected"
+                        else -> "Not connected"
+                    }
+
                     TvPort(
                         id = info.id,
                         label = label,
                         typeName = getTypeName(info.type),
-                        isConnected = state == TvInputManager.INPUT_STATE_CONNECTED ||
-                            state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY || kind == "TV",
+                        isConnected = isConnected,
                         isStandby = state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY,
                         isPassthrough = info.isPassthroughInput,
                         kind = kind,
-                        subtitle = cecNames[info.id]?.takeIf { !it.equals(label, ignoreCase = true) },
+                        subtitle = subtitle,
                     )
                 }.sortedWith(
                     compareBy<TvPort> {
-                        when (it.kind) { "TV" -> 0; "HDMI" -> 1; "AV" -> 2; "COMPONENT" -> 3; else -> 4 }
+                        // Put HDMI ports first, then TV, AV, Component
+                        when (it.kind) { "HDMI" -> 0; "TV" -> 1; "AV" -> 2; "COMPONENT" -> 3; else -> 4 }
                     }.thenBy { it.label }
                 )
             }
@@ -181,6 +240,20 @@ object TvInputHelper {
             label?.takeIf { it.isNotBlank() }
         } catch (_: Throwable) {
             null
+        }
+    }
+
+    private fun hasScannedChannels(ctx: Context): Boolean {
+        return try {
+            ctx.contentResolver.query(
+                TvContract.Channels.CONTENT_URI,
+                arrayOf(TvContract.Channels._ID),
+                null,
+                null,
+                null
+            )?.use { cursor -> cursor.count > 0 } ?: false
+        } catch (_: Exception) {
+            false
         }
     }
 

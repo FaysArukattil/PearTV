@@ -17,6 +17,7 @@ import com.leantv.app.ui.ScreensaverSettingsDialog
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -1611,16 +1612,17 @@ private fun InputsSwitcherDialog(
             }
 
             if (ports.isNotEmpty()) {
+                val firstConnectedId = ports.firstOrNull { it.isConnected }?.id ?: ports.firstOrNull()?.id
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ports.chunked(3).forEachIndexed { rowIdx, rowPorts ->
+                    ports.chunked(3).forEach { rowPorts ->
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            rowPorts.forEachIndexed { colIdx, port ->
+                            rowPorts.forEach { port ->
                                 TvPortCard(
                                     port = port,
                                     onClick = { onSelectPort(port) },
                                     modifier = Modifier
                                         .width(204.dp)
-                                        .let { if (rowIdx == 0 && colIdx == 0) it.focusRequester(autoFocus) else it }
+                                        .let { if (port.id == firstConnectedId) it.focusRequester(autoFocus) else it }
                                 )
                             }
                         }
@@ -1654,10 +1656,13 @@ private fun TvPortCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isConnected = port.isConnected
     Focusable(
         onClick = onClick,
         modifier = modifier.height(150.dp),
         shape = RoundedCornerShape(24.dp),
+        idle = if (isConnected) Color(0x1F22C55E) else Color(0x0AFFFFFF),
+        idleOutline = isConnected
     ) { focused ->
         Column(
             Modifier.fillMaxSize().padding(16.dp),
@@ -1666,33 +1671,53 @@ private fun TvPortCard(
         ) {
             PortIcon(
                 kind = port.kind,
-                color = if (port.isConnected || focused) Color.White else Color(0x66FFFFFF),
+                color = when {
+                    isConnected -> Color(0xFF4ADE80)
+                    focused -> Color.White
+                    else -> Color(0x35FFFFFF)
+                },
                 modifier = Modifier.size(44.dp)
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 port.label,
                 style = Ty.Heading.copy(
-                    color = if (port.isConnected || focused) Color.White else Color(0x80FFFFFF),
+                    color = when {
+                        isConnected -> Color.White
+                        focused -> Color.White
+                        else -> Color(0x55FFFFFF)
+                    },
+                    fontWeight = if (isConnected) FontWeight.Bold else FontWeight.Normal,
                     fontSize = 22.sp
                 ),
                 maxLines = 1
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (port.isConnected && port.kind != "TV" && !port.statusUnknown) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(Pal.Mint))
+                if (isConnected) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF22C55E)))
                     Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = port.subtitle ?: "Connected",
+                        style = Ty.Small.copy(
+                            color = Color(0xFF4ADE80),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        maxLines = 1
+                    )
+                } else {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0x30FFFFFF)))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = port.subtitle ?: "Not connected",
+                        style = Ty.Small.copy(
+                            color = Color(0x45FFFFFF),
+                            fontSize = 13.sp
+                        ),
+                        maxLines = 1
+                    )
                 }
-                Text(
-                    text = port.subtitle
-                        ?: if (port.kind == "TV") "Live TV"
-                        else if (port.statusUnknown) "Tap to switch"
-                        else if (port.isStandby) "Device on standby"
-                        else if (port.isConnected) "Device connected" else "Nothing plugged in",
-                    style = Ty.Dim.copy(fontSize = 14.sp),
-                    maxLines = 1
-                )
             }
         }
     }
@@ -2058,17 +2083,27 @@ private fun TvInputPlayer(
         } catch (_: Exception) {
             currentOnFailed(port)
         }
+        // Once selected, show bottom bar for 1 second, then dismiss automatically
+        overlayVisible = true
+        delay(1000L)
+        overlayVisible = false
     }
 
-    // Auto-hide the port bar after a few seconds without a key press; any key brings it back.
+    // Auto-hide the bottom bar after 1 second of inactivity so it never interferes with the input
     LaunchedEffect(overlayVisible, interactionTick) {
         if (overlayVisible) {
-            delay(5000)
+            delay(1000L)
             overlayVisible = false
         }
     }
     LaunchedEffect(overlayVisible) {
-        runCatching { if (overlayVisible) activeFocus.requestFocus() else rootFocus.requestFocus() }
+        runCatching {
+            if (overlayVisible) activeFocus.requestFocus()
+            else {
+                tvView.requestFocus()
+                rootFocus.requestFocus()
+            }
+        }
     }
 
     Box(
@@ -2077,14 +2112,26 @@ private fun TvInputPlayer(
             .background(Color.Black)
             .focusRequester(rootFocus)
             .onPreviewKeyEvent { ev ->
-                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                    ev.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_BACK
-                ) {
-                    interactionTick++
-                    if (!overlayVisible) {
-                        overlayVisible = true
+                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                    val code = ev.nativeKeyEvent.keyCode
+                    // Back always exits directly back to LeanTV Home
+                    if (code == KeyEvent.KEYCODE_BACK) {
+                        onClose()
                         return@onPreviewKeyEvent true
                     }
+                    // Menu or TV Input button brings up the input switcher
+                    if (code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_TV_INPUT || code == 178) {
+                        overlayVisible = !overlayVisible
+                        if (overlayVisible) interactionTick++
+                        return@onPreviewKeyEvent true
+                    }
+                    if (overlayVisible) {
+                        interactionTick++
+                        return@onPreviewKeyEvent false
+                    }
+                    // When overlay is hidden, DO NOT consume D-pad / Enter / Media keys!
+                    // Let all keys pass straight through to the connected HDMI / external device!
+                    return@onPreviewKeyEvent false
                 }
                 false
             }
@@ -2100,18 +2147,22 @@ private fun TvInputPlayer(
             )
         }
 
-        if (overlayVisible) {
+        AnimatedVisibility(
+            visible = overlayVisible,
+            enter = fadeIn(tween(150)) + slideInVertically(tween(200)) { it },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(200)) { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
             Column(
                 Modifier
-                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF2000000))))
-                    .padding(horizontal = 48.dp, vertical = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 48.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     "Now watching: ${active?.label ?: "-"}   (Back = Home)",
-                    style = Ty.Dim.copy(fontSize = 18.sp)
+                    style = Ty.Dim.copy(fontSize = 17.sp)
                 )
                 androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(ports.size) { i ->
