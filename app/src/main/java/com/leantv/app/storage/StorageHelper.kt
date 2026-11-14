@@ -29,6 +29,14 @@ data class AppStorageDetail(
     val isSystemApp: Boolean
 )
 
+data class StorageFileItem(
+    val file: File,
+    val name: String,
+    val size: Long,
+    val lastModified: Long,
+    val path: String
+)
+
 data class StorageOverview(
     val totalBytes: Long,
     val freeBytes: Long,
@@ -39,7 +47,11 @@ data class StorageOverview(
     val imagesBytes: Long,
     val apksBytes: Long,
     val systemBytes: Long,
-    val appDetails: List<AppStorageDetail>
+    val appDetails: List<AppStorageDetail>,
+    val videoFiles: List<StorageFileItem> = emptyList(),
+    val audioFiles: List<StorageFileItem> = emptyList(),
+    val imageFiles: List<StorageFileItem> = emptyList(),
+    val apkFiles: List<StorageFileItem> = emptyList()
 )
 
 object StorageHelper {
@@ -76,7 +88,11 @@ object StorageHelper {
             imagesBytes = fileStats.imagesBytes,
             apksBytes = fileStats.apksBytes,
             systemBytes = systemBytes,
-            appDetails = appDetails
+            appDetails = appDetails,
+            videoFiles = fileStats.videoFiles,
+            audioFiles = fileStats.audioFiles,
+            imageFiles = fileStats.imageFiles,
+            apkFiles = fileStats.apkFiles
         )
     }
 
@@ -84,14 +100,23 @@ object StorageHelper {
         val videosBytes: Long = 0L,
         val audioBytes: Long = 0L,
         val imagesBytes: Long = 0L,
-        val apksBytes: Long = 0L
+        val apksBytes: Long = 0L,
+        val videoFiles: List<StorageFileItem> = emptyList(),
+        val audioFiles: List<StorageFileItem> = emptyList(),
+        val imageFiles: List<StorageFileItem> = emptyList(),
+        val apkFiles: List<StorageFileItem> = emptyList()
     )
 
     private fun scanExternalMedia(): FileStats {
-        var videos = 0L
-        var audio = 0L
-        var images = 0L
-        var apks = 0L
+        val videos = mutableListOf<StorageFileItem>()
+        val audio = mutableListOf<StorageFileItem>()
+        val images = mutableListOf<StorageFileItem>()
+        val apks = mutableListOf<StorageFileItem>()
+
+        var videosBytes = 0L
+        var audioBytes = 0L
+        var imagesBytes = 0L
+        var apksBytes = 0L
 
         try {
             val root = Environment.getExternalStorageDirectory()
@@ -100,7 +125,7 @@ object StorageHelper {
                 queue.add(root)
                 var scannedCount = 0
 
-                while (queue.isNotEmpty() && scannedCount < 8000) {
+                while (queue.isNotEmpty() && scannedCount < 10000) {
                     val dir = queue.removeFirst()
                     val files = dir.listFiles() ?: continue
                     for (file in files) {
@@ -114,21 +139,34 @@ object StorageHelper {
                         } else {
                             val len = file.length()
                             val name = file.name.lowercase(Locale.ROOT)
+                            val item = StorageFileItem(
+                                file = file,
+                                name = file.name,
+                                size = len,
+                                lastModified = file.lastModified(),
+                                path = file.absolutePath
+                            )
                             when {
                                 name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".avi") ||
-                                        name.endsWith(".mov") || name.endsWith(".webm") || name.endsWith(".ts") -> {
-                                    videos += len
+                                        name.endsWith(".mov") || name.endsWith(".webm") || name.endsWith(".ts") ||
+                                        name.endsWith(".3gp") || name.endsWith(".m4v") -> {
+                                    videosBytes += len
+                                    videos.add(item)
                                 }
                                 name.endsWith(".mp3") || name.endsWith(".flac") || name.endsWith(".wav") ||
-                                        name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".ogg") -> {
-                                    audio += len
+                                        name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".ogg") ||
+                                        name.endsWith(".opus") || name.endsWith(".wma") -> {
+                                    audioBytes += len
+                                    audio.add(item)
                                 }
                                 name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
-                                        name.endsWith(".webp") || name.endsWith(".gif") -> {
-                                    images += len
+                                        name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".bmp") -> {
+                                    imagesBytes += len
+                                    images.add(item)
                                 }
-                                name.endsWith(".apk") -> {
-                                    apks += len
+                                name.endsWith(".apk") || name.endsWith(".xapk") -> {
+                                    apksBytes += len
+                                    apks.add(item)
                                 }
                             }
                         }
@@ -139,7 +177,16 @@ object StorageHelper {
             Log.w(TAG, "File scan encountered error", e)
         }
 
-        return FileStats(videos, audio, images, apks)
+        return FileStats(
+            videosBytes = videosBytes,
+            audioBytes = audioBytes,
+            imagesBytes = imagesBytes,
+            apksBytes = apksBytes,
+            videoFiles = videos.sortedByDescending { it.size },
+            audioFiles = audio.sortedByDescending { it.size },
+            imageFiles = images.sortedByDescending { it.size },
+            apkFiles = apks.sortedByDescending { it.size }
+        )
     }
 
     private fun scanAppStorage(ctx: Context, journal: com.leantv.app.data.Journal? = null): List<AppStorageDetail> {
@@ -260,6 +307,10 @@ object StorageHelper {
             }
         }
         return deletedBytes
+    }
+
+    suspend fun deleteFile(ctx: Context, file: File): Boolean = withContext(Dispatchers.IO) {
+        com.leantv.app.files.FileManagerHelper.deleteFile(ctx, file)
     }
 
     fun openAppDetails(ctx: Context, pkg: String) {

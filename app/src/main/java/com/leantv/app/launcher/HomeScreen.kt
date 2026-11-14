@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Widgets
 import com.leantv.app.ui.glassCard
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -530,9 +531,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                     onQuickShare = { showTools = false; vm.openQuickShareControl() },
                     onStorage = { showTools = false; vm.openStorageManager() },
                     onFiles = { showTools = false; vm.openFileManager() },
-                    onTheme = { showTools = false; vm.openPersonalization() },
                     onAccount = { showTools = false; vm.openAccountsNative() },
-                    onKeyboard = { showTools = false; vm.fixKeyboard() },
                     onSyncAccounts = { showTools = false; vm.syncAccountsToApps(userInitiated = true) },
                     onScreensaver = { showTools = false; vm.openScreensaverSettings() },
                     onDismiss = { showTools = false },
@@ -559,12 +558,11 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Inputs Switcher Modal (Live physical hardware ports + native source picker)
+            // Inputs Switcher Modal (Live physical hardware ports)
             if (s.showInputsDialog) {
                 InputsSwitcherDialog(
                     ports = s.tvPorts,
                     onSelectPort = vm::switchToPort,
-                    onSystemMenu = { vm.closeInputs(); vm.openNativeTvInputs() },
                     onDismiss = vm::closeInputs
                 )
             }
@@ -967,7 +965,7 @@ private fun CleanTvTopBar(
             )
             TvPill(
                 label = null,
-                icon = Icons.Rounded.Apps,
+                icon = Icons.Rounded.Widgets,
                 modifier = pillFocusModifier(5),
                 onClick = onOpenTools,
                 contentDescription = "Tools",
@@ -1082,9 +1080,7 @@ private fun ToolsMenuDialog(
     onQuickShare: () -> Unit,
     onStorage: () -> Unit,
     onFiles: () -> Unit,
-    onTheme: () -> Unit,
     onAccount: () -> Unit,
-    onKeyboard: () -> Unit,
     onSyncAccounts: () -> Unit,
     onScreensaver: () -> Unit,
     onDismiss: () -> Unit,
@@ -1110,11 +1106,9 @@ private fun ToolsMenuDialog(
             TvPill(qsLabel, Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Screensaver Settings", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true, maxLabelWidth = 380.dp)
             TvPill("Sync account to apps", Icons.Rounded.Sync, onSyncAccounts, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill("Fix keyboard", Icons.Rounded.Keyboard, onKeyboard, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
         }
     }
 }
@@ -1571,7 +1565,6 @@ private fun CleanTvSuccessDialog(
 private fun InputsSwitcherDialog(
     ports: List<TvPort>,
     onSelectPort: (TvPort) -> Unit,
-    onSystemMenu: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -1632,20 +1625,12 @@ private fun InputsSwitcherDialog(
             }
 
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TvButton(
-                    text = "System sources",
-                    onClick = onSystemMenu,
-                    primary = false,
-                    modifier = Modifier.width(240.dp)
-                )
-                TvButton(
-                    text = "Close",
-                    onClick = onDismiss,
-                    primary = false,
-                    modifier = Modifier.width(240.dp)
-                )
-            }
+            TvButton(
+                text = "Close",
+                onClick = onDismiss,
+                primary = false,
+                modifier = Modifier.width(240.dp)
+            )
         }
     }
 }

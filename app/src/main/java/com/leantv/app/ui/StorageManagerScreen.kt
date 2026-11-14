@@ -1,25 +1,18 @@
 package com.leantv.app.ui
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.view.KeyEvent
-import android.view.SoundEffectConstants
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -32,36 +25,46 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.leantv.app.adb.AdbClient
-import com.leantv.app.data.DebloatResult
 import com.leantv.app.data.Journal
-import com.leantv.app.data.RemovalMethod
-import com.leantv.app.data.Removed
+import com.leantv.app.data.DebloatResult
 import com.leantv.app.data.SystemDebloater
 import com.leantv.app.storage.AppStorageDetail
+import com.leantv.app.storage.StorageFileItem
 import com.leantv.app.storage.StorageHelper
 import com.leantv.app.storage.StorageOverview
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class StorageCategory(val title: String) {
+    APPS("Installed Apps"),
+    VIDEOS("Videos & Movies"),
+    IMAGES("Images & Photos"),
+    AUDIO("Audio & Music"),
+    APKS("APK Installation Files")
+}
+
 /**
- * TV Remote-optimized Storage Manager (Samsung Device Care style).
+ * TV Remote-optimized Storage Manager.
  *
- * Features:
- * - Shows app icons for every installed application.
- * - Two-column TV remote layout: Left list navigates apps, Right panel displays storage breakdown.
- * - Clickable action buttons for Clear Cache, Clear Data, Uninstall, and App Info.
- * - D-Pad Right moves focus directly to the Action Buttons; D-Pad Left returns to the app list.
+ * Requirements:
+ * - Shows high-level storage overview at a glance: "Used X GB of Y GB (Z GB Free)".
+ * - Multi-color proportional gauge bar and breakdown by category (Apps, Videos, Images, Audio, APKs).
+ * - Clicking any category allows viewing and deleting files/apps to reclaim storage.
+ * - 100% remote-control optimized: natural D-Pad focus navigation, Back key handling,
+ *   and safe delete confirmation dialogs.
  */
 @Composable
 fun StorageManagerScreen(
@@ -71,7 +74,6 @@ fun StorageManagerScreen(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val view = LocalView.current
 
     LaunchedEffect(Unit) {
         if (adbClient?.isConnected == false) {
@@ -81,11 +83,21 @@ fun StorageManagerScreen(
 
     var overview by remember { mutableStateOf<StorageOverview?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    var optimizeMessage by remember { mutableStateOf<String?>(null) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    // Navigation state
+    var selectedCategory by remember { mutableStateOf<StorageCategory?>(null) }
+
+    // Apps selection state (inside APPS category)
     var selectedApp by remember { mutableStateOf<AppStorageDetail?>(null) }
     var appIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
 
-    val actionFocusRequester = remember { FocusRequester() }
+    // File deletion confirmation dialog state
+    var fileToDelete by remember { mutableStateOf<StorageFileItem?>(null) }
+
+    val overviewFocusRequester = remember { FocusRequester() }
+    val categoryFocusRequester = remember { FocusRequester() }
+    val dialogFocusRequester = remember { FocusRequester() }
 
     fun refresh() {
         scope.launch {
@@ -97,7 +109,7 @@ fun StorageManagerScreen(
             }
             isLoading = false
 
-            // Preload icons asynchronously
+            // Preload app icons asynchronously
             withContext(Dispatchers.IO) {
                 val pm = ctx.packageManager
                 val icons = mutableMapOf<String, Bitmap>()
@@ -116,385 +128,1158 @@ fun StorageManagerScreen(
         refresh()
     }
 
+    // Auto-focus management
+    LaunchedEffect(selectedCategory, isLoading) {
+        if (!isLoading && overview != null) {
+            delay(120)
+            if (selectedCategory != null) {
+                runCatching { categoryFocusRequester.requestFocus() }
+            } else {
+                runCatching { overviewFocusRequester.requestFocus() }
+            }
+        }
+    }
+
+    LaunchedEffect(fileToDelete) {
+        if (fileToDelete != null) {
+            delay(120)
+            runCatching { dialogFocusRequester.requestFocus() }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF000000))
             .padding(horizontal = 48.dp, vertical = 28.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF64D2FF))
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "DEVICE CARE",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF64D2FF),
-                            letterSpacing = 2.sp
-                        )
+            .onPreviewKeyEvent { ev ->
+                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                    ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK
+                ) {
+                    when {
+                        fileToDelete != null -> {
+                            fileToDelete = null
+                            true
+                        }
+                        selectedCategory != null -> {
+                            selectedCategory = null
+                            true
+                        }
+                        else -> {
+                            onClose()
+                            true
+                        }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Storage Management",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                }
+                } else false
+            }
+    ) {
+        val currentOverview = overview
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TvButton(
-                        text = "Clean All Cache",
-                        onClick = {
+        if (currentOverview == null || isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                LeanTvLoading("Analyzing TV storage...")
+            }
+        } else {
+            when (selectedCategory) {
+                null -> {
+                    // ══════════════════════════════════════════════════════════════
+                    // 1. OVERVIEW SCREEN: High-level Total Storage & Categories
+                    // ══════════════════════════════════════════════════════════════
+                    StorageOverviewView(
+                        overview = currentOverview,
+                        statusMessage = statusMessage,
+                        autoFocus = overviewFocusRequester,
+                        onSelectCategory = { cat -> selectedCategory = cat },
+                        onCleanCache = {
                             scope.launch {
                                 val reclaimed = StorageHelper.cleanAllAccessibleCaches(ctx)
-                                optimizeMessage = "Cleaned ${StorageHelper.formatBytes(reclaimed)} of cache!"
+                                statusMessage = "Cleaned ${StorageHelper.formatBytes(reclaimed)} of cache!"
                                 refresh()
                             }
                         },
-                        primary = true
-                    )
-
-                    TvButton(
-                        text = "Back to Home",
-                        onClick = onClose,
-                        primary = false
+                        onClose = onClose
                     )
                 }
-            }
 
-            optimizeMessage?.let { msg ->
-                Spacer(Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0x334CAF50))
-                        .border(1.dp, Color(0x664CAF50), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                ) {
-                    Text(text = msg, color = Color(0xFF30D158), fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            val currentOverview = overview
-            if (currentOverview == null || isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LeanTvLoading("Analyzing TV storage...")
-                }
-            } else {
-                // Two-Column TV Layout
-                Row(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp)
-                ) {
-                    // Left Column: Apps List with Icons (55% width)
-                    Column(
-                        modifier = Modifier
-                            .weight(0.55f)
-                            .fillMaxHeight()
-                    ) {
-                        Text(
-                            text = "Installed Applications by Size (${currentOverview.appDetails.size})",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xB3FFFFFF),
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        )
-
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0x14FFFFFF))
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)
-                        ) {
-                            items(currentOverview.appDetails, key = { it.packageName }) { app ->
-                                val isSelected = selectedApp?.packageName == app.packageName
-                                val icon = appIcons[app.packageName]
-
-                                Focusable(
-                                    onClick = {
-                                        selectedApp = app
-                                        actionFocusRequester.requestFocus()
-                                    },
-                                    shape = RoundedCornerShape(14.dp),
-                                    idle = if (isSelected) Color(0x2EFFFFFF) else Color(0x0EFFFFFF),
-                                    scaleOnFocus = 1.02f,
-                                    modifier = Modifier.onPreviewKeyEvent { ev ->
-                                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                                            ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
-                                        ) {
-                                            selectedApp = app
-                                            actionFocusRequester.requestFocus()
-                                            true
-                                        } else false
-                                    }
-                                ) { isFocused ->
-                                    if (isFocused && selectedApp?.packageName != app.packageName) {
-                                        selectedApp = app
-                                    }
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // App Icon
-                                        if (icon != null) {
-                                            Image(
-                                                bitmap = icon.asImageBitmap(),
-                                                contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(44.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(44.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(Color(0x28FFFFFF)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    Icons.Rounded.Android,
-                                                    contentDescription = null,
-                                                    tint = Color.White.copy(alpha = 0.7f),
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(14.dp))
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = app.appLabel,
-                                                color = Color.White,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = if (app.isSystemApp) "System App • ${app.packageName}" else app.packageName,
-                                                color = Color(0x77FFFFFF),
-                                                fontSize = 14.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-
-                                        Spacer(Modifier.width(10.dp))
-
-                                        // Total Storage Badge
-                                        Text(
-                                            text = StorageHelper.formatBytes(app.totalBytes),
-                                            color = Color(0xFF64D2FF),
-                                            fontSize = 17.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
+                StorageCategory.APPS -> {
+                    // ══════════════════════════════════════════════════════════════
+                    // 2. APPS MANAGEMENT VIEW (Clear Cache / Data / Uninstall)
+                    // ══════════════════════════════════════════════════════════════
+                    AppsManagementView(
+                        overview = currentOverview,
+                        selectedApp = selectedApp,
+                        appIcons = appIcons,
+                        adbClient = adbClient,
+                        journal = journal,
+                        backFocus = categoryFocusRequester,
+                        onBack = { selectedCategory = null },
+                        onSelectApp = { app -> selectedApp = app },
+                        onAppModified = { msg ->
+                            statusMessage = msg
+                            refresh()
                         }
+                    )
+                }
+
+                StorageCategory.VIDEOS,
+                StorageCategory.IMAGES,
+                StorageCategory.AUDIO,
+                StorageCategory.APKS -> {
+                    // ══════════════════════════════════════════════════════════════
+                    // 3. FILE CATEGORY VIEW (Inspect & Delete Files)
+                    // ══════════════════════════════════════════════════════════════
+                    val files = when (selectedCategory) {
+                        StorageCategory.VIDEOS -> currentOverview.videoFiles
+                        StorageCategory.IMAGES -> currentOverview.imageFiles
+                        StorageCategory.AUDIO -> currentOverview.audioFiles
+                        StorageCategory.APKS -> currentOverview.apkFiles
+                        else -> emptyList()
+                    }
+                    val catTitle = when (selectedCategory) {
+                        StorageCategory.VIDEOS -> "Videos & Movies"
+                        StorageCategory.IMAGES -> "Images & Photos"
+                        StorageCategory.AUDIO -> "Audio & Music"
+                        StorageCategory.APKS -> "APK Installers"
+                        else -> ""
+                    }
+                    val catTotal = when (selectedCategory) {
+                        StorageCategory.VIDEOS -> currentOverview.videosBytes
+                        StorageCategory.IMAGES -> currentOverview.imagesBytes
+                        StorageCategory.AUDIO -> currentOverview.audioBytes
+                        StorageCategory.APKS -> currentOverview.apksBytes
+                        else -> 0L
                     }
 
-                    // Right Column: Storage Inspector & Actions (45% width)
-                    Column(
+                    FileCategoryView(
+                        title = catTitle,
+                        category = selectedCategory!!,
+                        totalBytes = catTotal,
+                        files = files,
+                        backFocus = categoryFocusRequester,
+                        onBack = { selectedCategory = null },
+                        onRequestDelete = { fileItem ->
+                            fileToDelete = fileItem
+                        }
+                    )
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // DELETE FILE CONFIRMATION MODAL
+        // ══════════════════════════════════════════════════════════════════════
+        fileToDelete?.let { item ->
+            DeleteFileModal(
+                fileItem = item,
+                autoFocus = dialogFocusRequester,
+                onConfirm = {
+                    scope.launch {
+                        val ok = StorageHelper.deleteFile(ctx, item.file)
+                        if (ok) {
+                            statusMessage = "Deleted ${item.name} (${StorageHelper.formatBytes(item.size)})"
+                            fileToDelete = null
+                            refresh()
+                        } else {
+                            statusMessage = "Unable to delete file: ${item.name}"
+                            fileToDelete = null
+                        }
+                    }
+                },
+                onDismiss = { fileToDelete = null }
+            )
+        }
+    }
+}
+
+/**
+ * Main Overview View: Total Storage Gauge, Progress Bar, and Category Cards.
+ */
+@Composable
+private fun StorageOverviewView(
+    overview: StorageOverview,
+    statusMessage: String?,
+    autoFocus: FocusRequester,
+    onSelectCategory: (StorageCategory) -> Unit,
+    onCleanCache: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
                         modifier = Modifier
-                            .weight(0.45f)
-                            .fillMaxHeight()
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF64D2FF))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "DEVICE CARE",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF64D2FF),
+                        letterSpacing = 2.sp
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Storage Management",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvButton(
+                    text = "Clean All Cache",
+                    onClick = onCleanCache,
+                    primary = true,
+                    modifier = Modifier.focusRequester(autoFocus)
+                )
+
+                TvButton(
+                    text = "Back to Home",
+                    onClick = onClose,
+                    primary = false
+                )
+            }
+        }
+
+        statusMessage?.let { msg ->
+            Spacer(Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x334CAF50))
+                    .border(1.dp, Color(0x664CAF50), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Text(text = msg, color = Color(0xFF30D158), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        // ─── Hero Storage Progress Gauge Card ───
+        val usedGbStr = StorageHelper.formatBytes(overview.usedBytes)
+        val totalGbStr = StorageHelper.formatBytes(overview.totalBytes)
+        val freeGbStr = StorageHelper.formatBytes(overview.freeBytes)
+        val usedPct = if (overview.totalBytes > 0) ((overview.usedBytes.toDouble() / overview.totalBytes) * 100).toInt() else 0
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF1E212A), Color(0xFF141720))))
+                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(24.dp))
+                .padding(horizontal = 28.dp, vertical = 22.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Used $usedGbStr of $totalGbStr",
+                            style = Ty.Title.copy(
+                                color = Color.White,
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "$freeGbStr free • $usedPct% storage capacity utilized",
+                            style = Ty.Dim.copy(fontSize = 16.sp, color = Color(0xBBFFFFFF))
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF0A84FF).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFF0A84FF).copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Text(
-                            text = "Storage Breakdown & Actions",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xB3FFFFFF),
-                            modifier = Modifier.padding(bottom = 10.dp)
+                            text = "$usedPct% USED",
+                            style = Ty.Small.copy(color = Color(0xFF64D2FF), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         )
+                    }
+                }
 
-                        val activeApp = selectedApp
-                        if (activeApp == null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0x14FFFFFF)),
-                                contentAlignment = Alignment.Center
+                // Proportional Multi-Segment Storage Bar
+                StorageSegmentedBar(overview = overview)
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+
+        // ─── Storage Categories Header ───
+        Text(
+            text = "STORAGE CATEGORIES (Click to inspect & delete)",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0x99FFFFFF),
+            letterSpacing = 1.2.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
+        )
+
+        // ─── Category Cards Grid ───
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            StorageCategoryCard(
+                title = "Apps",
+                size = StorageHelper.formatBytes(overview.appsBytes),
+                count = "${overview.appDetails.size} Installed",
+                icon = Icons.Rounded.Apps,
+                accentColor = Color(0xFF3B82F6),
+                onClick = { onSelectCategory(StorageCategory.APPS) },
+                modifier = Modifier.weight(1f)
+            )
+
+            StorageCategoryCard(
+                title = "Videos",
+                size = StorageHelper.formatBytes(overview.videosBytes),
+                count = "${overview.videoFiles.size} Video Files",
+                icon = Icons.Rounded.Movie,
+                accentColor = Color(0xFF8B5CF6),
+                onClick = { onSelectCategory(StorageCategory.VIDEOS) },
+                modifier = Modifier.weight(1f)
+            )
+
+            StorageCategoryCard(
+                title = "Photos",
+                size = StorageHelper.formatBytes(overview.imagesBytes),
+                count = "${overview.imageFiles.size} Image Files",
+                icon = Icons.Rounded.Image,
+                accentColor = Color(0xFFEC4899),
+                onClick = { onSelectCategory(StorageCategory.IMAGES) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            StorageCategoryCard(
+                title = "Audio",
+                size = StorageHelper.formatBytes(overview.audioBytes),
+                count = "${overview.audioFiles.size} Audio Tracks",
+                icon = Icons.Rounded.MusicNote,
+                accentColor = Color(0xFFF59E0B),
+                onClick = { onSelectCategory(StorageCategory.AUDIO) },
+                modifier = Modifier.weight(1f)
+            )
+
+            StorageCategoryCard(
+                title = "APK Files",
+                size = StorageHelper.formatBytes(overview.apksBytes),
+                count = "${overview.apkFiles.size} Installers",
+                icon = Icons.Rounded.Download,
+                accentColor = Color(0xFF06B6D4),
+                onClick = { onSelectCategory(StorageCategory.APKS) },
+                modifier = Modifier.weight(1f)
+            )
+
+            StorageCategoryCard(
+                title = "System OS",
+                size = StorageHelper.formatBytes(overview.systemBytes),
+                count = "Android System & ROM",
+                icon = Icons.Rounded.Settings,
+                accentColor = Color(0xFF64748B),
+                onClick = {},
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/**
+ * Multi-color segmented storage gauge bar.
+ */
+@Composable
+private fun StorageSegmentedBar(
+    overview: StorageOverview,
+    modifier: Modifier = Modifier
+) {
+    val total = overview.totalBytes.toFloat().coerceAtLeast(1f)
+    val appsPct = (overview.appsBytes / total).coerceIn(0f, 1f)
+    val videosPct = (overview.videosBytes / total).coerceIn(0f, 1f)
+    val imagesPct = (overview.imagesBytes / total).coerceIn(0f, 1f)
+    val audioPct = (overview.audioBytes / total).coerceIn(0f, 1f)
+    val apksPct = (overview.apksBytes / total).coerceIn(0f, 1f)
+    val systemPct = (overview.systemBytes / total).coerceIn(0f, 1f)
+    val usedPct = (overview.usedBytes / total).coerceIn(0f, 1f)
+    val freePct = (1f - usedPct).coerceIn(0f, 1f)
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Multi-color horizontal progress bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(Color(0xFF1E293B))
+        ) {
+            if (appsPct > 0.005f) Box(Modifier.weight(appsPct).fillMaxHeight().background(Color(0xFF3B82F6)))
+            if (videosPct > 0.005f) Box(Modifier.weight(videosPct).fillMaxHeight().background(Color(0xFF8B5CF6)))
+            if (imagesPct > 0.005f) Box(Modifier.weight(imagesPct).fillMaxHeight().background(Color(0xFFEC4899)))
+            if (audioPct > 0.005f) Box(Modifier.weight(audioPct).fillMaxHeight().background(Color(0xFFF59E0B)))
+            if (apksPct > 0.005f) Box(Modifier.weight(apksPct).fillMaxHeight().background(Color(0xFF06B6D4)))
+            if (systemPct > 0.005f) Box(Modifier.weight(systemPct).fillMaxHeight().background(Color(0xFF64748B)))
+            if (freePct > 0.005f) Box(Modifier.weight(freePct).fillMaxHeight().background(Color(0xFF1E293B)))
+        }
+
+        // Legend row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LegendItem(label = "Apps", color = Color(0xFF3B82F6), size = StorageHelper.formatBytes(overview.appsBytes))
+            LegendItem(label = "Videos", color = Color(0xFF8B5CF6), size = StorageHelper.formatBytes(overview.videosBytes))
+            LegendItem(label = "Photos", color = Color(0xFFEC4899), size = StorageHelper.formatBytes(overview.imagesBytes))
+            LegendItem(label = "Audio", color = Color(0xFFF59E0B), size = StorageHelper.formatBytes(overview.audioBytes))
+            LegendItem(label = "APKs", color = Color(0xFF06B6D4), size = StorageHelper.formatBytes(overview.apksBytes))
+            LegendItem(label = "System", color = Color(0xFF64748B), size = StorageHelper.formatBytes(overview.systemBytes))
+            LegendItem(label = "Free Space", color = Color(0xFF94A3B8), size = StorageHelper.formatBytes(overview.freeBytes))
+        }
+    }
+}
+
+@Composable
+private fun LegendItem(label: String, color: Color, size: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text = label, style = Ty.Small.copy(color = Color(0xBBFFFFFF), fontSize = 13.sp))
+        Spacer(Modifier.width(4.dp))
+        Text(text = size, style = Ty.Small.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+    }
+}
+
+/**
+ * Category Card with large colorful icon, title, item count, and bold size badge.
+ */
+@Composable
+private fun StorageCategoryCard(
+    title: String,
+    size: String,
+    count: String,
+    icon: ImageVector,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Focusable(
+        onClick = onClick,
+        modifier = modifier.height(118.dp),
+        shape = RoundedCornerShape(20.dp),
+        idle = Color(0x14FFFFFF),
+        scaleOnFocus = 1.04f,
+        idleOutline = false
+    ) { focused ->
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(accentColor.copy(alpha = if (focused) 0.35f else 0.20f))
+                    .border(1.dp, accentColor.copy(alpha = if (focused) 0.8f else 0.4f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(28.dp))
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = Ty.Heading.copy(
+                        color = Color.White,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = count,
+                    style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 13.sp)
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = size,
+                    style = Ty.Title.copy(
+                        color = accentColor,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Manage",
+                        style = Ty.Small.copy(color = Color(0x77FFFFFF), fontSize = 12.sp)
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Color(0x77FFFFFF), modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * File Category Screen: Displays video, photo, audio, or APK files with delete action.
+ */
+@Composable
+private fun FileCategoryView(
+    title: String,
+    category: StorageCategory,
+    totalBytes: Long,
+    files: List<StorageFileItem>,
+    backFocus: FocusRequester,
+    onBack: () -> Unit,
+    onRequestDelete: (StorageFileItem) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Category Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Focusable(
+                    onClick = onBack,
+                    modifier = Modifier.focusRequester(backFocus),
+                    shape = RoundedCornerShape(14.dp),
+                    idle = Color(0x22FFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Back to Storage", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                Spacer(Modifier.width(20.dp))
+
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "${files.size} files • Total ${StorageHelper.formatBytes(totalBytes)}",
+                        fontSize = 15.sp,
+                        color = Color(0xAAFFFFFF)
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x1AFFFFFF))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Press OK on any file to delete",
+                    color = Color(0x88FFFFFF),
+                    fontSize = 14.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        if (files.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0x0EFFFFFF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF30D158), modifier = Modifier.size(54.dp))
+                    Text(
+                        text = "No $title Found",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Your storage is completely clean of files in this category.",
+                        fontSize = 15.sp,
+                        color = Color(0x88FFFFFF)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0x0EFFFFFF))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                items(files, key = { it.path }) { item ->
+                    FileRowItem(
+                        item = item,
+                        category = category,
+                        onClick = { onRequestDelete(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Single file row with remote focus, metadata, and delete icon.
+ */
+@Composable
+private fun FileRowItem(
+    item: StorageFileItem,
+    category: StorageCategory,
+    onClick: () -> Unit
+) {
+    Focusable(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        idle = Color(0x12FFFFFF),
+        scaleOnFocus = 1.02f
+    ) { focused ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val fileIcon = when (category) {
+                StorageCategory.VIDEOS -> Icons.Rounded.Movie
+                StorageCategory.IMAGES -> Icons.Rounded.Image
+                StorageCategory.AUDIO -> Icons.Rounded.MusicNote
+                StorageCategory.APKS -> Icons.Rounded.Download
+                else -> Icons.Rounded.Description
+            }
+            val accentColor = when (category) {
+                StorageCategory.VIDEOS -> Color(0xFF8B5CF6)
+                StorageCategory.IMAGES -> Color(0xFFEC4899)
+                StorageCategory.AUDIO -> Color(0xFFF59E0B)
+                StorageCategory.APKS -> Color(0xFF06B6D4)
+                else -> Color.White
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(accentColor.copy(alpha = 0.20f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(fileIcon, contentDescription = null, tint = accentColor, modifier = Modifier.size(24.dp))
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.name,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = item.path,
+                    color = Color(0x77FFFFFF),
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            // File Size Pill
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0x22FFFFFF))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = StorageHelper.formatBytes(item.size),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Trash Action Button
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(if (focused) Color(0xFFFF453A).copy(alpha = 0.35f) else Color(0x18FFFFFF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = "Delete",
+                    tint = if (focused) Color(0xFFFF453A) else Color(0x99FFFFFF),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Delete File Confirmation Modal Dialog.
+ */
+@Composable
+private fun DeleteFileModal(
+    fileItem: StorageFileItem,
+    autoFocus: FocusRequester,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE6000000))
+            .modalTrap(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(580.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
+                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(28.dp))
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x22FF453A)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color(0xFFFF453A), modifier = Modifier.size(32.dp))
+            }
+
+            Text(
+                text = "Delete File?",
+                style = Ty.Title.copy(color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0x14FFFFFF))
+                    .padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = fileItem.name,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Size: ${StorageHelper.formatBytes(fileItem.size)}",
+                    color = Color(0xFF64D2FF),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Text(
+                text = "This file will be permanently deleted from TV internal storage to free up space.",
+                color = Color(0x99FFFFFF),
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                TvButton(
+                    text = "Cancel",
+                    onClick = onDismiss,
+                    primary = false,
+                    modifier = Modifier.weight(1f).focusRequester(autoFocus)
+                )
+
+                TvButton(
+                    text = "Delete Permanently",
+                    onClick = onConfirm,
+                    primary = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Apps Management View: Two-column layout for clearing cache, app data, and uninstalling apps.
+ */
+@Composable
+private fun AppsManagementView(
+    overview: StorageOverview,
+    selectedApp: AppStorageDetail?,
+    appIcons: Map<String, Bitmap>,
+    adbClient: AdbClient?,
+    journal: Journal,
+    backFocus: FocusRequester,
+    onBack: () -> Unit,
+    onSelectApp: (AppStorageDetail) -> Unit,
+    onAppModified: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val actionFocusRequester = remember { FocusRequester() }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Apps Header Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Focusable(
+                    onClick = onBack,
+                    modifier = Modifier.focusRequester(backFocus),
+                    shape = RoundedCornerShape(14.dp),
+                    idle = Color(0x22FFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Back to Storage", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                Spacer(Modifier.width(20.dp))
+
+                Column {
+                    Text(
+                        text = "Installed Applications",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "${overview.appDetails.size} applications • Total ${StorageHelper.formatBytes(overview.appsBytes)}",
+                        fontSize = 15.sp,
+                        color = Color(0xAAFFFFFF)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        // Two-Column TV Layout (55% Apps List, 45% Inspector & Actions)
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // Left Column: Apps List (55%)
+            LazyColumn(
+                modifier = Modifier
+                    .weight(0.55f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0x0EFFFFFF))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                items(overview.appDetails, key = { it.packageName }) { app ->
+                    val isSelected = selectedApp?.packageName == app.packageName
+                    val icon = appIcons[app.packageName]
+
+                    Focusable(
+                        onClick = {
+                            onSelectApp(app)
+                            actionFocusRequester.requestFocus()
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        idle = if (isSelected) Color(0x2EFFFFFF) else Color(0x0EFFFFFF),
+                        scaleOnFocus = 1.02f,
+                        modifier = Modifier.onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                             ) {
-                                Text("Select an app to inspect", color = Color(0x66FFFFFF), fontSize = 18.sp)
+                                onSelectApp(app)
+                                actionFocusRequester.requestFocus()
+                                true
+                            } else false
+                        }
+                    ) { isFocused ->
+                        if (isFocused && selectedApp?.packageName != app.packageName) {
+                            onSelectApp(app)
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (icon != null) {
+                                Image(
+                                    bitmap = icon.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0x28FFFFFF)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.Android, contentDescription = null, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(24.dp))
+                                }
                             }
-                        } else {
-                            val activeIcon = appIcons[activeApp.packageName]
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0x1AFFFFFF))
-                                    .padding(24.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                // App Header
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (activeIcon != null) {
-                                        Image(
-                                            bitmap = activeIcon.asImageBitmap(),
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(64.dp)
-                                                .clip(RoundedCornerShape(16.dp))
+
+                            Spacer(Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = app.appLabel,
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (app.isSystemApp) "System App • ${app.packageName}" else app.packageName,
+                                    color = Color(0x77FFFFFF),
+                                    fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(Modifier.width(10.dp))
+
+                            Text(
+                                text = StorageHelper.formatBytes(app.totalBytes),
+                                color = Color(0xFF64D2FF),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Right Column: Storage Inspector & Actions (45%)
+            Column(
+                modifier = Modifier
+                    .weight(0.45f)
+                    .fillMaxHeight()
+            ) {
+                if (selectedApp == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0x0EFFFFFF)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Select an app to inspect", color = Color(0x66FFFFFF), fontSize = 18.sp)
+                    }
+                } else {
+                    val activeIcon = appIcons[selectedApp.packageName]
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0x16FFFFFF))
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // App Header
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (activeIcon != null) {
+                                Image(
+                                    bitmap = activeIcon.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color(0x28FFFFFF)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.Android, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                }
+                            }
+
+                            Spacer(Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = selectedApp.appLabel,
+                                    style = Ty.Title.copy(fontSize = 24.sp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = selectedApp.packageName,
+                                    style = Ty.Small.copy(color = Color(0x88FFFFFF), fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Storage Metrics
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StorageMetricRow(title = "App Size (APK)", size = StorageHelper.formatBytes(selectedApp.appBytes), color = Color(0xFF64D2FF))
+                            StorageMetricRow(title = "User Data", size = StorageHelper.formatBytes(selectedApp.dataBytes), color = Color(0xFFFFA726))
+                            StorageMetricRow(title = "Cache", size = StorageHelper.formatBytes(selectedApp.cacheBytes), color = Color(0xFF30D158))
+                        }
+
+                        Spacer(Modifier.weight(1f))
+
+                        // Actions
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TvButton(
+                                text = "Clear Cache (${StorageHelper.formatBytes(selectedApp.cacheBytes)})",
+                                onClick = {
+                                    scope.launch {
+                                        if (adbClient != null && adbClient.isConnected) {
+                                            adbClient.shell("pm trim-caches 9999999999")
+                                        }
+                                        onAppModified("✓ Cache cleared for ${selectedApp.appLabel}")
+                                    }
+                                },
+                                primary = true,
+                                modifier = Modifier.fillMaxWidth().focusRequester(actionFocusRequester)
+                            )
+
+                            TvButton(
+                                text = "Clear All App Data",
+                                onClick = {
+                                    scope.launch {
+                                        val ok = StorageHelper.clearAppData(ctx, adbClient, selectedApp.packageName)
+                                        onAppModified(if (ok) "✓ Cleared data for ${selectedApp.appLabel}" else "Opened App Settings")
+                                    }
+                                },
+                                primary = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            TvButton(
+                                text = if (selectedApp.isSystemApp) "Uninstall System App" else "Uninstall Application",
+                                onClick = {
+                                    scope.launch {
+                                        val res = SystemDebloater.uninstallOrDisable(
+                                            ctx = ctx,
+                                            pkg = selectedApp.packageName,
+                                            label = selectedApp.appLabel,
+                                            isSystemApp = selectedApp.isSystemApp,
+                                            adbClient = adbClient,
+                                            journal = journal
                                         )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(64.dp)
-                                                .clip(RoundedCornerShape(16.dp))
-                                                .background(Color(0x28FFFFFF)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Rounded.Android, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
+                                        when (res) {
+                                            is DebloatResult.Success -> onAppModified(res.message)
+                                            is DebloatResult.NeedsPrivilege -> onAppModified(res.message)
+                                            is DebloatResult.Failure -> onAppModified(res.reason)
                                         }
                                     }
+                                },
+                                primary = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
-                                    Spacer(Modifier.width(16.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = activeApp.appLabel,
-                                            style = Ty.Title.copy(fontSize = 24.sp),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = activeApp.packageName,
-                                            style = Ty.Small.copy(color = Color(0x88FFFFFF), fontFamily = FontFamily.Monospace, fontSize = 14.sp),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-
-                                // Storage Category Breakdown Cards
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    StorageMetricRow(
-                                        title = "App Size (APK)",
-                                        size = StorageHelper.formatBytes(activeApp.appBytes),
-                                        color = Color(0xFF64D2FF)
-                                    )
-                                    StorageMetricRow(
-                                        title = "User Data",
-                                        size = StorageHelper.formatBytes(activeApp.dataBytes),
-                                        color = Color(0xFFFFA726)
-                                    )
-                                    StorageMetricRow(
-                                        title = "Cache",
-                                        size = StorageHelper.formatBytes(activeApp.cacheBytes),
-                                        color = Color(0xFF30D158)
-                                    )
-                                }
-
-                                Spacer(Modifier.weight(1f))
-
-                                // D-Pad Reachable Action Buttons
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    // Clear Cache Button
-                                    TvButton(
-                                        text = "Clear Cache (${StorageHelper.formatBytes(activeApp.cacheBytes)})",
-                                        onClick = {
-                                            scope.launch {
-                                                optimizeMessage = "Clearing cache for ${activeApp.appLabel}..."
-                                                if (adbClient != null && adbClient.isConnected) {
-                                                    adbClient.shell("pm trim-caches 9999999999")
-                                                }
-                                                optimizeMessage = "✓ Cache cleared for ${activeApp.appLabel}"
-                                                refresh()
-                                            }
-                                        },
-                                        primary = true,
-                                        modifier = Modifier.fillMaxWidth().focusRequester(actionFocusRequester)
-                                    )
-
-                                    // Clear Data Button
-                                    TvButton(
-                                        text = "Clear All App Data",
-                                        onClick = {
-                                            scope.launch {
-                                                optimizeMessage = "Clearing data for ${activeApp.appLabel}..."
-                                                val ok = StorageHelper.clearAppData(ctx, adbClient, activeApp.packageName)
-                                                optimizeMessage = if (ok) "✓ Cleared data for ${activeApp.appLabel}" else "Opened App Settings"
-                                                refresh()
-                                            }
-                                        },
-                                        primary = false,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    // Uninstall Button (Supports Shizuku, ADB, and direct removal)
-                                    TvButton(
-                                        text = if (activeApp.isSystemApp) "Uninstall / Remove Bloatware" else "Uninstall Application",
-                                        onClick = {
-                                            scope.launch {
-                                                optimizeMessage = "Uninstalling ${activeApp.appLabel}..."
-                                                val res = SystemDebloater.uninstallOrDisable(
-                                                    ctx = ctx,
-                                                    pkg = activeApp.packageName,
-                                                    label = activeApp.appLabel,
-                                                    isSystemApp = activeApp.isSystemApp,
-                                                    adbClient = adbClient,
-                                                    journal = journal
-                                                )
-                                                when (res) {
-                                                    is DebloatResult.Success -> {
-                                                        optimizeMessage = res.message
-                                                        overview = overview?.copy(appDetails = overview!!.appDetails.filter { it.packageName != activeApp.packageName })
-                                                        refresh()
-                                                    }
-                                                    is DebloatResult.NeedsPrivilege -> {
-                                                        optimizeMessage = res.message
-                                                    }
-                                                    is DebloatResult.Failure -> {
-                                                        optimizeMessage = res.reason
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        primary = false,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    // Open Settings Button
-                                    TvButton(
-                                        text = "App Info in TV Settings",
-                                        onClick = { StorageHelper.openAppDetails(ctx, activeApp.packageName) },
-                                        primary = false,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
+                            TvButton(
+                                text = "App Info in TV Settings",
+                                onClick = { StorageHelper.openAppDetails(ctx, selectedApp.packageName) },
+                                primary = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -522,8 +1307,8 @@ private fun StorageMetricRow(title: String, size: String, color: Color) {
                     .background(color)
             )
             Spacer(Modifier.width(10.dp))
-            Text(text = title, color = Color(0xDDFFFFFF), fontSize = 16.sp)
+            Text(text = title, color = Color(0xDDFFFFFF), fontSize = 15.sp)
         }
-        Text(text = size, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(text = size, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
