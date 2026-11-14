@@ -24,6 +24,8 @@ object AppleMotion {
     // ── Easing ────────────────────────────────────────────────────────────────
     /** Apple "standard easing" – swift accel, long smooth deceleration. */
     val EaseOut = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
+    /** Apple app launch zoom easing – swift initial expansion with smooth continuous deceleration into full screen. */
+    val LaunchZoomEasing = CubicBezierEasing(0.16f, 1.0f, 0.3f, 1.0f)
     /** Apple "ease in" – slow start, fast exit (for elements leaving screen). */
     val EaseIn  = CubicBezierEasing(0.0f, 0.0f, 0.6f, 1.0f)
     /** Apple decelerate – used for things entering the screen. */

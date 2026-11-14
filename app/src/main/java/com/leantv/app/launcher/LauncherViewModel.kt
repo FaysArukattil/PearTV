@@ -712,11 +712,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     Intent.FLAG_ACTIVITY_TASK_ON_HOME
                 )
                 intent.putExtra("leantv_launched", true)
-                val launchOptions = options?.toBundle() ?: android.app.ActivityOptions.makeCustomAnimation(
-                    ctx,
-                    android.R.anim.fade_in,
-                    android.R.anim.fade_out
-                ).toBundle()
+                // When we have tile bounds, the caller passes makeScaleUpAnimation options
+                // for a native zoom-in. Without bounds, use an instant cut (no animation)
+                // so the app's own splash screen appears immediately without a competing fade.
+                val launchOptions = options?.toBundle()
+                    ?: android.app.ActivityOptions.makeCustomAnimation(ctx, 0, 0).toBundle()
                 ctx.startActivity(intent, launchOptions)
                 killBackgroundApps(exceptPackage = app.packageName)
             } catch (e: Exception) {
