@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -314,19 +316,28 @@ fun Gauge(fraction: Float, centerText: String, caption: String, modifier: Modifi
 }
 
 /**
+ * Ambient to temporarily disarm modal traps (e.g. when an app-wide incoming transfer popup appears on top).
+ */
+val LocalDisableModalTraps = compositionLocalOf { false }
+
+/**
  * Put on the scrim of every popup. Focus is pulled into the popup when it opens and can never
  * leave it with the D-pad, so the remote can no longer drive the screen underneath.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun Modifier.modalTrap(): Modifier {
+fun Modifier.modalTrap(enabled: Boolean = true, autoFocus: Boolean = true): Modifier {
+    val disabledByParent = LocalDisableModalTraps.current
+    if (!enabled || disabledByParent) return this
     val fr = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        delay(60)
-        runCatching { fr.requestFocus() }
+    if (autoFocus) {
+        LaunchedEffect(enabled, disabledByParent) {
+            delay(60)
+            runCatching { fr.requestFocus() }
+        }
     }
     return this
-        .focusRequester(fr)
+        .then(if (autoFocus) Modifier.focusRequester(fr) else Modifier)
         .focusProperties { exit = { FocusRequester.Cancel } }
         .focusGroup()
 }

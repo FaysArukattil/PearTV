@@ -224,6 +224,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
                 } catch (_: Exception) {}
             }
+            if (com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
+                startNativeQuickShare(openDialog = false, silent = true)
+                _state.update { it.copy(isQuickShareActive = true) }
+            }
         }
     }
 

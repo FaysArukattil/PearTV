@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +60,8 @@ fun NativeQuickShareConsentDialog(
     onDismiss: () -> Unit,
     onOpenFolder: () -> Unit = {},
 ) {
-    BackHandler(enabled = true) {
+    val isIncoming = state.incomingTransfer != null
+    BackHandler(enabled = !isIncoming) {
         onDismiss()
     }
 
@@ -68,7 +70,8 @@ fun NativeQuickShareConsentDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.75f))
-            .modalTrap(),
+            .focusProperties { canFocus = !isIncoming }
+            .modalTrap(enabled = !isIncoming),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -222,13 +225,38 @@ fun NativeQuickShareConsentPopup(
         }
     }
 
+    val acceptFocus = remember { FocusRequester() }
+    val declineFocus = remember { FocusRequester() }
+    val terminalPrimaryFocus = remember { FocusRequester() }
+    val terminalSecondaryFocus = remember { FocusRequester() }
+
+    // Proactively request focus onto the actionable button with multiple staggered delays
+    LaunchedEffect(transfer.phase) {
+        for (delayMs in listOf(20L, 60L, 120L, 250L, 450L)) {
+            delay(delayMs)
+            when (transfer.phase) {
+                TransferPhase.WAITING_CONSENT -> {
+                    runCatching { acceptFocus.requestFocus() }
+                }
+                TransferPhase.COMPLETED -> {
+                    runCatching { terminalPrimaryFocus.requestFocus() }
+                }
+                TransferPhase.FAILED,
+                TransferPhase.REJECTED -> {
+                    runCatching { terminalSecondaryFocus.requestFocus() }
+                }
+                else -> {}
+            }
+        }
+    }
+
     // Full-screen scrim overlay with maximum z-index
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.82f))
             .clickable(enabled = false) {}
-            .modalTrap()
+            .modalTrap(enabled = true, autoFocus = false)
             .zIndex(9999f),
         contentAlignment = Alignment.Center,
     ) {
@@ -380,7 +408,12 @@ fun NativeQuickShareConsentPopup(
 
                 // ─── Buttons (only while awaiting consent) ───────────────────
                 if (transfer.phase == TransferPhase.WAITING_CONSENT) {
-                    ConsentButtons(onAccept = onAccept, onDecline = onDecline)
+                    ConsentButtons(
+                        acceptFocus = acceptFocus,
+                        declineFocus = declineFocus,
+                        onAccept = onAccept,
+                        onDecline = onDecline
+                    )
                 }
 
                 // ─── Dismiss / Open in Files (after terminal state) ─────────
@@ -390,11 +423,6 @@ fun NativeQuickShareConsentPopup(
                         TransferPhase.REJECTED,
                     )
                 ) {
-                    val terminalFocus = remember { FocusRequester() }
-                    LaunchedEffect(Unit) {
-                        delay(60)
-                        runCatching { terminalFocus.requestFocus() }
-                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -402,7 +430,10 @@ fun NativeQuickShareConsentPopup(
                         if (transfer.phase == TransferPhase.COMPLETED) {
                             Focusable(
                                 onClick = onOpenFolder,
-                                modifier = Modifier.weight(1f).focusRequester(terminalFocus),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(terminalPrimaryFocus)
+                                    .focusProperties { right = terminalSecondaryFocus },
                                 shape = RoundedCornerShape(50),
                                 idle = Pal.Mint.copy(alpha = 0.2f),
                             ) {
@@ -417,7 +448,12 @@ fun NativeQuickShareConsentPopup(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .weight(1f)
-                                .then(if (transfer.phase != TransferPhase.COMPLETED) Modifier.focusRequester(terminalFocus) else Modifier),
+                                .focusRequester(terminalSecondaryFocus)
+                                .focusProperties {
+                                    if (transfer.phase == TransferPhase.COMPLETED) {
+                                        left = terminalPrimaryFocus
+                                    }
+                                },
                             shape = RoundedCornerShape(50),
                             idle = Pal.Surface,
                         ) {
@@ -460,13 +496,12 @@ private fun FileRow(file: TransferFileInfo) {
 }
 
 @Composable
-private fun ConsentButtons(onAccept: () -> Unit, onDecline: () -> Unit) {
-    val acceptFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        delay(60)
-        runCatching { acceptFocus.requestFocus() }
-    }
-
+private fun ConsentButtons(
+    acceptFocus: FocusRequester,
+    declineFocus: FocusRequester,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -474,7 +509,10 @@ private fun ConsentButtons(onAccept: () -> Unit, onDecline: () -> Unit) {
         // Decline
         Focusable(
             onClick = onDecline,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(declineFocus)
+                .focusProperties { right = acceptFocus },
             shape = RoundedCornerShape(50),
             idle = Pal.Surface,
         ) {
@@ -496,7 +534,8 @@ private fun ConsentButtons(onAccept: () -> Unit, onDecline: () -> Unit) {
             onClick = onAccept,
             modifier = Modifier
                 .weight(1f)
-                .focusRequester(acceptFocus),
+                .focusRequester(acceptFocus)
+                .focusProperties { left = declineFocus },
             shape = RoundedCornerShape(50),
             idle = Pal.Amber.copy(alpha = 0.18f),
         ) {

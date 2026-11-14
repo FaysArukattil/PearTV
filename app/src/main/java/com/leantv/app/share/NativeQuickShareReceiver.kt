@@ -62,6 +62,7 @@ class NativeQuickShareReceiver : Service() {
     private var tcpServer: TcpReceiverServer? = null
     private var advertiseHandle: dev.bluehouse.bada.discovery.AdvertiseHandle? = null
     private var bleAdvertiser: BleQuickShareAdvertiser? = null
+    private var airDropServer: AirDropServer? = null
     private var discovery: Discovery? = null
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
@@ -150,13 +151,21 @@ class NativeQuickShareReceiver : Service() {
         )
         tcpServer = server
 
+        val friendlyName = try {
+            android.provider.Settings.Global.getString(ctx.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+                ?: android.provider.Settings.Secure.getString(ctx.contentResolver, "bluetooth_name")
+                ?: android.os.Build.MODEL
+        } catch (_: Exception) {
+            android.os.Build.MODEL
+        }
+
         val endpointInfo = EndpointInfo(
             version = 1,
             hidden = false,
             deviceType = DeviceType.LAPTOP, // "Laptop" shows reliably in all pickers without NFC/touch requirement
             reserved = false,
             metadata = ByteArray(EndpointInfo.METADATA_LEN).also { SecureRandom().nextBytes(it) },
-            deviceName = android.os.Build.MODEL.take(EndpointInfo.MAX_NAME_LEN),
+            deviceName = friendlyName.take(EndpointInfo.MAX_NAME_LEN),
         )
 
         serviceScope.launch(Dispatchers.IO) {
@@ -177,6 +186,67 @@ class NativeQuickShareReceiver : Service() {
                     Log.i(TAG, "Quick Share mDNS advertising started on port $port")
                 } catch (e: Exception) {
                     Log.w(TAG, "mDNS advertise failed (non-fatal): ${e.message}")
+                }
+
+                // 3. Apple AirDrop compatibility service (BLE pulse + mDNS _airdrop._tcp + TLS 8770)
+                try {
+                    val airdrop = AirDropServer(
+                        context = ctx,
+                        scope = serviceScope,
+                        deviceName = friendlyName,
+                        onRequestConsent = { sender, files ->
+                            val consentDeferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                            _state.update {
+                                it.copy(
+                                    incomingTransfer = IncomingTransfer(
+                                        senderName = sender,
+                                        pin = "",
+                                        files = files,
+                                        phase = TransferPhase.WAITING_CONSENT,
+                                        onConsent = { approved ->
+                                            consentDeferred.complete(approved)
+                                        }
+                                    )
+                                )
+                            }
+                            consentDeferred.await()
+                        },
+                        onTransferProgress = { frac, bps ->
+                            _state.update { s ->
+                                s.copy(
+                                    incomingTransfer = s.incomingTransfer?.copy(
+                                        progressFraction = frac,
+                                        bytesPerSecond = bps
+                                    )
+                                )
+                            }
+                        },
+                        onTransferComplete = { files ->
+                            _state.update { s ->
+                                s.copy(
+                                    incomingTransfer = s.incomingTransfer?.copy(
+                                        phase = TransferPhase.COMPLETED,
+                                        progressFraction = 1f
+                                    )
+                                )
+                            }
+                            files.firstOrNull()?.let { f ->
+                                showFileReceivedNotification(
+                                    ReceivedFile(
+                                        name = f.name,
+                                        path = f.absolutePath,
+                                        sizeBytes = f.length(),
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                )
+                            }
+                        }
+                    )
+                    airDropServer = airdrop
+                    airdrop.start()
+                    Log.i(TAG, "AirDrop compatibility service started")
+                } catch (e: Exception) {
+                    Log.w(TAG, "AirDrop server start failed (non-fatal): ${e.message}")
                 }
 
                 _state.update { it.copy(isAdvertising = true) }
@@ -215,6 +285,9 @@ class NativeQuickShareReceiver : Service() {
 
         bleAdvertiser?.stop()
         bleAdvertiser = null
+
+        airDropServer?.stop()
+        airDropServer = null
 
         discovery = null
 
@@ -343,8 +416,12 @@ class NativeQuickShareReceiver : Service() {
     // ─── User consent (called from ViewModel) ────────────────────────────────
 
     fun submitConsent(accepted: Boolean) {
-        val conn = _state.value.incomingTransfer?.connection ?: return
-        conn.submitUserConsent(accepted)
+        val transfer = _state.value.incomingTransfer
+        if (transfer?.connection != null) {
+            transfer.connection.submitUserConsent(accepted)
+        } else {
+            transfer?.onConsent?.invoke(accepted)
+        }
         if (accepted) {
             _state.update { s ->
                 s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.RECEIVING))

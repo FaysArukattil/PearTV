@@ -47,6 +47,9 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.CompositionLocalProvider
+import com.leantv.app.ui.LocalDisableModalTraps
+import com.leantv.app.share.TransferPhase
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
@@ -183,7 +186,14 @@ fun HomeScreen(vm: LauncherViewModel) {
     // so Back is consumed there (the launcher never exits). One handler, so priority can't get mixed up.
     BackHandler(enabled = true) {
         when {
-            s.nativeQuickShareState.incomingTransfer != null -> vm.rejectNativeTransfer()
+            s.nativeQuickShareState.incomingTransfer != null -> {
+                val t = s.nativeQuickShareState.incomingTransfer
+                if (t?.phase == TransferPhase.WAITING_CONSENT) {
+                    vm.rejectNativeTransfer()
+                } else {
+                    vm.dismissIncomingTransfer()
+                }
+            }
             s.showScreensaver -> vm.closeScreensaver()
             s.showTvPlayer -> vm.closeTvPlayer()
             s.showScreensaverSettings -> vm.closeScreensaverSettings()
@@ -244,9 +254,17 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 
+    val isIncomingTransfer = s.nativeQuickShareState.incomingTransfer != null
+
     TvCanvas {
         Box(Modifier.fillMaxSize()) {
-            when {
+            CompositionLocalProvider(LocalDisableModalTraps provides isIncomingTransfer) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusProperties { canFocus = !isIncomingTransfer }
+                ) {
+                    when {
                 s.showScreensaver -> {
                     AppleTvScreensaver(
                         mode = s.screensaverMode,
@@ -695,6 +713,8 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 }
             }
+        }
+    }
 
             // ─── Universal Quick Share Incoming Consent Popup ───
             // Appears on top of EVERYTHING across the entire app (File Manager, Settings, Screensaver, etc.)
