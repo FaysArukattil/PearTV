@@ -1,6 +1,8 @@
 package com.leantv.app.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
+import android.provider.Settings
 import android.view.KeyEvent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,6 +11,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -306,6 +309,21 @@ private fun StorageOverviewView(
     onCleanCache: () -> Unit,
     onClose: () -> Unit
 ) {
+    val ctx = LocalContext.current
+    val cleanCacheFocus = remember { FocusRequester() }
+    val backHomeFocus = remember { FocusRequester() }
+    val appsCardFocus = remember { FocusRequester() }
+    val videosCardFocus = remember { FocusRequester() }
+    val photosCardFocus = remember { FocusRequester() }
+    val audioCardFocus = remember { FocusRequester() }
+    val apksCardFocus = remember { FocusRequester() }
+    val systemCardFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        runCatching { appsCardFocus.requestFocus() }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Header Row
         Row(
@@ -344,13 +362,46 @@ private fun StorageOverviewView(
                     text = "Clean All Cache",
                     onClick = onCleanCache,
                     primary = true,
-                    modifier = Modifier.focusRequester(autoFocus)
+                    modifier = Modifier
+                        .focusRequester(cleanCacheFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                when (ev.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        runCatching { appsCardFocus.requestFocus() }
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        runCatching { backHomeFocus.requestFocus() }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
                 )
 
                 TvButton(
                     text = "Back to Home",
                     onClick = onClose,
-                    primary = false
+                    primary = false,
+                    modifier = Modifier
+                        .focusRequester(backHomeFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                when (ev.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        runCatching { photosCardFocus.requestFocus() }
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        runCatching { cleanCacheFocus.requestFocus() }
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
                 )
             }
         }
@@ -450,7 +501,28 @@ private fun StorageOverviewView(
                 icon = Icons.Rounded.Apps,
                 accentColor = Color(0xFF3B82F6),
                 onClick = { onSelectCategory(StorageCategory.APPS) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(appsCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { cleanCacheFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    runCatching { videosCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    runCatching { audioCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
 
             StorageCategoryCard(
@@ -460,7 +532,32 @@ private fun StorageOverviewView(
                 icon = Icons.Rounded.Movie,
                 accentColor = Color(0xFF8B5CF6),
                 onClick = { onSelectCategory(StorageCategory.VIDEOS) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(videosCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { cleanCacheFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    runCatching { appsCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    runCatching { photosCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    runCatching { apksCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
 
             StorageCategoryCard(
@@ -470,7 +567,28 @@ private fun StorageOverviewView(
                 icon = Icons.Rounded.Image,
                 accentColor = Color(0xFFEC4899),
                 onClick = { onSelectCategory(StorageCategory.IMAGES) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(photosCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { backHomeFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    runCatching { videosCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    runCatching { systemCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
         }
 
@@ -487,7 +605,24 @@ private fun StorageOverviewView(
                 icon = Icons.Rounded.MusicNote,
                 accentColor = Color(0xFFF59E0B),
                 onClick = { onSelectCategory(StorageCategory.AUDIO) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(audioCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { appsCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    runCatching { apksCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
 
             StorageCategoryCard(
@@ -497,7 +632,28 @@ private fun StorageOverviewView(
                 icon = Icons.Rounded.Download,
                 accentColor = Color(0xFF06B6D4),
                 onClick = { onSelectCategory(StorageCategory.APKS) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(apksCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { videosCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    runCatching { audioCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    runCatching { systemCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
 
             StorageCategoryCard(
@@ -506,8 +662,33 @@ private fun StorageOverviewView(
                 count = "Android System & ROM",
                 icon = Icons.Rounded.Settings,
                 accentColor = Color(0xFF64748B),
-                onClick = {},
-                modifier = Modifier.weight(1f)
+                onClick = {
+                    try {
+                        ctx.startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (_: Exception) {
+                        try {
+                            ctx.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (_: Exception) {}
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(systemCardFocus)
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            when (ev.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    runCatching { photosCardFocus.requestFocus() }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    runCatching { apksCardFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             )
         }
     }
@@ -675,6 +856,18 @@ private fun FileCategoryView(
     onBack: () -> Unit,
     onRequestDelete: (StorageFileItem) -> Unit
 ) {
+    val firstFileFocus = remember { FocusRequester() }
+    val backBtnFocus = remember { FocusRequester() }
+
+    LaunchedEffect(files.size) {
+        delay(100)
+        if (files.isNotEmpty()) {
+            runCatching { firstFileFocus.requestFocus() }
+        } else {
+            runCatching { backBtnFocus.requestFocus() }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Category Header Row
         Row(
@@ -685,7 +878,17 @@ private fun FileCategoryView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Focusable(
                     onClick = onBack,
-                    modifier = Modifier.focusRequester(backFocus),
+                    modifier = Modifier
+                        .focusRequester(backBtnFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+                                files.isNotEmpty()
+                            ) {
+                                runCatching { firstFileFocus.requestFocus() }
+                                true
+                            } else false
+                        },
                     shape = RoundedCornerShape(14.dp),
                     idle = Color(0x22FFFFFF)
                 ) {
@@ -767,11 +970,21 @@ private fun FileCategoryView(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(files, key = { it.path }) { item ->
+                itemsIndexed(files, key = { _, it -> it.path }) { index, item ->
                     FileRowItem(
                         item = item,
                         category = category,
-                        onClick = { onRequestDelete(item) }
+                        onClick = { onRequestDelete(item) },
+                        modifier = (if (index == 0) Modifier.focusRequester(firstFileFocus) else Modifier)
+                            .onPreviewKeyEvent { ev ->
+                                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                    ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                                    index == 0
+                                ) {
+                                    runCatching { backBtnFocus.requestFocus() }
+                                    true
+                                } else false
+                            }
                     )
                 }
             }
@@ -786,10 +999,12 @@ private fun FileCategoryView(
 private fun FileRowItem(
     item: StorageFileItem,
     category: StorageCategory,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Focusable(
         onClick = onClick,
+        modifier = modifier,
         shape = RoundedCornerShape(14.dp),
         idle = Color(0x12FFFFFF),
         scaleOnFocus = 1.02f
@@ -965,18 +1180,40 @@ private fun DeleteFileModal(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                val deleteBtnFocus = remember { FocusRequester() }
+
                 TvButton(
                     text = "Cancel",
                     onClick = onDismiss,
                     primary = false,
-                    modifier = Modifier.weight(1f).focusRequester(autoFocus)
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(autoFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                            ) {
+                                runCatching { deleteBtnFocus.requestFocus() }
+                                true
+                            } else false
+                        }
                 )
 
                 TvButton(
                     text = "Delete Permanently",
                     onClick = onConfirm,
                     primary = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(deleteBtnFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                            ) {
+                                runCatching { autoFocus.requestFocus() }
+                                true
+                            } else false
+                        }
                 )
             }
         }
@@ -1000,7 +1237,21 @@ private fun AppsManagementView(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val actionFocusRequester = remember { FocusRequester() }
+    val firstAppFocus = remember { FocusRequester() }
+    val backBtnFocus = remember { FocusRequester() }
+    val clearCacheFocus = remember { FocusRequester() }
+    val clearDataFocus = remember { FocusRequester() }
+    val uninstallFocus = remember { FocusRequester() }
+    val appInfoFocus = remember { FocusRequester() }
+
+    LaunchedEffect(overview.appDetails.size) {
+        delay(100)
+        if (overview.appDetails.isNotEmpty()) {
+            runCatching { firstAppFocus.requestFocus() }
+        } else {
+            runCatching { backBtnFocus.requestFocus() }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Apps Header Row
@@ -1012,7 +1263,17 @@ private fun AppsManagementView(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Focusable(
                     onClick = onBack,
-                    modifier = Modifier.focusRequester(backFocus),
+                    modifier = Modifier
+                        .focusRequester(backBtnFocus)
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+                                overview.appDetails.isNotEmpty()
+                            ) {
+                                runCatching { firstAppFocus.requestFocus() }
+                                true
+                            } else false
+                        },
                     shape = RoundedCornerShape(14.dp),
                     idle = Color(0x22FFFFFF)
                 ) {
@@ -1062,27 +1323,37 @@ private fun AppsManagementView(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(overview.appDetails, key = { it.packageName }) { app ->
+                itemsIndexed(overview.appDetails, key = { _, it -> it.packageName }) { index, app ->
                     val isSelected = selectedApp?.packageName == app.packageName
                     val icon = appIcons[app.packageName]
 
                     Focusable(
                         onClick = {
                             onSelectApp(app)
-                            actionFocusRequester.requestFocus()
+                            runCatching { clearCacheFocus.requestFocus() }
                         },
                         shape = RoundedCornerShape(14.dp),
                         idle = if (isSelected) Color(0x2EFFFFFF) else Color(0x0EFFFFFF),
                         scaleOnFocus = 1.02f,
-                        modifier = Modifier.onPreviewKeyEvent { ev ->
-                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
-                            ) {
-                                onSelectApp(app)
-                                actionFocusRequester.requestFocus()
-                                true
-                            } else false
-                        }
+                        modifier = (if (index == 0) Modifier.focusRequester(firstAppFocus) else Modifier)
+                            .onPreviewKeyEvent { ev ->
+                                if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                    when (ev.nativeKeyEvent.keyCode) {
+                                        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                                            onSelectApp(app)
+                                            runCatching { clearCacheFocus.requestFocus() }
+                                            true
+                                        }
+                                        KeyEvent.KEYCODE_DPAD_UP -> {
+                                            if (index == 0) {
+                                                runCatching { backBtnFocus.requestFocus() }
+                                                true
+                                            } else false
+                                        }
+                                        else -> false
+                                    }
+                                } else false
+                            }
                     ) { isFocused ->
                         if (isFocused && selectedApp?.packageName != app.packageName) {
                             onSelectApp(app)
@@ -1236,7 +1507,28 @@ private fun AppsManagementView(
                                     }
                                 },
                                 primary = true,
-                                modifier = Modifier.fillMaxWidth().focusRequester(actionFocusRequester)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(clearCacheFocus)
+                                    .onPreviewKeyEvent { ev ->
+                                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                            when (ev.nativeKeyEvent.keyCode) {
+                                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK -> {
+                                                    runCatching { firstAppFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                    runCatching { clearDataFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                    runCatching { backBtnFocus.requestFocus() }
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                             )
 
                             TvButton(
@@ -1248,7 +1540,28 @@ private fun AppsManagementView(
                                     }
                                 },
                                 primary = false,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(clearDataFocus)
+                                    .onPreviewKeyEvent { ev ->
+                                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                            when (ev.nativeKeyEvent.keyCode) {
+                                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK -> {
+                                                    runCatching { firstAppFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                    runCatching { clearCacheFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                    runCatching { uninstallFocus.requestFocus() }
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                             )
 
                             TvButton(
@@ -1256,12 +1569,12 @@ private fun AppsManagementView(
                                 onClick = {
                                     scope.launch {
                                         val res = SystemDebloater.uninstallOrDisable(
-                                            ctx = ctx,
-                                            pkg = selectedApp.packageName,
-                                            label = selectedApp.appLabel,
-                                            isSystemApp = selectedApp.isSystemApp,
-                                            adbClient = adbClient,
-                                            journal = journal
+                                             ctx = ctx,
+                                             pkg = selectedApp.packageName,
+                                             label = selectedApp.appLabel,
+                                             isSystemApp = selectedApp.isSystemApp,
+                                             adbClient = adbClient,
+                                             journal = journal
                                         )
                                         when (res) {
                                             is DebloatResult.Success -> onAppModified(res.message)
@@ -1271,14 +1584,52 @@ private fun AppsManagementView(
                                     }
                                 },
                                 primary = false,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(uninstallFocus)
+                                    .onPreviewKeyEvent { ev ->
+                                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                            when (ev.nativeKeyEvent.keyCode) {
+                                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK -> {
+                                                    runCatching { firstAppFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                    runCatching { clearDataFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                    runCatching { appInfoFocus.requestFocus() }
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                             )
 
                             TvButton(
                                 text = "App Info in TV Settings",
                                 onClick = { StorageHelper.openAppDetails(ctx, selectedApp.packageName) },
                                 primary = false,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(appInfoFocus)
+                                    .onPreviewKeyEvent { ev ->
+                                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                                            when (ev.nativeKeyEvent.keyCode) {
+                                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_BACK -> {
+                                                    runCatching { firstAppFocus.requestFocus() }
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                                    runCatching { uninstallFocus.requestFocus() }
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                             )
                         }
                     }

@@ -168,6 +168,14 @@ fun AppleTvScreensaver(
         runCatching { focusRequester.requestFocus() }
     }
 
+    var isContentReady by remember { mutableStateOf(false) }
+
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (isContentReady) 1f else 0f,
+        animationSpec = tween(1400, easing = LinearEasing),
+        label = "screensaverContentAlpha"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -185,18 +193,20 @@ fun AppleTvScreensaver(
     ) {
         when (mode) {
             ScreensaverSource.AERIAL -> {
-                AppleAerialVideoPlayer()
+                AppleAerialVideoPlayer(onReady = { isContentReady = true })
             }
             ScreensaverSource.SLIDESHOW -> {
                 CustomPhotoSlideshow(
                     folderPath = customPath,
-                    onEmpty = { AppleAerialVideoPlayer() }
+                    onReady = { isContentReady = true },
+                    onEmpty = { AppleAerialVideoPlayer(onReady = { isContentReady = true }) }
                 )
             }
             ScreensaverSource.SINGLE_IMAGE -> {
                 SingleImageBackdrop(
                     filePath = customPath,
-                    onEmpty = { AppleAerialVideoPlayer() }
+                    onReady = { isContentReady = true },
+                    onEmpty = { AppleAerialVideoPlayer(onReady = { isContentReady = true }) }
                 )
             }
         }
@@ -206,6 +216,7 @@ fun AppleTvScreensaver(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 64.dp, bottom = 48.dp)
+                .graphicsLayer { alpha = contentAlpha }
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
@@ -215,16 +226,27 @@ fun AppleTvScreensaver(
                         lineHeight = 100.sp,
                         fontWeight = FontWeight.Light,
                         letterSpacing = (-2).sp,
-                        color = Color.White.copy(alpha = 0.95f)
+                        color = Color.White.copy(alpha = 0.95f),
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.75f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 14f
+                        )
                     )
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = currentDate,
                     style = Ty.Small.copy(
                         color = Color.White.copy(alpha = 0.80f),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Normal,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.70f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 8f
+                        )
                     )
                 )
             }
@@ -241,6 +263,7 @@ fun AppleTvScreensaver(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 28.dp)
+                .graphicsLayer { alpha = contentAlpha * 0.35f }
         )
     }
 }
@@ -342,7 +365,7 @@ private class TextureVideoPlayer(context: Context) {
  * - Animates the location text pill dynamically and smoothly.
  */
 @Composable
-private fun AppleAerialVideoPlayer() {
+private fun AppleAerialVideoPlayer(onReady: () -> Unit) {
     val ctx = LocalContext.current
 
     val player0 = remember { TextureVideoPlayer(ctx) }
@@ -364,12 +387,12 @@ private fun AppleAerialVideoPlayer() {
     // Crossfade alpha states
     val alpha0 by animateFloatAsState(
         targetValue = if (activeSlot == 0 && isFirstVideoReady) 1f else 0f,
-        animationSpec = tween(1200, easing = LinearEasing),
+        animationSpec = tween(1500, easing = LinearEasing),
         label = "alphaPlayer0"
     )
     val alpha1 by animateFloatAsState(
         targetValue = if (activeSlot == 1) 1f else 0f,
-        animationSpec = tween(1200, easing = LinearEasing),
+        animationSpec = tween(1500, easing = LinearEasing),
         label = "alphaPlayer1"
     )
 
@@ -380,6 +403,7 @@ private fun AppleAerialVideoPlayer() {
         player0.prepare(initialPreset.url) {
             player0.start()
             isFirstVideoReady = true
+            onReady()
         }
 
         while (true) {
@@ -412,10 +436,11 @@ private fun AppleAerialVideoPlayer() {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        // ─── Instant Cinematic Backdrop (Prevents any black screen at 0ms) ───
-        CinematicBackdrop(location = currentPreset.location)
-
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
         // ─── Player Slot 0 (TextureView with alpha blending) ───
         AndroidView(
             factory = { player0.textureView },
@@ -432,11 +457,12 @@ private fun AppleAerialVideoPlayer() {
                 .graphicsLayer { alpha = alpha1 }
         )
 
-        // ─── Apple TV Bottom-Left Location Pill (Dynamically Animated) ───
+        // ─── Apple TV Bottom-Left Location (Symmetric to Clock, No Background) ───
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 64.dp, bottom = 48.dp)
+                .graphicsLayer { alpha = alpha0.coerceAtLeast(alpha1) }
         ) {
             AnimatedContent(
                 targetState = currentPreset,
@@ -448,83 +474,43 @@ private fun AppleAerialVideoPlayer() {
                                 slideOutVertically(animationSpec = tween(450)) { -it / 3 }
                         )
                 },
-                label = "locationPillTransition"
+                label = "locationTransition"
             ) { preset ->
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
-                        .padding(horizontal = 26.dp, vertical = 14.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = preset.location,
-                            style = Ty.Body.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 24.sp,
-                                letterSpacing = (-0.5).sp
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text(
+                        text = preset.location,
+                        style = Ty.Display.copy(
+                            fontSize = 52.sp,
+                            lineHeight = 56.sp,
+                            fontWeight = FontWeight.Light,
+                            letterSpacing = (-1).sp,
+                            color = Color.White.copy(alpha = 0.95f),
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.75f),
+                                offset = Offset(0f, 2f),
+                                blurRadius = 14f
                             )
                         )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            text = preset.subtext,
-                            style = Ty.Small.copy(
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = preset.subtext,
+                        style = Ty.Small.copy(
+                            color = Color.White.copy(alpha = 0.80f),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Normal,
+                            letterSpacing = 1.sp,
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.70f),
+                                offset = Offset(0f, 2f),
+                                blurRadius = 8f
                             )
                         )
-                    }
+                    )
                 }
             }
         }
     }
-}
-
-/**
- * Instant ambient atmospheric backdrop matching the aerial scene mood with subtle Ken-Burns motion.
- * Eliminates black screen during initial network buffering.
- */
-@Composable
-private fun CinematicBackdrop(location: String) {
-    var isZoomed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        isZoomed = true
-    }
-    val scale by animateFloatAsState(
-        targetValue = if (isZoomed) 1.08f else 1.0f,
-        animationSpec = tween(12000, easing = LinearEasing),
-        label = "backdropScale"
-    )
-
-    val gradientColors = remember(location) {
-        when {
-            location.contains("Dubai") || location.contains("Liwa") ->
-                listOf(Color(0xFF2E1C0C), Color(0xFF140D06), Color(0xFF080503))
-            location.contains("Greenland") ->
-                listOf(Color(0xFF0E2536), Color(0xFF08141D), Color(0xFF040A0F))
-            location.contains("Hong Kong") || location.contains("Angeles") ->
-                listOf(Color(0xFF1F1438), Color(0xFF10091E), Color(0xFF06030B))
-            location.contains("Hawaii") ->
-                listOf(Color(0xFF0C2B22), Color(0xFF061511), Color(0xFF020907))
-            location.contains("London") || location.contains("York") ->
-                listOf(Color(0xFF1E242C), Color(0xFF101317), Color(0xFF07080A))
-            else ->
-                listOf(Color(0xFF1A1A24), Color(0xFF0D0D12), Color(0xFF050508))
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .background(Brush.radialGradient(gradientColors))
-    )
 }
 
 /**
@@ -533,6 +519,7 @@ private fun CinematicBackdrop(location: String) {
 @Composable
 private fun CustomPhotoSlideshow(
     folderPath: String?,
+    onReady: () -> Unit = {},
     onEmpty: @Composable () -> Unit
 ) {
     val imageFiles = remember(folderPath) {
@@ -565,6 +552,7 @@ private fun CustomPhotoSlideshow(
             }.getOrNull()
         }
         currentBitmap = bmp
+        if (bmp != null) onReady()
         delay(10000L) // 10s per slide
         currentIndex = (currentIndex + 1) % imageFiles.size
     }
@@ -583,6 +571,7 @@ private fun CustomPhotoSlideshow(
 @Composable
 private fun SingleImageBackdrop(
     filePath: String?,
+    onReady: () -> Unit = {},
     onEmpty: @Composable () -> Unit
 ) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -593,6 +582,7 @@ private fun SingleImageBackdrop(
                 runCatching { BitmapFactory.decodeFile(filePath) }.getOrNull()
             }
             bitmap = bmp
+            if (bmp != null) onReady()
         }
     }
 
