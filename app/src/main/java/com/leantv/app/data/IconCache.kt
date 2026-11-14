@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 data class AppVisuals(
@@ -22,8 +24,14 @@ data class AppVisuals(
 )
 
 object IconCache {
-    // Cache up to 150 visuals in memory
-    private val visualsCache = LruCache<String, AppVisuals>(150)
+    // Bounded by memory (32 MB of pixels), not by count: low-RAM TVs can't afford hundreds of bitmaps.
+    private val visualsCache = object : LruCache<String, AppVisuals>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: AppVisuals): Int =
+            value.bitmap.width * value.bitmap.height * 4
+    }
+
+    // At most 4 artwork decodes at once so fast scrolling can't starve the UI thread of CPU.
+    private val decodeGate = Semaphore(4)
 
     fun get(packageName: String): AppVisuals? = visualsCache.get(packageName)
 
@@ -35,6 +43,12 @@ object IconCache {
     }
 
     suspend fun loadVisuals(context: Context, packageName: String): AppVisuals? {
+        val cached = visualsCache.get(packageName)
+        if (cached != null) return cached
+        return decodeGate.withPermit { decodeVisuals(context, packageName) }
+    }
+
+    private suspend fun decodeVisuals(context: Context, packageName: String): AppVisuals? {
         val cached = visualsCache.get(packageName)
         if (cached != null) return cached
 
@@ -87,7 +101,7 @@ object IconCache {
                 // Fallback to high-res application icon with tinted plate
                 val appDrawable = pm.getApplicationIcon(packageName)
                 val (topCol, botCol) = extractPlateColors(appDrawable)
-                val iconBmp = drawableToImageBitmap(appDrawable, 256, 256)
+                val iconBmp = drawableToImageBitmap(appDrawable, 192, 192)
 
                 if (iconBmp != null) {
                     val visuals = AppVisuals(

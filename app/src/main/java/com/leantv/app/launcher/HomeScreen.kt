@@ -36,7 +36,15 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Info
 import com.leantv.app.ui.glassCard
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.animation.SizeTransform
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.absoluteOffset
@@ -261,29 +269,41 @@ fun HomeScreen(vm: LauncherViewModel) {
         wasModalOpen = modalOpen
     }
 
-    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Written on every key press but never READ during composition, so D-pad input does not recompose Home.
+    val lastInteractionMs = remember { mutableLongStateOf(System.currentTimeMillis()) }
     val idleMinutes = s.screensaverIdleMinutes
-    LaunchedEffect(lastInteractionTime, idleMinutes, modalOpen) {
-        if (idleMinutes > 0) {
-            delay(idleMinutes * 60 * 1000L)
-            if (!modalOpen && !s.showScreensaver && !s.showStorageManager && !s.showFileManager && !s.showCleanTvScreen) {
-                vm.openScreensaver()
+    LaunchedEffect(idleMinutes, modalOpen) {
+        while (idleMinutes > 0) {
+            val idleFor = System.currentTimeMillis() - lastInteractionMs.longValue
+            val remaining = idleMinutes * 60 * 1000L - idleFor
+            if (remaining > 0L) {
+                delay(remaining)
+            } else {
+                val cur = vm.state.value
+                if (!modalOpen && !cur.showScreensaver && !cur.showStorageManager && !cur.showFileManager && !cur.showCleanTvScreen) {
+                    vm.openScreensaver()
+                }
+                lastInteractionMs.longValue = System.currentTimeMillis()
             }
         }
     }
 
     TvCanvas {
-        var focusedApp by remember { mutableStateOf<InstalledAppInfo?>(null) }
-        var focusedGridRow by remember { mutableIntStateOf(-1) }
+        // Focus state lives in holders that are only read inside small child scopes (hero title, backdrop,
+        // scroll effect). Moving focus therefore never recomposes the whole grid.
+        val focusedAppState = remember { mutableStateOf<InstalledAppInfo?>(null) }
+        val focusedGridRowState = remember { mutableIntStateOf(-1) }
         val listState = rememberLazyListState()
 
         CleanTvBackdrop(
             themeId = s.wallpaperTheme,
-            focusedApp = focusedApp ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull()
+            focusedAppProvider = { focusedAppState.value ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull() }
         ) {
             // Layout follows the reference launcher (tvOS style), scaled x1.33 for the 1280dp canvas:
             // header, hero name, pinned glass dock, then a scrolling grid of banner tiles.
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize()) {
+                // Window width in the scaled TV-canvas dp (replaces BoxWithConstraints: no sub-composition in layout).
+                val maxWidth = (LocalContext.current.resources.displayMetrics.widthPixels / LocalDensity.current.density).dp
                 val cols = 4
                 val sideMargin = 72.dp
                 val bandPad = 19.dp
@@ -295,14 +315,13 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val dock = s.dockApps.ifEmpty { s.allApps.take(cols) }.take(cols)
                 val gridApps = s.allApps // Show all installed applications on the home screen
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
-                val heroName = (focusedApp ?: dock.firstOrNull() ?: s.allApps.firstOrNull())?.appName ?: ""
+                val hasDock = dock.isNotEmpty()
 
-                LaunchedEffect(focusedGridRow) {
-                    if (focusedGridRow >= 0) {
-                        val targetIndex = if (dock.isNotEmpty()) focusedGridRow + 2 else focusedGridRow
-                        listState.animateScrollToItem(targetIndex, 0)
-                    } else {
-                        listState.animateScrollToItem(0, 0)
+                // Time-based, interruptible scroll: holding the D-pad glides instead of restarting a spring per row.
+                LaunchedEffect(hasDock) {
+                    snapshotFlow { focusedGridRowState.intValue }.collectLatest { row ->
+                        val target = if (row >= 0) (if (hasDock) row + 2 else row) else 0
+                        smoothScrollToItem(listState, target)
                     }
                 }
 
@@ -320,7 +339,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                         .focusRestorer()
                         .onPreviewKeyEvent { ev ->
                             if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                                lastInteractionTime = System.currentTimeMillis()
+                                lastInteractionMs.longValue = System.currentTimeMillis()
                             }
                             false
                         }
@@ -346,17 +365,11 @@ fun HomeScreen(vm: LauncherViewModel) {
 
                     Spacer(Modifier.height(14.dp))
 
-                    if (s.isLoading && heroName.isEmpty()) {
-                        HeroSkeleton(Modifier.padding(start = 6.dp).height(72.dp))
-                    } else {
-                        Text(
-                            text = heroName,
-                            style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 6.dp).height(72.dp)
-                        )
-                    }
+                    HeroTitle(
+                        nameProvider = { (focusedAppState.value ?: dock.firstOrNull() ?: s.allApps.firstOrNull())?.appName ?: "" },
+                        isLoading = s.isLoading,
+                        modifier = Modifier.padding(start = 6.dp).height(72.dp)
+                    )
 
                     AnimatedContent(
                         targetState = s.isLoading,
@@ -425,8 +438,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                                     }
                                             },
                                             onFocus = {
-                                                focusedApp = it
-                                                focusedGridRow = -1
+                                                focusedAppState.value = it
+                                                focusedGridRowState.intValue = -1
                                             },
                                             onClick = { vm.launch(it) },
                                             onLongClick = { vm.showActionMenu(it) },
@@ -475,8 +488,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         } else null,
                                         badge = null,
                                         onFocus = {
-                                            focusedApp = it
-                                            focusedGridRow = rowIndex
+                                            focusedAppState.value = it
+                                            focusedGridRowState.intValue = rowIndex
                                         },
                                         onClick = { vm.launch(it) },
                                         onLongClick = { vm.showActionMenu(it) },
@@ -668,6 +681,43 @@ fun HomeScreen(vm: LauncherViewModel) {
                 }
             }
         }
+    }
+}
+
+/** Big app name above the grid. Reads the focused name itself, so only this small scope recomposes on focus moves. */
+@Composable
+private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: Modifier = Modifier) {
+    val name = nameProvider()
+    if (isLoading && name.isEmpty()) {
+        HeroSkeleton(modifier)
+    } else {
+        AnimatedContent(
+            targetState = name,
+            transitionSpec = {
+                (fadeIn(tween(170)) togetherWith fadeOut(tween(100))).using(SizeTransform(clip = false) { _, _ -> tween(0) })
+            },
+            modifier = modifier,
+            label = "heroName"
+        ) { n ->
+            Text(
+                text = n,
+                style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** Scrolls so [index] sits at the top, with a fixed-duration ease that can be interrupted at any moment. */
+private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
+    val info = state.layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+    if (item != null) {
+        val delta = (item.offset - info.beforeContentPadding).toFloat()
+        if (delta != 0f) state.animateScrollBy(delta, tween(260, easing = FastOutSlowInEasing))
+    } else {
+        state.animateScrollToItem(index, 0)
     }
 }
 
@@ -1069,7 +1119,7 @@ private fun CleanTvAppTile(
 
     val scale by animateFloatAsState(
         if (focused) focusScale else 1f,
-        spring(dampingRatio = 0.72f, stiffness = 320f),
+        spring(dampingRatio = 0.82f, stiffness = 380f),
         label = "tileScale"
     )
     val ringAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(180), label = "tileRing")
@@ -1085,14 +1135,32 @@ private fun CleanTvAppTile(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
-                    shadowElevation = if (focused) 26f else 0f
+                    shadowElevation = if (focused) 20f else 0f
                     this.shape = shape
                     clip = false
                     ambientShadowColor = Color(0x66000000)
                     spotShadowColor = Color(0x99000000)
                 }
                 .clip(shape)
-                .border(if (focused) 2.5.dp else 0.dp, Color.White.copy(alpha = ringAlpha * 0.9f), shape)
+                // Focus ring + soft highlight drawn in the draw phase: animating them never recomposes the tile.
+                .drawWithContent {
+                    drawContent()
+                    val a = ringAlpha
+                    if (a > 0.01f) {
+                        val sw = 2.5.dp.toPx()
+                        drawRect(
+                            Brush.verticalGradient(listOf(Color(0x28FFFFFF), Color(0x04FFFFFF), Color.Transparent)),
+                            alpha = a
+                        )
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = a * 0.9f),
+                            topLeft = Offset(sw / 2f, sw / 2f),
+                            size = Size(size.width - sw, size.height - sw),
+                            cornerRadius = CornerRadius(radius.toPx() - sw / 2f),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = sw)
+                        )
+                    }
+                }
                 .background(Color(0xFF1C1C1E))
                 .onFocusChanged {
                     if (it.isFocused && !focused) {
@@ -1237,15 +1305,6 @@ private fun CleanTvAppTile(
                 }
             }
 
-            // Apple TV style soft specular highlight + delicate rim border
-            if (focused) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(Brush.verticalGradient(listOf(Color(0x28FFFFFF), Color(0x04FFFFFF), Color.Transparent)))
-                        .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.5f))), shape)
-                )
-            }
         }
 
         if (showName) {
@@ -1276,11 +1335,12 @@ private fun CleanTvAppTile(
 @Composable
 private fun CleanTvBackdrop(
     themeId: String,
-    focusedApp: InstalledAppInfo?,
+    focusedAppProvider: () -> InstalledAppInfo?,
     content: @Composable () -> Unit
 ) {
     val theme = WALLPAPER_THEMES.find { it.id == themeId } ?: WALLPAPER_THEMES.first()
     val ctx = LocalContext.current
+    val focusedApp = focusedAppProvider()
     val fallbackHue = extractFallbackHue(focusedApp)
     val ambientColor by produceState(
         initialValue = focusedApp?.let { IconCache.get(it.packageName)?.glow } ?: fallbackHue,
@@ -1296,34 +1356,42 @@ private fun CleanTvBackdrop(
             }
         }
     }
-    val animatedAmbient by animateColorAsState(
+    val animatedAmbient = animateColorAsState(
         targetValue = ambientColor,
-        animationSpec = tween(220),
+        animationSpec = tween(320),
         label = "ambientGlow"
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawWithCache {
-                val themeBrush = Brush.verticalGradient(
-                    colors = theme.gradientColors,
-                    startY = 0f,
-                    endY = size.height
-                )
-                val ambientBrush = Brush.radialGradient(
-                    0f to animatedAmbient.copy(alpha = 0.36f),
-                    0.45f to animatedAmbient.copy(alpha = 0.15f),
-                    1f to Color.Transparent,
-                    center = Offset(size.width * 0.32f, size.height * 0.42f),
-                    radius = size.width * 0.62f
-                )
-                onDrawBehind {
-                    drawRect(brush = themeBrush)
-                    drawRect(brush = ambientBrush)
+    Box(Modifier.fillMaxSize()) {
+        // The wallpaper is its own layer: when the ambient glow fades, only this layer is redrawn,
+        // never the tiles on top of it.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { }
+                .drawWithCache {
+                    val themeBrush = Brush.verticalGradient(
+                        colors = theme.gradientColors,
+                        startY = 0f,
+                        endY = size.height
+                    )
+                    val center = Offset(size.width * 0.32f, size.height * 0.42f)
+                    val radius = size.width * 0.62f
+                    onDrawBehind {
+                        drawRect(brush = themeBrush)
+                        val c = animatedAmbient.value
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                0f to c.copy(alpha = 0.36f),
+                                0.45f to c.copy(alpha = 0.15f),
+                                1f to Color.Transparent,
+                                center = center,
+                                radius = radius
+                            )
+                        )
+                    }
                 }
-            }
-    ) {
+        )
         content()
     }
 }
