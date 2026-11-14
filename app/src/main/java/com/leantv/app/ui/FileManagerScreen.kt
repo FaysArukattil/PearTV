@@ -376,7 +376,7 @@ fun FileManagerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        CircularProgressIndicator(color = Color(0xFF0A84FF), strokeWidth = 3.dp)
+                        LeanTvSpinner(diameter = 48.dp)
                         Text("Reading storage...", color = Color(0x99FFFFFF), fontSize = 18.sp)
                     }
                 }

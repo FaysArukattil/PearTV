@@ -427,7 +427,7 @@ fun CleanTvScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Scanning TV applications and bloatware...", color = Color(0x99FFFFFF), fontSize = 20.sp)
+                    LeanTvLoading("Scanning TV applications and bloatware...")
                 }
             } else {
                 // Two-Column TV Layout

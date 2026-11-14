@@ -139,7 +139,9 @@ import com.leantv.app.data.InstalledAppInfo
 import com.leantv.app.inputs.TvPort
 import com.leantv.app.monitor.SystemMonitorPanel
 import com.leantv.app.share.QuickSharePanel
+import com.leantv.app.ui.AppGridSkeleton
 import com.leantv.app.ui.CleanTvWizardDialog
+import com.leantv.app.ui.HeroSkeleton
 import com.leantv.app.ui.FileManagerScreen
 import com.leantv.app.ui.Focusable
 import com.leantv.app.ui.modalTrap
@@ -344,13 +346,17 @@ fun HomeScreen(vm: LauncherViewModel) {
 
                     Spacer(Modifier.height(14.dp))
 
-                    Text(
-                        text = heroName,
-                        style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 6.dp).height(72.dp)
-                    )
+                    if (s.isLoading && heroName.isEmpty()) {
+                        HeroSkeleton(Modifier.padding(start = 6.dp).height(72.dp))
+                    } else {
+                        Text(
+                            text = heroName,
+                            style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 6.dp).height(72.dp)
+                        )
+                    }
 
                     AnimatedContent(
                         targetState = s.isLoading,
@@ -361,28 +367,11 @@ fun HomeScreen(vm: LauncherViewModel) {
                         label = "loadingToContent"
                     ) { loading ->
                         if (loading) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .background(Color(0x661A1C23))
-                                        .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(24.dp))
-                                        .padding(horizontal = 48.dp, vertical = 32.dp)
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(44.dp),
-                                        color = Color(0xFF64B5F6),
-                                        trackColor = Color(0x33FFFFFF),
-                                        strokeWidth = 3.5.dp
-                                    )
-                                    Text(
-                                        "Loading your apps...",
-                                        style = Ty.Body.copy(color = Color(0xF2FFFFFF), fontSize = 18.sp, fontWeight = FontWeight.Medium)
-                                    )
-                                }
-                            }
+                            // Same geometry as the real dock + grid, so nothing moves when content arrives.
+                            AppGridSkeleton(
+                                tileW = tileW, tileH = tileH, radius = radius,
+                                gap = gap, cols = cols, bandPad = bandPad
+                            )
                         } else {
                             LazyColumn(
                                 state = listState,
@@ -1062,9 +1051,17 @@ private fun CleanTvAppTile(
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     var visuals by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
+    var loadFinished by remember(app.packageName) { mutableStateOf(visuals != null) }
     LaunchedEffect(app.packageName) {
         if (visuals == null) visuals = IconCache.loadVisuals(context, app.packageName)
+        loadFinished = true
     }
+    // Artwork fades in when it arrives instead of popping (already-cached art starts fully visible).
+    val artAlpha by animateFloatAsState(
+        if (visuals != null || loadFinished) 1f else 0f,
+        tween(220),
+        label = "tileArt"
+    )
 
     var focused by remember { mutableStateOf(false) }
     var longPressJob by remember { mutableStateOf<Job?>(null) }
@@ -1149,7 +1146,7 @@ private fun CleanTvAppTile(
                     bitmap = v.bitmap,
                     contentDescription = app.appName,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = artAlpha }
                 )
             } else {
                 val plateTop = v?.topColor ?: extractFallbackHue(app)
@@ -1158,6 +1155,7 @@ private fun CleanTvAppTile(
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .graphicsLayer { alpha = artAlpha }
                         .background(
                             Brush.verticalGradient(
                                 listOf(

@@ -195,4 +195,12 @@ class Journal(ctx: Context) {
     var screensaverIdleMinutes: Int
         get() = sp.getInt("screensaver_idle_minutes", 3)
         set(v) = sp.edit().putInt("screensaver_idle_minutes", v).apply()
+
+    /**
+     * Last computed home-screen layout (app order, dock, recents) as JSON. Lets the launcher paint the real
+     * home screen on the very first frame of the next start, before any package scanning has finished.
+     */
+    var appSnapshot: String?
+        get() = sp.getString("app_snapshot", null)
+        set(v) = sp.edit().putString("app_snapshot", v).apply()
 }

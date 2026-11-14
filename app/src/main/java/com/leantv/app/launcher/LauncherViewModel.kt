@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,7 @@ import com.leantv.app.adb.ConnResult
 import com.leantv.app.data.Catalog
 import com.leantv.app.data.DebloatPresets
 import com.leantv.app.data.DeviceProbe
+import com.leantv.app.data.IconCache
 import com.leantv.app.data.InstalledAppInfo
 import com.leantv.app.data.InstalledAppsScanner
 import com.leantv.app.data.Journal
@@ -35,14 +37,20 @@ import com.leantv.app.monitor.SystemMonitor
 import com.leantv.app.storage.StorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -140,9 +148,22 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val journal = Journal(ctx)
     private val systemMonitor = SystemMonitor(ctx)
     val adb = AdbClient(ctx.filesDir)
-    val catalog = Catalog.load(ctx)
-    val scanner = Scanner(ctx, catalog)
-    val tweaks = TweakEngine(adb, journal)
+    // Only needed by the Clean TV screens: built on first use instead of blocking app start.
+    val catalog by lazy { Catalog.load(ctx) }
+    val scanner by lazy { Scanner(ctx, catalog) }
+    val tweaks by lazy { TweakEngine(adb, journal) }
+
+    /** True once the first real frame of Home can be shown (apps + their artwork ready). Read by the splash screen. */
+    @Volatile
+    var splashReady: Boolean = false
+        private set
+
+    private var loadJob: Job? = null
+    private var prefetching = false
+    private var resumedOnce = false
+
+    @Volatile private var usageCache: Map<String, SysUsage>? = null
+    @Volatile private var usageCacheAt = 0L
 
     private var monitorJob: Job? = null
     private var shareServer: com.leantv.app.share.QuickShareServer? = null
@@ -162,28 +183,41 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<LauncherState> = _state.asStateFlow()
 
     init {
-        detectDevice()
-        startTimeTicker()
-        loadApps()
-        startObservingTvInputs()
-        loadProfile()
-        checkDefaultLauncherPrompt()
-        checkFirstRunDebloat()
-        startNativeQuickShare(openDialog = false, silent = true)
-        val savedModeStr = journal.screensaverMode
-        val savedMode = com.leantv.app.ui.ScreensaverSource.entries.find { it.id == savedModeStr } ?: com.leantv.app.ui.ScreensaverSource.AERIAL
+        // 1) Everything needed for the first frame, nothing else.
+        val (greeting, time, date) = clockFields()
         _state.update {
             it.copy(
-                screensaverMode = savedMode,
+                greetingText = greeting, timeText = time, dateText = date,
+                screensaverMode = com.leantv.app.ui.ScreensaverSource.entries
+                    .find { m -> m.id == journal.screensaverMode } ?: com.leantv.app.ui.ScreensaverSource.AERIAL,
                 screensaverCustomPath = journal.screensaverCustomPath,
                 screensaverIdleMinutes = journal.screensaverIdleMinutes
             )
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                com.leantv.app.files.FileManagerHelper.autoGrantStoragePermission(ctx)
-                com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
-            } catch (_: Exception) {}
+        startTimeTicker()
+        val restored = applySnapshot()
+        loadApps(silent = restored)
+        if (restored) prefetchAndRelease((_state.value.dockApps + _state.value.allApps).distinct())
+
+        // 2) Everything else waits until Home is already on screen.
+        deferredStartup()
+    }
+
+    private fun deferredStartup() {
+        checkFirstRunDebloat()
+        viewModelScope.launch {
+            delay(500)
+            launch(Dispatchers.IO) { detectDevice() }
+            checkDefaultLauncherPrompt()
+            loadProfile()
+            startObservingTvInputs()
+            delay(1000)
+            startNativeQuickShare(openDialog = false, silent = true)
+            launch(Dispatchers.IO) {
+                try {
+                    com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -205,30 +239,36 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun clockFields(): Triple<String, String, String> {
+        val now = Date()
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val greeting = when (hour) {
+            in 4..11 -> "GOOD MORNING"
+            in 12..16 -> "GOOD AFTERNOON"
+            else -> "GOOD EVENING"
+        }
+        val pattern = if (journal.clockFormat24h) "HH:mm" else "h:mm a"
+        val timeStr = SimpleDateFormat(pattern, Locale.getDefault()).format(now).uppercase()
+        val dateStr = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH).format(now).uppercase()
+        return Triple(greeting, timeStr, dateStr)
+    }
+
     private fun startTimeTicker() {
-        viewModelScope.launch {
+        // Off the main thread: the network lookup is a binder call and must never delay a frame.
+        viewModelScope.launch(Dispatchers.Default) {
+            var tick = 0
+            var net: Pair<String, Boolean> = Pair("Wi-Fi", true)
             while (isActive) {
-                val now = Date()
-                val cal = Calendar.getInstance()
-                val hour = cal.get(Calendar.HOUR_OF_DAY)
-                val greeting = when (hour) {
-                    in 4..11 -> "GOOD MORNING"
-                    in 12..16 -> "GOOD AFTERNOON"
-                    else -> "GOOD EVENING"
-                }
-
-                val pattern = if (journal.clockFormat24h) "HH:mm" else "h:mm a"
-                val timeStr = SimpleDateFormat(pattern, Locale.getDefault()).format(now).uppercase()
-                val dateStr = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH).format(now).uppercase()
-                val (netLabel, netConnected) = getNetworkStatus()
-
+                val (greeting, timeStr, dateStr) = clockFields()
+                if (tick % 5 == 0) net = getNetworkStatus()
+                tick++
                 _state.update {
                     it.copy(
                         greetingText = greeting,
                         timeText = timeStr,
                         dateText = dateStr,
-                        networkLabel = netLabel,
-                        networkIsConnected = netConnected
+                        networkLabel = net.first,
+                        networkIsConnected = net.second
                     )
                 }
                 delay(1000)
@@ -278,8 +318,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onResume() {
-        loadApps(silent = true)
-        loadProfile()
+        // The very first resume happens right after init, which already loaded everything.
+        if (resumedOnce) {
+            loadApps(silent = true)
+            loadProfile()
+        }
+        resumedOnce = true
         killBackgroundApps()
         if (_state.value.showMonitorPanel) {
             startMonitorPolling()
@@ -315,6 +359,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         } catch (_: Throwable) {
             emptyMap()
         }
+    }
+
+    private fun getSystemUsageMapCached(): Map<String, SysUsage> {
+        val now = SystemClock.elapsedRealtime()
+        val cached = usageCache
+        if (cached != null && now - usageCacheAt < 20_000L) return cached
+        val fresh = getSystemUsageMap()
+        usageCache = fresh
+        usageCacheAt = now
+        return fresh
     }
 
     private fun computeUsageScore(pkg: String, sys: SysUsage?): Long {
@@ -357,109 +411,228 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         setAppSortMode(next)
     }
 
+    private class AppLists(
+        val favorites: List<InstalledAppInfo>,
+        val dock: List<InstalledAppInfo>,
+        val frequent: List<InstalledAppInfo>,
+        val recent: List<InstalledAppInfo>,
+        val all: List<InstalledAppInfo>,
+    )
+
+    private fun currentSortMode(): AppSortMode = try {
+        AppSortMode.valueOf(journal.appSortMode)
+    } catch (_: Exception) {
+        AppSortMode.RECENCY
+    }
+
+    private fun sortLaunchable(
+        apps: List<InstalledAppInfo>,
+        mode: AppSortMode,
+        sysUsage: Map<String, SysUsage>?,
+    ): List<InstalledAppInfo> = when (mode) {
+        AppSortMode.RECENCY -> {
+            // Compute each sort key once instead of inside the comparator.
+            val keys = HashMap<String, Long>(apps.size * 2)
+            for (a in apps) {
+                keys[a.packageName] = maxOf(
+                    journal.getLastLaunchTime(a.packageName),
+                    sysUsage?.get(a.packageName)?.lastTimeUsed ?: 0L,
+                    if (journal.getLaunchCount(a.packageName) > 0) 1000L else 0L
+                )
+            }
+            apps.sortedWith(
+                compareByDescending<InstalledAppInfo> { keys[it.packageName] ?: 0L }
+                    .thenBy { it.appName.lowercase(Locale.ROOT) }
+            )
+        }
+        AppSortMode.ALPHABETICAL -> apps.sortedBy { it.appName.lowercase(Locale.ROOT) }
+    }
+
+    /** Heavy part of loading: pure computation, runs on a background dispatcher. */
+    private fun computeLists(launchable: List<InstalledAppInfo>, mode: AppSortMode): AppLists {
+        val favPackages = journal.favorites()
+        val favorites = launchable.filter { it.packageName in favPackages }
+        val sysUsage = getSystemUsageMapCached()
+
+        val scores = HashMap<String, Long>(launchable.size * 2)
+        for (a in launchable) scores[a.packageName] = computeUsageScore(a.packageName, sysUsage[a.packageName])
+        val byScore = compareByDescending<InstalledAppInfo> { scores[it.packageName] ?: 0L }
+            .thenBy { it.appName.lowercase(Locale.ROOT) }
+
+        // Dock: first 4 favorites, otherwise top launchable ranked by usage
+        val dock = if (favorites.isNotEmpty()) favorites.take(4) else launchable.sortedWith(byScore).take(4)
+
+        // Frequently used: launch count > 0 or foreground time > 0
+        val frequent = launchable
+            .filter { journal.getLaunchCount(it.packageName) > 0 || (sysUsage[it.packageName]?.timeInForeground ?: 0L) > 0L }
+            .sortedWith(byScore)
+            .take(6)
+
+        // Recently used: last launch timestamp > 0
+        val recent = launchable
+            .filter { journal.getLastLaunchTime(it.packageName) > 0L || (sysUsage[it.packageName]?.lastTimeUsed ?: 0L) > 0L }
+            .sortedByDescending {
+                maxOf(journal.getLastLaunchTime(it.packageName), sysUsage[it.packageName]?.lastTimeUsed ?: 0L)
+            }
+            .take(6)
+
+        return AppLists(favorites, dock, frequent, recent, sortLaunchable(launchable, mode, sysUsage))
+    }
+
     fun loadApps(silent: Boolean = false) {
-        if (!silent) _state.update { it.copy(isLoading = true) }
-        viewModelScope.launch {
-            val allInstalled = withContext(Dispatchers.IO) {
-                InstalledAppsScanner.scan(ctx)
-            }
+        if (!silent && _state.value.allApps.isEmpty()) _state.update { it.copy(isLoading = true) }
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val installed = InstalledAppsScanner.scanLaunchable(ctx)
 
-            val hiddenSet = journal.hiddenApps()
-
-            // Keep launchable apps, excluding LeanTV itself and hidden apps
-            val launchable = allInstalled.filter {
-                it.launchIntentAvailable && it.packageName != ctx.packageName && it.packageName !in hiddenSet
-            }
-
-            val favPackages = journal.favorites()
-            val favorites = launchable.filter { it.packageName in favPackages }
-
-            val currentSortMode = try {
-                AppSortMode.valueOf(journal.appSortMode)
-            } catch (_: Exception) {
-                AppSortMode.RECENCY
-            }
-
-            val initialSortedAll = when (currentSortMode) {
-                AppSortMode.RECENCY -> launchable.sortedWith(
-                    compareByDescending<InstalledAppInfo> {
-                        if (journal.getLastLaunchTime(it.packageName) > 0L) journal.getLastLaunchTime(it.packageName)
-                        else if (journal.getLaunchCount(it.packageName) > 0) 1000L else 0L
-                    }.thenBy { it.appName.lowercase(Locale.ROOT) }
-                )
-                AppSortMode.ALPHABETICAL -> launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
-            }
-
-            val initialDock = if (favorites.isNotEmpty()) favorites.take(4) else initialSortedAll.take(4)
-
-            // Immediately emit apps so home screen loads with zero delay
-            _state.update {
-                it.copy(
-                    appSortMode = currentSortMode,
-                    featuredApps = favorites.take(5),
-                    favoriteApps = favorites,
-                    dockApps = initialDock,
-                    allApps = initialSortedAll,
-                    isLoading = false,
-                )
-            }
-
-            val sysUsage = withContext(Dispatchers.IO) { getSystemUsageMap() }
-
-            // Dock apps: first 4 favorites or top launchable ranked by usage
-            val dock = if (favorites.isNotEmpty()) {
-                favorites.take(4)
-            } else {
-                launchable
-                    .sortedWith(
-                        compareByDescending<InstalledAppInfo> { computeUsageScore(it.packageName, sysUsage[it.packageName]) }
-                            .thenBy { it.appName.lowercase(Locale.ROOT) }
-                    )
-                    .take(4)
-            }
-
-            // Frequently Used: ranked by launch count > 0 or usage score
-            val frequent = launchable
-                .filter { journal.getLaunchCount(it.packageName) > 0 || (sysUsage[it.packageName]?.timeInForeground ?: 0L) > 0L }
-                .sortedWith(
-                    compareByDescending<InstalledAppInfo> { computeUsageScore(it.packageName, sysUsage[it.packageName]) }
-                        .thenBy { it.appName.lowercase(Locale.ROOT) }
-                )
-                .take(6)
-
-            // Recently Used: ranked by last launch timestamp > 0
-            val recent = launchable
-                .filter { journal.getLastLaunchTime(it.packageName) > 0L || (sysUsage[it.packageName]?.lastTimeUsed ?: 0L) > 0L }
-                .sortedByDescending {
-                    maxOf(journal.getLastLaunchTime(it.packageName), sysUsage[it.packageName]?.lastTimeUsed ?: 0L)
+            val lists = withContext(Dispatchers.Default) {
+                val hiddenSet = journal.hiddenApps()
+                // Keep launchable apps, excluding LeanTV itself and hidden apps
+                val launchable = installed.filter {
+                    it.launchIntentAvailable && it.packageName != ctx.packageName && it.packageName !in hiddenSet
                 }
-                .take(6)
+                val mode = currentSortMode()
 
-            val sortedAll = when (currentSortMode) {
-                AppSortMode.RECENCY -> launchable.sortedWith(
-                    compareByDescending<InstalledAppInfo> {
-                        maxOf(
-                            journal.getLastLaunchTime(it.packageName),
-                            sysUsage[it.packageName]?.lastTimeUsed ?: 0L,
-                            if (journal.getLaunchCount(it.packageName) > 0) 1000L else 0L
+                if (_state.value.allApps.isEmpty()) {
+                    // Very first start (no saved snapshot yet): paint right away with a cheap ordering.
+                    val favPackages = journal.favorites()
+                    val quickFav = launchable.filter { it.packageName in favPackages }
+                    val quickAll = sortLaunchable(launchable, mode, null)
+                    val quickDock = if (quickFav.isNotEmpty()) quickFav.take(4) else quickAll.take(4)
+                    _state.update {
+                        it.copy(
+                            appSortMode = mode,
+                            featuredApps = quickFav.take(5),
+                            favoriteApps = quickFav,
+                            dockApps = quickDock,
+                            allApps = quickAll,
+                            isLoading = false,
                         )
-                    }.thenBy { it.appName.lowercase(Locale.ROOT) }
-                )
-                AppSortMode.ALPHABETICAL -> launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
+                    }
+                    withContext(Dispatchers.Main) { prefetchAndRelease((quickDock + quickAll).distinct()) }
+                }
+                computeLists(launchable, mode)
             }
 
             _state.update {
                 it.copy(
-                    appSortMode = currentSortMode,
-                    featuredApps = favorites.take(5),
-                    favoriteApps = favorites,
-                    dockApps = dock,
-                    frequentApps = frequent,
-                    recentApps = recent,
-                    allApps = sortedAll,
+                    appSortMode = currentSortMode(),
+                    featuredApps = lists.favorites.take(5),
+                    favoriteApps = lists.favorites,
+                    dockApps = lists.dock,
+                    frequentApps = lists.frequent,
+                    recentApps = lists.recent,
+                    allApps = lists.all,
                     isLoading = false,
                 )
             }
+            saveSnapshot()
+            if (!prefetching) splashReady = true
+        }
+    }
+
+    // ---------- Instant start: remember the last home layout ----------
+
+    private fun saveSnapshot() {
+        val s = _state.value
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val apps = JSONArray()
+                for (a in s.allApps) {
+                    apps.put(
+                        JSONObject()
+                            .put("p", a.packageName)
+                            .put("n", a.appName)
+                            .put("s", a.isSystemApp)
+                            .put("u", a.isUpdatedSystemApp)
+                    )
+                }
+                fun pkgs(list: List<InstalledAppInfo>): JSONArray {
+                    val arr = JSONArray()
+                    for (a in list) arr.put(a.packageName)
+                    return arr
+                }
+                val json = JSONObject()
+                    .put("apps", apps)
+                    .put("dock", pkgs(s.dockApps))
+                    .put("fav", pkgs(s.favoriteApps))
+                    .put("freq", pkgs(s.frequentApps))
+                    .put("recent", pkgs(s.recentApps))
+                journal.appSnapshot = json.toString()
+            } catch (_: Throwable) {}
+        }
+    }
+
+    /** Fills the state from the last saved layout. Returns true if Home can paint immediately. */
+    private fun applySnapshot(): Boolean {
+        val raw = journal.appSnapshot ?: return false
+        try {
+            val root = JSONObject(raw)
+            val arr = root.getJSONArray("apps")
+            val byPkg = LinkedHashMap<String, InstalledAppInfo>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val pkg = o.getString("p")
+                if (pkg == ctx.packageName) continue
+                byPkg[pkg] = InstalledAppInfo(
+                    packageName = pkg,
+                    appName = o.optString("n", pkg),
+                    versionName = "",
+                    versionCode = 0L,
+                    isSystemApp = o.optBoolean("s", false),
+                    isUpdatedSystemApp = o.optBoolean("u", false),
+                    installTimeMillis = 0L,
+                    lastUpdateTimeMillis = 0L,
+                    sizeBytes = 0L,
+                    launchIntentAvailable = true,
+                )
+            }
+            if (byPkg.isEmpty()) return false
+
+            fun pick(key: String): List<InstalledAppInfo> {
+                val ja = root.optJSONArray(key) ?: return emptyList()
+                val out = ArrayList<InstalledAppInfo>()
+                for (i in 0 until ja.length()) {
+                    val app = byPkg[ja.optString(i)]
+                    if (app != null) out.add(app)
+                }
+                return out
+            }
+
+            val fav = pick("fav")
+            _state.update {
+                it.copy(
+                    appSortMode = currentSortMode(),
+                    featuredApps = fav.take(5),
+                    favoriteApps = fav,
+                    dockApps = pick("dock"),
+                    frequentApps = pick("freq"),
+                    recentApps = pick("recent"),
+                    allApps = byPkg.values.toList(),
+                    isLoading = false,
+                )
+            }
+            return true
+        } catch (_: Throwable) {
+            return false
+        }
+    }
+
+    /**
+     * Loads the artwork for what is visible on the first screen (dock + first rows) in parallel, then releases the
+     * splash screen. Home therefore appears with its banners already in place instead of popping in tile by tile.
+     * Bounded by a timeout so a slow icon can never hold the splash.
+     */
+    private fun prefetchAndRelease(apps: List<InstalledAppInfo>) {
+        if (splashReady || prefetching) return
+        prefetching = true
+        viewModelScope.launch {
+            withTimeoutOrNull(800L) {
+                apps.take(12).map { app ->
+                    async(Dispatchers.IO) { IconCache.loadVisuals(ctx, app.packageName) }
+                }.awaitAll()
+            }
+            splashReady = true
         }
     }
 
@@ -611,7 +784,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun startObservingTvInputs() {
         viewModelScope.launch {
-            TvInputHelper.observeInputs(ctx).collect { ports ->
+            TvInputHelper.observeInputs(ctx).flowOn(Dispatchers.IO).collect { ports ->
                 _state.update { it.copy(tvPorts = ports) }
             }
         }
@@ -1301,9 +1474,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Default Launcher Flow ----------
 
-    private fun checkDefaultLauncherPrompt() {
+    private suspend fun checkDefaultLauncherPrompt() {
         if (!journal.defaultLauncherPromptDismissed) {
-            val isDefault = isCurrentLauncherDefault()
+            val isDefault = withContext(Dispatchers.IO) { isCurrentLauncherDefault() }
             if (!isDefault) {
                 _state.update { it.copy(showDefaultPrompt = true) }
             }

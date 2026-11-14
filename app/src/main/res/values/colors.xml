@@ -1,4 +1,7 @@
 <resources>
-    <color name="bg">#FF0D1F2A</color>
+    <!-- Window / splash background: matches the first colour of the default "Graphite" home wallpaper
+         so the splash -> home hand-off has no colour flash. -->
+    <color name="bg">#FF050507</color>
+    <color name="splash_bg">#FF050507</color>
     <color name="ic_bg">#FF0D1F2A</color>
 </resources>

@@ -198,7 +198,7 @@ fun StorageManagerScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "Analyzing TV storage...", color = Color(0x99FFFFFF), fontSize = 20.sp)
+                    LeanTvLoading("Analyzing TV storage...")
                 }
             } else {
                 // Two-Column TV Layout

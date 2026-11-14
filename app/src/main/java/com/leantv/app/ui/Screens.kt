@@ -54,12 +54,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun Spinner(modifier: Modifier = Modifier) {
-    CircularProgressIndicator(
-        modifier = modifier.size(40.dp),
-        color = Pal.Amber,
-        trackColor = Pal.Line,
-        strokeWidth = 4.dp,
-    )
+    LeanTvSpinner(modifier = modifier, diameter = 44.dp)
 }
 
 // ---------------------------------------------------------------- Welcome

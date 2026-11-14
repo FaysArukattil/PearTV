@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Splash logo. 288dp canvas; everything stays inside the centre 192dp circle that the system
+    splash screen shows, so nothing is ever cropped or squashed.
+    Animation: ring draws itself, then the play mark pops in.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="288dp"
+            android:height="288dp"
+            android:viewportWidth="288"
+            android:viewportHeight="288">
+
+            <path
+                android:name="ring"
+                android:pathData="M144,92 a52,52 0 1,1 0,104 a52,52 0 1,1 0,-104"
+                android:strokeColor="#FFB347"
+                android:strokeWidth="14"
+                android:strokeLineCap="round"
+                android:trimPathStart="0"
+                android:trimPathEnd="1" />
+
+            <group
+                android:name="play_group"
+                android:pivotX="144"
+                android:pivotY="144"
+                android:scaleX="1"
+                android:scaleY="1">
+                <path
+                    android:name="play"
+                    android:pathData="M132,123 L132,165 L168,144 Z"
+                    android:fillColor="#EAF3F2"
+                    android:fillAlpha="1" />
+            </group>
+        </vector>
+    </aapt:attr>
+
+    <target android:name="ring">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="550"
+                android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="trimPathEnd"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+
+    <target android:name="play_group">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot"
+                    android:propertyName="scaleX"
+                    android:startOffset="300"
+                    android:valueFrom="0.3"
+                    android:valueTo="1"
+                    android:valueType="floatType" />
+                <objectAnimator
+                    android:duration="300"
+                    android:interpolator="@android:interpolator/overshoot"
+                    android:propertyName="scaleY"
+                    android:startOffset="300"
+                    android:valueFrom="0.3"
+                    android:valueTo="1"
+                    android:valueType="floatType" />
+            </set>
+        </aapt:attr>
+    </target>
+
+    <target android:name="play">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="220"
+                android:propertyName="fillAlpha"
+                android:startOffset="300"
+                android:valueFrom="0"
+                android:valueTo="1"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

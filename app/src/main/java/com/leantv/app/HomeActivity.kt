@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.SystemClock
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -21,16 +23,44 @@ class HomeActivity : ComponentActivity() {
     private val vm: LauncherViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splash = installSplashScreen()
+
+        // Start loading preferences on a background thread right now; by the time the ViewModel needs
+        // them they are already in memory instead of blocking the main thread.
+        applicationContext.getSharedPreferences("leantv", MODE_PRIVATE)
+
         super.onCreate(savedInstanceState)
-        TvSound.init(applicationContext)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
-        window.setFormat(android.graphics.PixelFormat.RGBA_8888)
 
+        // Create the ViewModel now so app loading starts immediately, in parallel with window setup.
+        val viewModel = vm
+
+        // Keep the splash up until Home can draw its first REAL frame (apps + artwork ready),
+        // but never longer than SPLASH_MAX_MS so a slow device can't get stuck on it.
+        val startedAt = SystemClock.uptimeMillis()
+        splash.setKeepOnScreenCondition {
+            !viewModel.splashReady && SystemClock.uptimeMillis() - startedAt < SPLASH_MAX_MS
+        }
+        // Smooth hand-off: logo grows slightly while the splash fades into Home (no hard cut).
+        splash.setOnExitAnimationListener { provider ->
+            provider.iconView.animate()
+                .scaleX(1.15f).scaleY(1.15f).alpha(0f)
+                .setDuration(220L)
+                .setInterpolator(AccelerateInterpolator())
+                .start()
+            provider.view.animate()
+                .alpha(0f)
+                .setDuration(240L)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction { provider.remove() }
+                .start()
+        }
+
+        setContent { HomeScreen(viewModel) }
+
+        // Non-essential start-up work happens after Home is on its way to the screen.
+        lifecycleScope.launch(Dispatchers.Default) { TvSound.init(applicationContext) }
         checkInitialStoragePermissions()
-
-        setContent { HomeScreen(vm) }
     }
 
     private fun checkInitialStoragePermissions() {
@@ -60,6 +90,10 @@ class HomeActivity : ComponentActivity() {
             return true // Consume back key: Home is the root, never exit or pop to previous app!
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private companion object {
+        const val SPLASH_MAX_MS = 1500L
     }
 
     override fun onNewIntent(intent: Intent) {
