@@ -62,6 +62,17 @@ class HomeActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.Default) { TvSound.init(applicationContext) }
         checkInitialStoragePermissions()
         checkAccountPermission()
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.getStringExtra("screen") == "file_manager" || intent.action == "com.leantv.app.action.FILE_MANAGER") {
+            val initialPath = intent.getStringExtra("path")
+            val initialDir = if (initialPath != null) java.io.File(initialPath) else null
+            val highlight = intent.getStringExtra("highlight")
+            vm.openFileManager(initialDir = initialDir, highlightFile = highlight)
+        }
     }
 
     /** Lets Home see the TV's signed-in Google account (shown in the top-right chip). */
@@ -125,6 +136,7 @@ class HomeActivity : ComponentActivity() {
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             vm.goHome()
         }
+        handleIntent(intent)
     }
 
     override fun onResume() {

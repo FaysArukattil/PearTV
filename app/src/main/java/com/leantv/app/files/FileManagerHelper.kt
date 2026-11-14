@@ -2,10 +2,18 @@ package com.leantv.app.files
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.os.StatFs
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
 import android.webkit.MimeTypeMap
@@ -41,6 +49,11 @@ data class StorageDrive(
 data class ClipboardItem(
     val file: File,
     val isCut: Boolean // true for Move, false for Copy
+)
+
+data class MultiClipboard(
+    val files: List<File>,
+    val isCut: Boolean
 )
 
 object FileManagerHelper {
@@ -351,6 +364,7 @@ object FileManagerHelper {
                         val path = if (dataCol != -1) cursor.getString(dataCol) else null
                         if (path == null) continue
                         val file = File(path)
+                        if (!file.exists()) continue
                         val name = if (nameCol != -1) cursor.getString(nameCol) ?: file.name else file.name
                         val size = if (sizeCol != -1) cursor.getLong(sizeCol) else file.length()
                         val mod = if (dateCol != -1) cursor.getLong(dateCol) * 1000L else file.lastModified()
@@ -471,18 +485,74 @@ object FileManagerHelper {
         }
     }
 
-    suspend fun deleteFile(file: File): Boolean = withContext(Dispatchers.IO) {
+    private fun purgeFromMediaStore(ctx: Context, file: File) {
         try {
-            if (file.isDirectory) {
+            val uri = MediaStore.Files.getContentUri("external")
+            ctx.contentResolver.delete(
+                uri,
+                "${MediaStore.MediaColumns.DATA} = ?",
+                arrayOf(file.absolutePath)
+            )
+        } catch (_: Exception) {}
+        try {
+            MediaScannerConnection.scanFile(ctx, arrayOf(file.absolutePath), null, null)
+        } catch (_: Exception) {}
+    }
+
+    suspend fun deleteFile(ctx: Context? = null, file: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (!file.exists()) {
+                ctx?.let { purgeFromMediaStore(it, file) }
+                return@withContext true
+            }
+
+            // 1. Standard Java delete
+            val standardDeleted = if (file.isDirectory) {
                 file.deleteRecursively()
             } else {
                 file.delete()
             }
+            if (standardDeleted && !file.exists()) {
+                ctx?.let { purgeFromMediaStore(it, file) }
+                return@withContext true
+            }
+
+            // 2. MediaStore ContentResolver delete
+            if (ctx != null) {
+                try {
+                    val uri = MediaStore.Files.getContentUri("external")
+                    val rows = ctx.contentResolver.delete(
+                        uri,
+                        "${MediaStore.MediaColumns.DATA} = ?",
+                        arrayOf(file.absolutePath)
+                    )
+                    if (rows > 0 && !file.exists()) {
+                        return@withContext true
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "ContentResolver delete failed for ${file.name}", e)
+                }
+            }
+
+            // 3. Privileged command fallback (handles files owned by root, adb, or other UIDs)
+            try {
+                val escaped = file.absolutePath.replace("'", "'\\''")
+                SystemDebloater.runPrivilegedCommand("rm -rf '$escaped'")
+            } catch (e: Exception) {
+                Log.w(TAG, "Privileged rm -rf failed for ${file.name}", e)
+            }
+
+            // 4. Purge from MediaStore
+            ctx?.let { purgeFromMediaStore(it, file) }
+
+            !file.exists()
         } catch (e: Exception) {
-            Log.w(TAG, "Delete failed", e)
+            Log.w(TAG, "Delete failed for ${file.name}", e)
             false
         }
     }
+
+    suspend fun deleteFile(file: File): Boolean = deleteFile(null, file)
 
     suspend fun renameFile(file: File, newName: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -571,6 +641,8 @@ object FileManagerHelper {
     fun isAudio(ext: String) = ext in listOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "wma")
     fun isImage(ext: String) = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
     fun isDocument(ext: String) = ext in listOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "epub", "zip", "tar", "gz", "rar", "7z")
+    fun isText(ext: String) = ext in listOf("txt", "log", "json", "xml", "md", "sh", "py", "conf", "ini", "yaml", "yml", "html", "css", "js", "properties", "gradle", "kt", "java")
+    fun isPdf(ext: String) = ext == "pdf"
 
     fun getMimeType(ext: String): String {
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: when (ext) {
@@ -582,6 +654,177 @@ object FileManagerHelper {
             "zip" -> "application/zip"
             "rar" -> "application/x-rar-compressed"
             else -> "*/*"
+        }
+    }
+
+    /**
+     * Share one or more files using Android system chooser (Quick Share, Bluetooth, Drive, etc.).
+     */
+    fun shareFiles(ctx: Context, files: List<File>): Boolean {
+        if (files.isEmpty()) return false
+        return try {
+            val uris = ArrayList<Uri>()
+            for (f in files) {
+                uris.add(FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f))
+            }
+            val intent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    val mime = getMimeType(files[0].extension.lowercase(Locale.ROOT))
+                    type = mime
+                    putExtra(Intent.EXTRA_STREAM, uris[0])
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                }
+            }
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val chooser = Intent.createChooser(intent, "Share via Quick Share / Bluetooth").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(chooser)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to share files", e)
+            false
+        }
+    }
+
+    /**
+     * Directly trigger Bluetooth sharing for selected files.
+     */
+    fun shareViaBluetooth(ctx: Context, files: List<File>): Boolean {
+        if (files.isEmpty()) return false
+        return try {
+            val uris = ArrayList<Uri>()
+            for (f in files) {
+                uris.add(FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", f))
+            }
+            val intent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    val mime = getMimeType(files[0].extension.lowercase(Locale.ROOT))
+                    type = mime
+                    putExtra(Intent.EXTRA_STREAM, uris[0])
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                }
+            }
+            intent.setPackage("com.android.bluetooth")
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            shareFiles(ctx, files)
+        }
+    }
+
+    suspend fun batchDelete(ctx: Context? = null, files: List<File>): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        for (f in files) {
+            if (deleteFile(ctx, f)) {
+                count++
+            }
+        }
+        count
+    }
+
+    suspend fun batchDelete(files: List<File>): Int = batchDelete(null, files)
+
+    suspend fun batchCopy(sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        for (f in sources) {
+            try {
+                val dest = File(targetDir, f.name)
+                if (f.isDirectory) {
+                    f.copyRecursively(dest, overwrite = true)
+                } else {
+                    f.copyTo(dest, overwrite = true)
+                }
+                count++
+            } catch (_: Exception) {}
+        }
+        count
+    }
+
+    suspend fun batchMove(sources: List<File>, targetDir: File): Int = withContext(Dispatchers.IO) {
+        var count = 0
+        for (f in sources) {
+            try {
+                val dest = File(targetDir, f.name)
+                val success = f.renameTo(dest)
+                if (!success) {
+                    if (f.isDirectory) {
+                        f.copyRecursively(dest, overwrite = true)
+                        f.deleteRecursively()
+                    } else {
+                        f.copyTo(dest, overwrite = true)
+                        f.delete()
+                    }
+                }
+                count++
+            } catch (_: Exception) {}
+        }
+        count
+    }
+
+    fun readText(file: File, maxBytes: Int = 120_000): String {
+        return try {
+            val length = minOf(file.length(), maxBytes.toLong()).toInt()
+            val buf = ByteArray(length)
+            file.inputStream().use { it.read(buf, 0, length) }
+            String(buf, Charsets.UTF_8)
+        } catch (e: Exception) {
+            "Could not read file: ${e.message}"
+        }
+    }
+
+    fun decodeBitmap(file: File, maxDim: Int = 1920): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            var sampleSize = 1
+            while (options.outWidth / sampleSize > maxDim || options.outHeight / sampleSize > maxDim) {
+                sampleSize *= 2
+            }
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+            BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun renderPdfPage(file: File, pageIndex: Int, targetWidth: Int = 1080): Pair<Bitmap?, Int> {
+        return try {
+            val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            val renderer = PdfRenderer(pfd)
+            val pageCount = renderer.pageCount
+            val validIndex = pageIndex.coerceIn(0, pageCount - 1)
+            val page = renderer.openPage(validIndex)
+
+            val width = targetWidth
+            val height = (targetWidth.toFloat() * page.height / page.width).toInt().coerceAtLeast(100)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.WHITE)
+
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            page.close()
+            renderer.close()
+            pfd.close()
+            Pair(bitmap, pageCount)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error rendering PDF page", e)
+            Pair(null, 0)
         }
     }
 }
