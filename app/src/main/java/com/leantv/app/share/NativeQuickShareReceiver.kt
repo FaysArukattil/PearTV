@@ -43,7 +43,10 @@ class NativeQuickShareReceiver : Service() {
     }
 
     private val binder = LocalBinder()
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder {
+        startReceiving()
+        return binder
+    }
 
     // ─── State ────────────────────────────────────────────────────────────────
 
@@ -60,9 +63,16 @@ class NativeQuickShareReceiver : Service() {
     private var advertiseHandle: dev.bluehouse.bada.discovery.AdvertiseHandle? = null
     private var bleAdvertiser: BleQuickShareAdvertiser? = null
     private var discovery: Discovery? = null
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
-    /** Shared 4-byte endpoint id so BLE and mDNS correlate to the same peer. */
-    private val endpointId: ByteArray = ByteArray(4).also { SecureRandom().nextBytes(it) }
+    /** 4-byte alphanumeric endpoint id drawn from ENDPOINT_ID_ALPHABET so BLE and mDNS correlate to the same peer. */
+    private var endpointId: ByteArray = generateEndpointId()
+
+    private fun generateEndpointId(): ByteArray {
+        val alphabet = dev.bluehouse.bada.discovery.QuickShareMdns.ENDPOINT_ID_ALPHABET
+        val rng = SecureRandom()
+        return ByteArray(4) { alphabet[rng.nextInt(alphabet.length)].code.toByte() }
+    }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -72,6 +82,17 @@ class NativeQuickShareReceiver : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopReceiving()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startForeground(NOTIF_ID, buildRunningNotification())
         startReceiving()
         return START_STICKY
@@ -86,10 +107,32 @@ class NativeQuickShareReceiver : Service() {
     // ─── Core start / stop ────────────────────────────────────────────────────
 
     private val committedPayloadFiles = java.util.concurrent.ConcurrentHashMap<Long, File>()
+    @Volatile private var isStarting = false
 
-    private fun startReceiving() {
+    fun startReceiving() {
+        if (_state.value.isAdvertising || isStarting) return
+        isStarting = true
+
+        stopReceivingInternal()
+
+        endpointId = generateEndpointId()
+        val currentEpId = endpointId
+
         val ctx = applicationContext
-        val mediumRegistry = MediumRegistries.defaultForContext(ctx)
+        val wifi = ctx.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        try {
+            multicastLock?.release()
+        } catch (_: Exception) {}
+        multicastLock = wifi?.createMulticastLock("LeanTvQuickShare")?.apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+
+        // Exclude BLE_L2CAP because TV Bluetooth controllers stall on L2CAP CoC channels (causing a 30s hang)
+        val providers = MediumRegistries.defaultProviders(ctx).filterNot {
+            it.medium == dev.bluehouse.bada.protocol.medium.Medium.BLE_L2CAP
+        }
+        val mediumRegistry = dev.bluehouse.bada.protocol.medium.MediumRegistry(providers = providers)
 
         val server = TcpReceiverServer(
             parentScope = serviceScope,
@@ -103,13 +146,14 @@ class NativeQuickShareReceiver : Service() {
                 )
             },
             mediumRegistry = mediumRegistry,
+            logger = { Log.i(TAG, "BadaCore: $it") }
         )
         tcpServer = server
 
         val endpointInfo = EndpointInfo(
             version = 1,
             hidden = false,
-            deviceType = DeviceType.LAPTOP,  // "Laptop" shows in picker without touch requirement
+            deviceType = DeviceType.LAPTOP, // "Laptop" shows reliably in all pickers without NFC/touch requirement
             reserved = false,
             metadata = ByteArray(EndpointInfo.METADATA_LEN).also { SecureRandom().nextBytes(it) },
             deviceName = android.os.Build.MODEL.take(EndpointInfo.MAX_NAME_LEN),
@@ -119,9 +163,14 @@ class NativeQuickShareReceiver : Service() {
             try {
                 val port = server.start()
 
-                // mDNS advertisement – returns a closeable handle
+                // 1. Immediately start BLE pulse advertiser in LOW_LATENCY mode (parallel, no blocking)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    tryStartBleAdvertise(ctx, endpointInfo, currentEpId)
+                }
+
+                // 2. mDNS advertisement – returns a closeable handle
                 try {
-                    val disc = Discovery(ctx, instanceEndpointIdProvider = { endpointId })
+                    val disc = Discovery(ctx, instanceEndpointIdProvider = { currentEpId })
                     discovery = disc
                     val handle = disc.advertise(endpointInfo, port)
                     advertiseHandle = handle
@@ -130,12 +179,8 @@ class NativeQuickShareReceiver : Service() {
                     Log.w(TAG, "mDNS advertise failed (non-fatal): ${e.message}")
                 }
 
-                // BLE advertisement for Samsung/stock Pixel picker visibility
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    tryStartBleAdvertise(ctx, endpointInfo)
-                }
-
                 _state.update { it.copy(isAdvertising = true) }
+                isStarting = false
 
                 // Collect new connections
                 launch {
@@ -153,12 +198,18 @@ class NativeQuickShareReceiver : Service() {
 
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to start Quick Share receiver", e)
+                isStarting = false
                 _state.update { it.copy(isAdvertising = false) }
             }
         }
     }
 
-    private fun stopReceiving() {
+    private fun stopReceivingInternal() {
+        try {
+            multicastLock?.release()
+        } catch (_: Exception) {}
+        multicastLock = null
+
         advertiseHandle?.close()
         advertiseHandle = null
 
@@ -167,12 +218,24 @@ class NativeQuickShareReceiver : Service() {
 
         discovery = null
 
-        serviceScope.launch(Dispatchers.IO) {
-            tcpServer?.stop()
-            tcpServer = null
+        val serverToStop = tcpServer
+        tcpServer = null
+        if (serverToStop != null) {
+            try {
+                kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                    serverToStop.stop()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping tcpServer: ${e.message}")
+            }
         }
 
         _state.update { NativeQuickShareState(isAdvertising = false) }
+    }
+
+    fun stopReceiving() {
+        isStarting = false
+        stopReceivingInternal()
     }
 
     // ─── Connection observation ───────────────────────────────────────────────
@@ -296,11 +359,13 @@ class NativeQuickShareReceiver : Service() {
     // ─── BLE advertising (API ≥ 26) ──────────────────────────────────────────
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun tryStartBleAdvertise(ctx: android.content.Context, endpointInfo: EndpointInfo) {
+    private fun tryStartBleAdvertise(ctx: android.content.Context, endpointInfo: EndpointInfo, epId: ByteArray) {
         try {
             val adv = BleQuickShareAdvertiser(ctx)
+            adv.setAdvertiseMode(android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             bleAdvertiser = adv
-            adv.start(endpointInfo, endpointId)
+            adv.start(endpointInfo, epId)
+            Log.i(TAG, "Quick Share BLE advertiser started in LOW_LATENCY mode (endpoint=${String(epId)})")
         } catch (e: Exception) {
             android.util.Log.w(TAG, "BLE advertise failed (non-fatal): ${e.message}")
         }
@@ -376,6 +441,8 @@ class NativeQuickShareReceiver : Service() {
     }
 
     companion object {
+        const val ACTION_START = "com.leantv.app.share.ACTION_START"
+        const val ACTION_STOP = "com.leantv.app.share.ACTION_STOP"
         private const val TAG = "NativeQSReceiver"
         private const val CHANNEL_RUNNING = "qs_receiver_running"
         private const val CHANNEL_RECEIVED = "qs_receiver_received"

@@ -492,6 +492,7 @@ public class TcpReceiverServer(
                     secureRandom = secureRandomProvider(),
                     mediumRegistry = mediumRegistry,
                     logger = logger,
+                    upgradeAcceptTimeoutMillis = 2500L,
                 )
 
             // Emit the active connection BEFORE invoking run() so

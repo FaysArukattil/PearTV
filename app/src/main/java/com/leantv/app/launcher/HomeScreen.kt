@@ -183,6 +183,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     // so Back is consumed there (the launcher never exits). One handler, so priority can't get mixed up.
     BackHandler(enabled = true) {
         when {
+            s.nativeQuickShareState.incomingTransfer != null -> vm.rejectNativeTransfer()
             s.showScreensaver -> vm.closeScreensaver()
             s.showTvPlayer -> vm.closeTvPlayer()
             s.showScreensaverSettings -> vm.closeScreensaverSettings()
@@ -190,7 +191,6 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showStorageManager -> vm.closeStorageManager()
             s.showFileManager -> vm.closeFileManager()
             s.showPersonalization -> vm.closePersonalization()
-            s.nativeQuickShareState.incomingTransfer != null -> vm.dismissIncomingTransfer()
             s.showQuickShare -> vm.closeQuickShareControl()
             s.showNativeQuickShare -> vm.closeNativeQuickShare()
             s.showInputsDialog -> vm.closeInputs()
@@ -207,80 +207,7 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 
-    // Fullscreen Overlay Screens (with Global Quick Share incoming transfer overlay across all screens)
-    if (s.showScreensaver) {
-        TvCanvas {
-            Box(Modifier.fillMaxSize()) {
-                AppleTvScreensaver(
-                    mode = s.screensaverMode,
-                    customPath = s.screensaverCustomPath,
-                    onDismiss = vm::closeScreensaver
-                )
-                GlobalIncomingTransferOverlay(s, vm)
-            }
-        }
-        return
-    }
 
-    if (s.showTvPlayer) {
-        TvCanvas {
-            Box(Modifier.fillMaxSize()) {
-                TvInputPlayer(
-                    ports = s.tvPorts,
-                    activeId = s.activeInputId,
-                    onSelect = vm::switchToPort,
-                    onFailed = vm::tvPlayerFailed,
-                    onClose = vm::closeTvPlayer
-                )
-                GlobalIncomingTransferOverlay(s, vm)
-            }
-        }
-        return
-    }
-
-    if (s.showCleanTvScreen) {
-        TvCanvas {
-            Box(Modifier.fillMaxSize()) {
-                CleanTvScreen(
-                    adbClient = vm.adb,
-                    journal = vm.journal,
-                    scanner = vm.scanner,
-                    tweaks = vm.tweaks,
-                    onClose = vm::closeCleanTvScreen
-                )
-                GlobalIncomingTransferOverlay(s, vm)
-            }
-        }
-        return
-    }
-
-    if (s.showStorageManager) {
-        TvCanvas {
-            Box(Modifier.fillMaxSize()) {
-                StorageManagerScreen(
-                    adbClient = vm.adb,
-                    journal = vm.journal,
-                    onClose = vm::closeStorageManager
-                )
-                GlobalIncomingTransferOverlay(s, vm)
-            }
-        }
-        return
-    }
-
-    if (s.showFileManager) {
-        TvCanvas {
-            Box(Modifier.fillMaxSize()) {
-                FileManagerScreen(
-                    initialDir = s.fileManagerInitialDir,
-                    highlightFile = s.fileManagerHighlightFile,
-                    onClose = vm::closeFileManager
-                )
-                GlobalIncomingTransferOverlay(s, vm)
-            }
-        }
-        return
-    }
 
     val modalOpen = s.showPersonalization || s.showQuickShare || s.nativeQuickShareState.incomingTransfer != null ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
@@ -318,13 +245,55 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     TvCanvas {
-        // Focus state lives in holders that are only read inside small child scopes (hero title, backdrop,
-        // scroll effect). Moving focus therefore never recomposes the whole grid.
-        val focusedAppState = remember { mutableStateOf<InstalledAppInfo?>(null) }
-        val focusedGridRowState = remember { mutableIntStateOf(-1) }
-        val listState = rememberLazyListState()
+        Box(Modifier.fillMaxSize()) {
+            when {
+                s.showScreensaver -> {
+                    AppleTvScreensaver(
+                        mode = s.screensaverMode,
+                        customPath = s.screensaverCustomPath,
+                        onDismiss = vm::closeScreensaver
+                    )
+                }
+                s.showTvPlayer -> {
+                    TvInputPlayer(
+                        ports = s.tvPorts,
+                        activeId = s.activeInputId,
+                        onSelect = vm::switchToPort,
+                        onFailed = vm::tvPlayerFailed,
+                        onClose = vm::closeTvPlayer
+                    )
+                }
+                s.showCleanTvScreen -> {
+                    CleanTvScreen(
+                        adbClient = vm.adb,
+                        journal = vm.journal,
+                        scanner = vm.scanner,
+                        tweaks = vm.tweaks,
+                        onClose = vm::closeCleanTvScreen
+                    )
+                }
+                s.showStorageManager -> {
+                    StorageManagerScreen(
+                        adbClient = vm.adb,
+                        journal = vm.journal,
+                        onClose = vm::closeStorageManager
+                    )
+                }
+                s.showFileManager -> {
+                    FileManagerScreen(
+                        initialDir = s.fileManagerInitialDir,
+                        highlightFile = s.fileManagerHighlightFile,
+                        onClose = vm::closeFileManager
+                    )
+                }
+                else -> {
+                    // Focus state lives in holders that are only read inside small child scopes (hero title, backdrop,
+                    // scroll effect). Moving focus therefore never recomposes the whole grid.
+                    val focusedAppState = remember { mutableStateOf<InstalledAppInfo?>(null) }
+                    val focusedGridRowState = remember { mutableIntStateOf(-1) }
+                    val listState = rememberLazyListState()
 
-        CleanTvBackdrop(
+                    CleanTvBackdrop(
             themeId = s.wallpaperTheme,
             focusedAppProvider = { focusedAppState.value ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull() }
         ) {
@@ -610,8 +579,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Quick Share control / consent dialog
-            if (s.showQuickShare || s.nativeQuickShareState.incomingTransfer != null) {
+            // Quick Share control panel (opened via Quick Share pill/tile)
+            if (s.showQuickShare) {
                 com.leantv.app.share.NativeQuickShareConsentDialog(
                     state = s.nativeQuickShareState,
                     isQuickShareActive = s.isQuickShareActive,
@@ -622,11 +591,9 @@ fun HomeScreen(vm: LauncherViewModel) {
                     onToggleActive = vm::toggleQuickShare,
                     onAccept = vm::acceptNativeTransfer,
                     onDecline = vm::rejectNativeTransfer,
-                    onDismiss = {
-                        if (s.nativeQuickShareState.incomingTransfer != null) vm.dismissIncomingTransfer() else vm.closeQuickShareControl()
-                    },
+                    onDismiss = vm::closeQuickShareControl,
                     onOpenFolder = {
-                        if (s.nativeQuickShareState.incomingTransfer != null) vm.dismissIncomingTransfer() else vm.closeQuickShareControl()
+                        vm.closeQuickShareControl()
                         vm.openFileManager(
                             initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
                             highlightFile = null
@@ -727,6 +694,27 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 }
+            }
+
+            // ─── Universal Quick Share Incoming Consent Popup ───
+            // Appears on top of EVERYTHING across the entire app (File Manager, Settings, Screensaver, etc.)
+            s.nativeQuickShareState.incomingTransfer?.let { transfer ->
+                com.leantv.app.share.NativeQuickShareConsentPopup(
+                    transfer = transfer,
+                    onAccept = vm::acceptNativeTransfer,
+                    onDecline = vm::rejectNativeTransfer,
+                    onDismiss = vm::dismissIncomingTransfer,
+                    onOpenFolder = {
+                        vm.dismissIncomingTransfer()
+                        vm.openFileManager(
+                            initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
+                            highlightFile = null
+                        )
+                    }
+                )
+            }
+        }
+    }
 
 /** Big app name above the grid. Reads the focused name itself, so only this small scope recomposes on focus moves. */
 @Composable
@@ -762,32 +750,6 @@ private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
         if (delta != 0f) state.animateScrollBy(delta, tween(260, easing = FastOutSlowInEasing))
     } else {
         state.animateScrollToItem(index, 0)
-    }
-}
-
-@Composable
-private fun GlobalIncomingTransferOverlay(s: LauncherState, vm: LauncherViewModel) {
-    val incoming = s.nativeQuickShareState.incomingTransfer
-    if (incoming != null) {
-        com.leantv.app.share.NativeQuickShareConsentDialog(
-            state = s.nativeQuickShareState,
-            isQuickShareActive = s.isQuickShareActive,
-            autoOffSeconds = s.quickShareAutoOffSeconds,
-            serverUrl = s.quickShareState.serverUrl,
-            pin = s.quickShareState.pin,
-            deviceName = s.detectedDeviceLabel.ifBlank { android.os.Build.MODEL },
-            onToggleActive = vm::toggleQuickShare,
-            onAccept = vm::acceptNativeTransfer,
-            onDecline = vm::rejectNativeTransfer,
-            onDismiss = vm::dismissIncomingTransfer,
-            onOpenFolder = {
-                vm.dismissIncomingTransfer()
-                vm.openFileManager(
-                    initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
-                    highlightFile = null
-                )
-            }
-        )
     }
 }
 

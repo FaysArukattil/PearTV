@@ -17,7 +17,7 @@ data class NativeQuickShareState(
 data class IncomingTransfer(
     val senderName: String?,
     /** 4-digit confirmation PIN from UKEY2 auth-string. */
-    val pin: String,
+    val pin: String = "",
     val files: List<TransferFileInfo>,
     val progressFraction: Float = 0f,
     val bytesPerSecond: Long = 0L,
@@ -28,6 +28,8 @@ data class IncomingTransfer(
      * Not serialised / not part of equals — only used at runtime.
      */
     @Transient val connection: InboundConnection? = null,
+    /** Optional callback for web/Apple transfers consent. */
+    @Transient val onConsent: ((Boolean) -> Unit)? = null,
 )
 
 data class TransferFileInfo(

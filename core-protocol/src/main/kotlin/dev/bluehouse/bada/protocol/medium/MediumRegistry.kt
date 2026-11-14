@@ -219,7 +219,9 @@ public class MediumRegistry(
             val provider = providerFor(medium) ?: continue
             if (!provider.isSupported()) continue
             if (medium == Medium.WIFI_LAN) {
-                return PreparedUpgradeSelection.StayOnCurrentMedium
+                if (currentMedium == Medium.WIFI_LAN) {
+                    return PreparedUpgradeSelection.StayOnCurrentMedium
+                }
             }
             val credentials =
                 runCatching { provider.prepareUpgrade() }

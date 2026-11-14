@@ -673,20 +673,9 @@ public object DefaultVisiblePayloadFactory : OptionalPayloadFactory {
         endpointInfo: EndpointInfo,
     ): ByteArray? {
         if (endpointInfo.hidden || endpointInfo.deviceName == null) return null
-        val activePsm = BleDctPsmHolder.currentPsm?.takeIf { it != DctAdvertisement.DEFAULT_PSM }
-        val rxAdvertisement =
-            BleAdvertisement.encodeGattAdvertisement(
-                endpointId = endpointId,
-                endpointInfo = endpointInfo,
-                psm = activePsm ?: 0,
-                secondProfile = false,
-            )
-        return BleServiceData.encodeFramedWithExtraFields(
+        return BleServiceData.encodeFramed(
             endpointId = endpointId,
             endpointInfo = endpointInfo,
-            psm = activePsm,
-            rxInstantConnectionAdvertisement = rxAdvertisement,
-            secondProfile = false,
         )
     }
 }

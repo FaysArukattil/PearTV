@@ -1,11 +1,13 @@
 package com.leantv.app.share
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import com.leantv.app.ui.Focusable
 import com.leantv.app.ui.Pal
 import com.leantv.app.ui.Ty
@@ -38,13 +42,8 @@ import com.leantv.app.ui.rememberAutoFocus
 import java.util.Locale
 
 /**
- * TV D-Pad–navigable consent dialog for the native Quick Share receiver.
- *
- * Shows:
- * - Sender name + 4-digit PIN
- * - File list with sizes
- * - Accept / Decline buttons (or progress bar when transferring)
- * - Success / failure message on completion
+ * TV D-Pad–navigable Quick Share settings control panel.
+ * Shown when user opens Quick Share from the launcher.
  */
 @Composable
 fun NativeQuickShareConsentDialog(
@@ -55,12 +54,14 @@ fun NativeQuickShareConsentDialog(
     pin: String? = null,
     deviceName: String = android.os.Build.MODEL,
     onToggleActive: ((Boolean) -> Unit)? = null,
-    onAccept: () -> Unit,
-    onDecline: () -> Unit,
+    onAccept: () -> Unit = {},
+    onDecline: () -> Unit = {},
     onDismiss: () -> Unit,
     onOpenFolder: () -> Unit = {},
 ) {
-    val transfer = state.incomingTransfer
+    BackHandler(enabled = true) {
+        onDismiss()
+    }
 
     // Semi-transparent scrim
     Box(
@@ -76,374 +77,355 @@ fun NativeQuickShareConsentDialog(
                 .wrapContentHeight()
                 .glassCard(32.dp),
         ) {
-            if (transfer == null) {
-                // ─── Quick Share Control & Settings Screen ───────────────────────────────
-                Column(
-                    modifier = Modifier.padding(34.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+            // ─── Quick Share Control Screen (Clean & Minimal) ─────────────────────────
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                // Header Row: Title, Auto-Timer & Close X
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Header Row
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF007AFF).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(0xFF007AFF).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    androidx.compose.ui.res.painterResource(com.leantv.app.R.drawable.ic_quick_share),
-                                    contentDescription = "Quick Share",
-                                    tint = Color(0xFF0A84FF),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                            Column {
-                                Text("Quick Share", style = Ty.Title)
-                                Text("Receive photos, videos, and files wirelessly", style = Ty.Small.copy(color = Pal.Dim))
-                            }
+                            Icon(
+                                androidx.compose.ui.res.painterResource(com.leantv.app.R.drawable.ic_quick_share),
+                                contentDescription = "Quick Share",
+                                tint = Color(0xFF0A84FF),
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
-
-                        // Close button (X)
-                        Focusable(
-                            onClick = onDismiss,
-                            shape = RoundedCornerShape(50),
-                            idle = Color.White.copy(alpha = 0.08f)
-                        ) {
-                            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Pal.Dim, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-
-                    // Status & Inactivity Timer Card
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (isQuickShareActive) Pal.Mint.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f))
-                            .border(1.dp, if (isQuickShareActive) Pal.Mint.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                            .padding(18.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .clip(RoundedCornerShape(5.dp))
-                                            .background(if (isQuickShareActive) Pal.Mint else Color.Gray)
-                                    )
-                                    Text(
-                                        text = if (isQuickShareActive) "Active & Discoverable" else "Turned Off",
-                                        style = Ty.Body.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isQuickShareActive) Pal.Mint else Pal.Dim
-                                        )
-                                    )
-                                }
-
-                                if (isQuickShareActive && autoOffSeconds != null) {
-                                    val m = autoOffSeconds / 60
-                                    val s = autoOffSeconds % 60
-                                    Text(
-                                        text = "⏱️ Auto-off in %d:%02d".format(m, s),
-                                        style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
-                                    )
-                                }
-                            }
-
-                            if (isQuickShareActive) {
+                        Column {
+                            Text("Quick Share", style = Ty.Title)
+                            if (isQuickShareActive && autoOffSeconds != null) {
+                                val m = autoOffSeconds / 60
+                                val s = autoOffSeconds % 60
                                 Text(
-                                    text = "This TV is visible as \"$deviceName\". When someone sends a file, an Accept / Decline popup will appear anywhere on screen.",
-                                    style = Ty.Small.copy(color = Pal.Text)
+                                    text = "⏱️ Auto-off in %d:%02d".format(m, s),
+                                    style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
                                 )
-                                Text(
-                                    text = "Note: Quick Share turns off automatically after 15 minutes of inactivity to save TV resources.",
-                                    style = Ty.Small.copy(color = Pal.Dim, fontSize = 13.sp)
-                                )
+                            } else if (isQuickShareActive) {
+                                Text("Active (auto-off in 15 min)", style = Ty.Small.copy(color = Pal.Mint))
                             } else {
-                                Text(
-                                    text = "Quick Share is turned off. Turn it on when you want to receive files from your phone or PC.",
-                                    style = Ty.Small.copy(color = Pal.Dim)
-                                )
-                                Text(
-                                    text = "Note: When turned on, it automatically turns off after 15 minutes if not used.",
-                                    style = Ty.Small.copy(color = Pal.Dim, fontSize = 13.sp)
-                                )
+                                Text("Turned Off", style = Ty.Small.copy(color = Pal.Dim))
                             }
                         }
                     }
 
-                    // Main Action: Big ON / OFF Toggle Button
-                    val autoFocus = rememberAutoFocus()
+                    // Close button (X)
                     Focusable(
-                        onClick = { onToggleActive?.invoke(!isQuickShareActive) },
-                        modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
-                        shape = RoundedCornerShape(16.dp),
-                        idle = if (isQuickShareActive) Pal.Coral.copy(alpha = 0.22f) else Pal.Mint.copy(alpha = 0.25f)
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(50),
+                        idle = Color.White.copy(alpha = 0.08f)
+                    ) {
+                        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Pal.Dim, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+
+                // Main Switch: Big ON / OFF Toggle Button
+                val autoFocus = rememberAutoFocus()
+                Focusable(
+                    onClick = { onToggleActive?.invoke(!isQuickShareActive) },
+                    modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
+                    shape = RoundedCornerShape(18.dp),
+                    idle = if (isQuickShareActive) Pal.Coral.copy(alpha = 0.22f) else Pal.Mint.copy(alpha = 0.25f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isQuickShareActive) "Turn OFF Quick Share" else "Turn ON Quick Share",
+                            style = Ty.Button.copy(
+                                color = if (isQuickShareActive) Pal.Coral else Pal.Mint,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        )
+                    }
+                }
+
+                // Bottom Navigation Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Focusable(
+                        onClick = onOpenFolder,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(50),
+                        idle = Pal.SurfaceHi
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text("Open Received Files", style = Ty.Body.copy(color = Pal.Text))
+                        }
+                    }
+
+                    Focusable(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(0.7f),
+                        shape = RoundedCornerShape(50),
+                        idle = Pal.Surface
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Close", style = Ty.Body.copy(color = Pal.Dim))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Universal Quick Share Consent Popup:
+ * Shows on top of EVERYTHING across the entire app (File Manager, Settings, Screensaver, etc.)
+ * whenever an incoming file transfer request arrives.
+ */
+@Composable
+fun NativeQuickShareConsentPopup(
+    transfer: IncomingTransfer,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenFolder: () -> Unit = {},
+) {
+    // Intercept Back button: Decline if waiting for consent, or dismiss if done/failed
+    BackHandler(enabled = true) {
+        if (transfer.phase == TransferPhase.WAITING_CONSENT) {
+            onDecline()
+        } else {
+            onDismiss()
+        }
+    }
+
+    // Full-screen scrim overlay with maximum z-index
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.82f))
+            .clickable(enabled = false) {}
+            .modalTrap()
+            .zIndex(9999f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(660.dp)
+                .wrapContentHeight()
+                .glassCard(32.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                // ─── Header icon ─────────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Pal.Amber.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.FileDownload,
+                        contentDescription = null,
+                        tint = Pal.Amber,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+
+                // ─── Title ───────────────────────────────────────────────────
+                Text(
+                    text = if (transfer.senderName != null)
+                        "${transfer.senderName} wants to share"
+                    else
+                        "Incoming Quick Share",
+                    style = Ty.Title,
+                    textAlign = TextAlign.Center,
+                )
+
+                // ─── PIN badge (if present) ──────────────────────────────────
+                if (!transfer.pin.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "PIN: ${transfer.pin}",
+                            style = Ty.Body.copy(fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = Pal.Mint)
+                        )
+                    }
+                }
+
+                // ─── File list ────────────────────────────────────────────────
+                if (transfer.files.isNotEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.05f)),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(transfer.files) { file ->
+                            FileRow(file)
+                        }
+                    }
+                }
+
+                // ─── Progress bar (when receiving) ───────────────────────────
+                AnimatedVisibility(
+                    visible = transfer.phase == TransferPhase.RECEIVING,
+                    enter = fadeIn(tween(300)),
+                    exit = fadeOut(tween(200)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
                             Text(
-                                text = if (isQuickShareActive) "Turn OFF Quick Share" else "Turn ON Quick Share",
-                                style = Ty.Button.copy(
-                                    color = if (isQuickShareActive) Pal.Coral else Pal.Mint,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                text = "Receiving...",
+                                style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
+                            )
+                            Text(
+                                text = "${(transfer.progressFraction * 100).toInt()}%",
+                                style = Ty.Small.copy(color = Pal.Dim),
                             )
                         }
-                    }
 
-                    // Instructions (when Active)
-                    if (isQuickShareActive) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.04f))
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text("📱 From Android / Windows Phone:", style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold))
-                            Text("1. Open any photo, video, or file on phone -> tap Share -> Quick Share", style = Ty.Small.copy(color = Pal.Text))
-                            Text("2. Select \"$deviceName\" from Nearby Devices", style = Ty.Small.copy(color = Pal.Text))
-                            Text("3. Accept prompt on TV (pops up automatically anywhere in the app)", style = Ty.Small.copy(color = Pal.Text))
-
-                            if (!serverUrl.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("🌐 From iPhone, Mac, or PC Browser:", style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold))
-                                Text("Open browser: $serverUrl${if (!pin.isNullOrBlank()) " (PIN: $pin)" else ""}", style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold))
-                            }
-                        }
-                    }
-
-                    // Bottom Navigation Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Focusable(
-                            onClick = onOpenFolder,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(50),
-                            idle = Pal.SurfaceHi
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Open Received Files", style = Ty.Body.copy(color = Pal.Text))
-                            }
+                        if (transfer.progressFraction > 0f) {
+                            LinearProgressIndicator(
+                                progress = { transfer.progressFraction },
+                                modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                                color = Pal.Mint,
+                                trackColor = Pal.Line,
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                                color = Pal.Mint,
+                                trackColor = Pal.Line,
+                            )
                         }
 
-                        Focusable(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(0.8f),
-                            shape = RoundedCornerShape(50),
-                            idle = Pal.Surface
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(if (isQuickShareActive) "Keep in Background" else "Close", style = Ty.Body.copy(color = Pal.Dim))
+                            Text(
+                                text = "📁 Internal Storage / Quickshare",
+                                style = Ty.Small.copy(color = Pal.Dim)
+                            )
+                            if (transfer.bytesPerSecond > 0) {
+                                Text(
+                                    text = "${formatBytes(transfer.bytesPerSecond)}/s",
+                                    style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
+                                )
                             }
                         }
                     }
                 }
-            } else {
-                // ─── Active Transfer / Incoming Consent State ─────────────────────
-                Column(
-                    modifier = Modifier.padding(40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    // ─── Header icon ─────────────────────────────────────────────
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Pal.Amber.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.FileDownload,
-                            contentDescription = null,
-                            tint = Pal.Amber,
-                            modifier = Modifier.size(36.dp),
-                        )
-                    }
 
-                    // ─── Title ───────────────────────────────────────────────────
-                    Text(
-                        text = if (transfer.senderName != null)
-                            "${transfer.senderName} wants to share"
-                        else
-                            "Incoming Quick Share",
-                        style = Ty.Title,
-                        textAlign = TextAlign.Center,
-                    )
-
-                    // ─── File list ────────────────────────────────────────────────
-                    if (transfer.files.isNotEmpty()) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 180.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.05f)),
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(transfer.files) { file ->
-                                FileRow(file)
-                            }
-                        }
-                    }
-
-                    // ─── Progress bar (when receiving) ───────────────────────────
-                    AnimatedVisibility(
-                        visible = transfer.phase == TransferPhase.RECEIVING,
-                        enter = fadeIn(tween(300)),
-                        exit = fadeOut(tween(200)),
-                    ) {
+                // ─── Status messages (terminal states) ───────────────────────
+                when (transfer.phase) {
+                    TransferPhase.COMPLETED -> {
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Receiving file...",
-                                    style = Ty.Body.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
-                                )
-                                val pct = (transfer.progressFraction * 100).toInt()
-                                Text(
-                                    text = if (pct > 0) "$pct%" else "Connecting...",
-                                    style = Ty.Body.copy(fontWeight = FontWeight.Bold, color = Pal.Mint)
-                                )
-                            }
-
-                            if (transfer.progressFraction > 0f) {
-                                LinearProgressIndicator(
-                                    progress = { transfer.progressFraction },
-                                    modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
-                                    color = Pal.Mint,
-                                    trackColor = Pal.Line,
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
-                                    color = Pal.Mint,
-                                    trackColor = Pal.Line,
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "📁 Internal Storage / Quickshare",
-                                    style = Ty.Small.copy(color = Pal.Dim)
-                                )
-                                if (transfer.bytesPerSecond > 0) {
-                                    Text(
-                                        text = "${formatBytes(transfer.bytesPerSecond)}/s",
-                                        style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
-                                    )
-                                }
-                            }
+                            StatusChip("✓  Transfer Complete!", Pal.Mint)
+                            Text(
+                                text = "Saved in /storage/emulated/0/Quickshare",
+                                style = Ty.Small.copy(color = Pal.Dim),
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
+                    TransferPhase.FAILED    -> StatusChip("✗  Transfer Failed or Cancelled", Pal.Coral)
+                    TransferPhase.REJECTED  -> StatusChip("Declined", Pal.Dim)
+                    else -> {}
+                }
 
-                    // ─── Status messages (terminal states) ───────────────────────
-                    when (transfer.phase) {
-                        TransferPhase.COMPLETED -> {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                StatusChip("✓  Transfer Complete!", Pal.Mint)
-                                Text(
-                                    text = "Saved in /storage/emulated/0/Quickshare",
-                                    style = Ty.Small.copy(color = Pal.Dim),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                        TransferPhase.FAILED    -> StatusChip("✗  Transfer Failed or Cancelled", Pal.Coral)
-                        TransferPhase.REJECTED  -> StatusChip("Declined", Pal.Dim)
-                        else -> {}
+                // ─── Buttons (only while awaiting consent) ───────────────────
+                if (transfer.phase == TransferPhase.WAITING_CONSENT) {
+                    ConsentButtons(onAccept = onAccept, onDecline = onDecline)
+                }
+
+                // ─── Dismiss / Open in Files (after terminal state) ─────────
+                if (transfer.phase in listOf(
+                        TransferPhase.COMPLETED,
+                        TransferPhase.FAILED,
+                        TransferPhase.REJECTED,
+                    )
+                ) {
+                    val terminalFocus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) {
+                        delay(60)
+                        runCatching { terminalFocus.requestFocus() }
                     }
-
-                    // ─── Buttons (only while awaiting consent) ───────────────────
-                    if (transfer.phase == TransferPhase.WAITING_CONSENT) {
-                        ConsentButtons(onAccept = onAccept, onDecline = onDecline)
-                    }
-
-                    // ─── Dismiss / Open in Files (after terminal state) ─────────
-                    if (transfer.phase in listOf(
-                            TransferPhase.COMPLETED,
-                            TransferPhase.FAILED,
-                            TransferPhase.REJECTED,
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        val autoFocus = rememberAutoFocus()
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (transfer.phase == TransferPhase.COMPLETED) {
-                                Focusable(
-                                    onClick = onOpenFolder,
-                                    modifier = Modifier.weight(1f).focusRequester(autoFocus),
-                                    shape = RoundedCornerShape(50),
-                                    idle = Pal.Mint.copy(alpha = 0.2f),
-                                ) {
-                                    Text(
-                                        "View in Files",
-                                        style = Ty.Body.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
-                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                                    )
-                                }
-                            }
+                        if (transfer.phase == TransferPhase.COMPLETED) {
                             Focusable(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f).then(if (transfer.phase != TransferPhase.COMPLETED) Modifier.focusRequester(autoFocus) else Modifier),
+                                onClick = onOpenFolder,
+                                modifier = Modifier.weight(1f).focusRequester(terminalFocus),
                                 shape = RoundedCornerShape(50),
+                                idle = Pal.Mint.copy(alpha = 0.2f),
                             ) {
                                 Text(
-                                    "Dismiss",
-                                    style = Ty.Body.copy(color = Pal.Dim),
+                                    "View in Files",
+                                    style = Ty.Body.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold),
                                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
                                 )
                             }
+                        }
+                        Focusable(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(if (transfer.phase != TransferPhase.COMPLETED) Modifier.focusRequester(terminalFocus) else Modifier),
+                            shape = RoundedCornerShape(50),
+                            idle = Pal.Surface,
+                        ) {
+                            Text(
+                                "Dismiss",
+                                style = Ty.Body.copy(color = Pal.Dim),
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                            )
                         }
                     }
                 }
@@ -479,7 +461,11 @@ private fun FileRow(file: TransferFileInfo) {
 
 @Composable
 private fun ConsentButtons(onAccept: () -> Unit, onDecline: () -> Unit) {
-    val acceptFocus = rememberAutoFocus()
+    val acceptFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(60)
+        runCatching { acceptFocus.requestFocus() }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -552,4 +538,3 @@ private fun formatBytes(bytes: Long): String = when {
 
 @Suppress("UNUSED")
 private val Pal.Coral: Color get() = com.leantv.app.ui.Pal.Coral
-

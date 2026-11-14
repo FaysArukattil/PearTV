@@ -1095,7 +1095,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startNativeQuickShare(openDialog: Boolean = false, silent: Boolean = true) {
-        val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java)
+        val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java).apply {
+            action = com.leantv.app.share.NativeQuickShareReceiver.ACTION_START
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ctx.startForegroundService(intent)
@@ -1106,18 +1108,23 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             android.util.Log.e("LauncherVM", "Failed to start NativeQuickShareReceiver", e)
         }
 
+        nativeQsService?.startReceiving()
+
         if (nativeQsConnection == null) {
             val conn = object : android.content.ServiceConnection {
                 override fun onServiceConnected(name: android.content.ComponentName?, binder: android.os.IBinder?) {
                     val svc = (binder as? com.leantv.app.share.NativeQuickShareReceiver.LocalBinder)?.service
                     nativeQsService = svc
                     if (svc != null) {
+                        svc.startReceiving()
                         viewModelScope.launch {
                             svc.state.collect { qsState ->
                                 val incoming = qsState.incomingTransfer
                                 _state.update { current ->
+                                    val currentWebIncoming = current.nativeQuickShareState.incomingTransfer?.takeIf { it.connection == null }
+                                    val effectiveIncoming = incoming ?: currentWebIncoming
                                     current.copy(
-                                        nativeQuickShareState = qsState
+                                        nativeQuickShareState = qsState.copy(incomingTransfer = effectiveIncoming)
                                     )
                                 }
 
@@ -1161,16 +1168,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun acceptNativeTransfer() {
         nativeQsService?.submitConsent(true)
+        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(true)
         resetQuickShareInactivityTimer()
     }
 
     fun rejectNativeTransfer() {
         nativeQsService?.submitConsent(false)
+        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
         resetQuickShareInactivityTimer()
+        _state.update { current ->
+            current.copy(
+                nativeQuickShareState = current.nativeQuickShareState.copy(incomingTransfer = null)
+            )
+        }
     }
 
     fun dismissIncomingTransfer() {
         nativeQsService?.submitConsent(false)
+        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
         _state.update { current ->
             current.copy(
                 nativeQuickShareState = current.nativeQuickShareState.copy(incomingTransfer = null)
@@ -1184,12 +1199,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopNativeQuickShare() {
         try {
+            nativeQsService?.stopReceiving()
+        } catch (_: Exception) {}
+        try {
             nativeQsConnection?.let { ctx.unbindService(it) }
         } catch (_: Exception) {}
         nativeQsConnection = null
         nativeQsService = null
         try {
-            ctx.stopService(android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java))
+            val stopIntent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java).apply {
+                action = com.leantv.app.share.NativeQuickShareReceiver.ACTION_STOP
+            }
+            ctx.startService(stopIntent)
+            ctx.stopService(stopIntent)
         } catch (_: Exception) {}
         _state.update { it.copy(nativeQuickShareState = com.leantv.app.share.NativeQuickShareState()) }
     }
@@ -1278,6 +1300,92 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val server = com.leantv.app.share.QuickShareServer(
             context = ctx,
             scope = viewModelScope,
+            onRequestConsent = { sender, fileName, fileSize ->
+                resetQuickShareInactivityTimer()
+                val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                val fileInfo = com.leantv.app.share.TransferFileInfo(
+                    name = fileName,
+                    sizeBytes = fileSize,
+                    mimeType = null
+                )
+                val incoming = com.leantv.app.share.IncomingTransfer(
+                    senderName = sender,
+                    pin = "",
+                    files = listOf(fileInfo),
+                    phase = com.leantv.app.share.TransferPhase.WAITING_CONSENT,
+                    onConsent = { approved ->
+                        if (!deferred.isCompleted) deferred.complete(approved)
+                    }
+                )
+                _state.update { s ->
+                    s.copy(
+                        nativeQuickShareState = s.nativeQuickShareState.copy(incomingTransfer = incoming)
+                    )
+                }
+
+                // 45s safety timeout for consent dialog
+                val timeoutJob = viewModelScope.launch {
+                    kotlinx.coroutines.delay(45_000)
+                    if (!deferred.isCompleted) {
+                        deferred.complete(false)
+                        _state.update { s ->
+                            s.copy(nativeQuickShareState = s.nativeQuickShareState.copy(incomingTransfer = null))
+                        }
+                    }
+                }
+                val result = try {
+                    deferred.await()
+                } catch (_: Exception) {
+                    false
+                }
+                timeoutJob.cancel()
+                result
+            },
+            onTransferProgress = { fraction, bytesPerSec ->
+                resetQuickShareInactivityTimer()
+                _state.update { s ->
+                    val cur = s.nativeQuickShareState.incomingTransfer ?: return@update s
+                    s.copy(
+                        nativeQuickShareState = s.nativeQuickShareState.copy(
+                            incomingTransfer = cur.copy(
+                                phase = com.leantv.app.share.TransferPhase.RECEIVING,
+                                progressFraction = fraction,
+                                bytesPerSecond = bytesPerSec
+                            )
+                        )
+                    )
+                }
+            },
+            onTransferComplete = { file ->
+                resetQuickShareInactivityTimer()
+                val received = com.leantv.app.share.ReceivedFile(
+                    name = file.name,
+                    path = file.absolutePath,
+                    sizeBytes = file.length(),
+                    timestamp = System.currentTimeMillis()
+                )
+                _state.update { s ->
+                    val cur = s.nativeQuickShareState.incomingTransfer
+                    s.copy(
+                        nativeQuickShareState = s.nativeQuickShareState.copy(
+                            incomingTransfer = cur?.copy(
+                                phase = com.leantv.app.share.TransferPhase.COMPLETED,
+                                progressFraction = 1f
+                            ),
+                            lastReceivedFiles = listOf(received) + s.nativeQuickShareState.lastReceivedFiles
+                        ),
+                        toastMessage = "Received: ${file.name}"
+                    )
+                }
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(3500)
+                    _state.update { s ->
+                        if (s.nativeQuickShareState.incomingTransfer?.phase == com.leantv.app.share.TransferPhase.COMPLETED) {
+                            s.copy(nativeQuickShareState = s.nativeQuickShareState.copy(incomingTransfer = null))
+                        } else s
+                    }
+                }
+            },
             onItemReceived = { item ->
                 resetQuickShareInactivityTimer()
                 _state.update { s ->
@@ -1290,12 +1398,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                             is com.leantv.app.share.SharedItem.SharedText -> if (item.isUrl) "Received web link on TV" else "Received note on TV"
                         }
                     )
-                }
-            },
-            onProgressUpdate = { status ->
-                if (status != null) resetQuickShareInactivityTimer()
-                _state.update { s ->
-                    s.copy(quickShareState = s.quickShareState.copy(transferStatus = status))
                 }
             }
         )
@@ -1310,7 +1412,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     isRunning = started,
                     ipAddress = ip,
                     port = server.port,
-                    pin = server.currentPin,
+                    pin = "",
                 )
             )
         }
