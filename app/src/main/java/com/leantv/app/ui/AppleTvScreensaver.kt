@@ -11,6 +11,7 @@ import android.view.TextureView
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -168,14 +169,6 @@ fun AppleTvScreensaver(
         runCatching { focusRequester.requestFocus() }
     }
 
-    var isContentReady by remember { mutableStateOf(false) }
-
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (isContentReady) 1f else 0f,
-        animationSpec = tween(1400, easing = LinearEasing),
-        label = "screensaverContentAlpha"
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -193,30 +186,27 @@ fun AppleTvScreensaver(
     ) {
         when (mode) {
             ScreensaverSource.AERIAL -> {
-                AppleAerialVideoPlayer(onReady = { isContentReady = true })
+                AppleAerialVideoPlayer()
             }
             ScreensaverSource.SLIDESHOW -> {
                 CustomPhotoSlideshow(
                     folderPath = customPath,
-                    onReady = { isContentReady = true },
-                    onEmpty = { AppleAerialVideoPlayer(onReady = { isContentReady = true }) }
+                    onEmpty = { AppleAerialVideoPlayer() }
                 )
             }
             ScreensaverSource.SINGLE_IMAGE -> {
                 SingleImageBackdrop(
                     filePath = customPath,
-                    onReady = { isContentReady = true },
-                    onEmpty = { AppleAerialVideoPlayer(onReady = { isContentReady = true }) }
+                    onEmpty = { AppleAerialVideoPlayer() }
                 )
             }
         }
 
-        // ─── Apple TV Bottom Right: Clock & Date ─────────────────────────────
+        // ─── Apple TV Bottom Right: Clock & Date (Default timer, always visible) ─
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 64.dp, bottom = 48.dp)
-                .graphicsLayer { alpha = contentAlpha }
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
@@ -263,7 +253,6 @@ fun AppleTvScreensaver(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 28.dp)
-                .graphicsLayer { alpha = contentAlpha * 0.35f }
         )
     }
 }
@@ -365,7 +354,7 @@ private class TextureVideoPlayer(context: Context) {
  * - Animates the location text pill dynamically and smoothly.
  */
 @Composable
-private fun AppleAerialVideoPlayer(onReady: () -> Unit) {
+private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
     val ctx = LocalContext.current
 
     val player0 = remember { TextureVideoPlayer(ctx) }
@@ -380,6 +369,7 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit) {
 
     var activeSlot by remember { mutableIntStateOf(0) }
     var isFirstVideoReady by remember { mutableStateOf(false) }
+    var showLocationText by remember { mutableStateOf(false) }
 
     var currentPresetIndex by remember { mutableIntStateOf(Random.nextInt(APPLE_AERIAL_PRESETS.size)) }
     val currentPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
@@ -387,13 +377,32 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit) {
     // Crossfade alpha states
     val alpha0 by animateFloatAsState(
         targetValue = if (activeSlot == 0 && isFirstVideoReady) 1f else 0f,
-        animationSpec = tween(1500, easing = LinearEasing),
+        animationSpec = tween(1500, easing = FastOutSlowInEasing),
         label = "alphaPlayer0"
     )
     val alpha1 by animateFloatAsState(
         targetValue = if (activeSlot == 1) 1f else 0f,
-        animationSpec = tween(1500, easing = LinearEasing),
+        animationSpec = tween(1500, easing = FastOutSlowInEasing),
         label = "alphaPlayer1"
+    )
+
+    // Animate location text into place AFTER video is loaded initially
+    LaunchedEffect(isFirstVideoReady) {
+        if (isFirstVideoReady) {
+            delay(500L)
+            showLocationText = true
+        }
+    }
+
+    val locationAlpha by animateFloatAsState(
+        targetValue = if (showLocationText) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "locationAlpha"
+    )
+    val locationSlideY by animateFloatAsState(
+        targetValue = if (showLocationText) 0f else 28f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "locationSlideY"
     )
 
     // Preload & Crossfade orchestration loop
@@ -462,7 +471,10 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 64.dp, bottom = 48.dp)
-                .graphicsLayer { alpha = alpha0.coerceAtLeast(alpha1) }
+                .graphicsLayer {
+                    alpha = locationAlpha
+                    translationY = locationSlideY
+                }
         ) {
             AnimatedContent(
                 targetState = currentPreset,

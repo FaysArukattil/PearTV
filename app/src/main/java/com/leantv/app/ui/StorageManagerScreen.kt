@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.provider.Settings
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -147,6 +148,20 @@ fun StorageManagerScreen(
         if (fileToDelete != null) {
             delay(120)
             runCatching { dialogFocusRequester.requestFocus() }
+        }
+    }
+
+    BackHandler(enabled = true) {
+        when {
+            fileToDelete != null -> {
+                fileToDelete = null
+            }
+            selectedCategory != null -> {
+                selectedCategory = null
+            }
+            else -> {
+                onClose()
+            }
         }
     }
 

@@ -186,8 +186,8 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     // Back: close the top-most popup/page first. With nothing open we are on Home, the last stop,
     // so Back is consumed there (the launcher never exits). One handler, so priority can't get mixed up.
-    // When FileManager is open, it manages its own multi-level back navigation (modals, folders, multi-select).
-    BackHandler(enabled = !s.showFileManager) {
+    // When FileManager or StorageManager is open, each manages its own multi-level back navigation.
+    BackHandler(enabled = !s.showFileManager && !s.showStorageManager) {
         when {
             s.nativeQuickShareState.incomingTransfer != null -> {
                 val t = s.nativeQuickShareState.incomingTransfer
