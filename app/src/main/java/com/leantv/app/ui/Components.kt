@@ -89,12 +89,12 @@ fun Focusable(
 ) {
     val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, spring(dampingRatio = 0.8f, stiffness = 420f), label = "scale")
+    val scale by animateFloatAsState(if (focused) scaleOnFocus else 1f, AppleMotion.SpringSnappy, label = "scale")
     val ring by animateColorAsState(
         if (focused) Color.White.copy(alpha = 0.85f) else if (idleOutline) Pal.Line else Color.Transparent,
-        tween(150), label = "ring",
+        AppleMotion.microTween(), label = "ring",
     )
-    val bg by animateColorAsState(if (focused) Pal.SurfaceHi else idle, tween(150), label = "bg")
+    val bg by animateColorAsState(if (focused) Pal.SurfaceHi else idle, AppleMotion.microTween(), label = "bg")
     Box(
         modifier
             .graphicsLayer {
@@ -139,7 +139,7 @@ fun TvButton(
 ) {
     val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, spring(dampingRatio = 0.8f, stiffness = 420f), label = "btn")
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, AppleMotion.SpringSnappy, label = "btn")
     val shape = RoundedCornerShape(50)
     val bg by animateColorAsState(
         when {

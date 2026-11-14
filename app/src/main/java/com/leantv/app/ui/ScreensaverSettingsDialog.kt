@@ -1,5 +1,8 @@
 package com.leantv.app.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,17 +40,39 @@ fun ScreensaverSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val autoFocus = rememberAutoFocus()
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut),
+        label = "ssScrim"
+    )
+    val panelScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.92f,
+        animationSpec = AppleMotion.SpringStandard,
+        label = "ssScale"
+    )
+    val panelAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
+        label = "ssAlpha"
+    )
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xE6000000))
+            .background(Color(0xE6000000).copy(alpha = 0.92f * scrimAlpha))
             .modalTrap(),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
                 .width(820.dp)
+                .graphicsLayer {
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    alpha = panelAlpha
+                }
                 .clip(RoundedCornerShape(32.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
                 .padding(horizontal = 40.dp, vertical = 34.dp),

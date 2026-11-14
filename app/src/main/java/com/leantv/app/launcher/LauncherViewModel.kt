@@ -679,7 +679,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun launch(app: InstalledAppInfo) {
+    fun launch(app: InstalledAppInfo, options: android.app.ActivityOptions? = null) {
         // Record launch count and timestamp
         journal.recordAppLaunch(app.packageName)
         loadApps(silent = true)
@@ -712,7 +712,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     Intent.FLAG_ACTIVITY_TASK_ON_HOME
                 )
                 intent.putExtra("leantv_launched", true)
-                ctx.startActivity(intent)
+                val launchOptions = options?.toBundle() ?: android.app.ActivityOptions.makeCustomAnimation(
+                    ctx,
+                    android.R.anim.fade_in,
+                    android.R.anim.fade_out
+                ).toBundle()
+                ctx.startActivity(intent, launchOptions)
                 killBackgroundApps(exceptPackage = app.packageName)
             } catch (e: Exception) {
                 toast("Couldn't open app: ${e.message}")
@@ -721,6 +726,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             toast("No launchable TV activity found for ${app.appName}")
         }
     }
+
+    /** Returns ActivityOptions that zoom from the given screen rect (Apple TV launch zoom). */
+    fun makeLaunchOptions(view: android.view.View, x: Int, y: Int, w: Int, h: Int): android.app.ActivityOptions =
+        android.app.ActivityOptions.makeScaleUpAnimation(view, x, y, w, h)
 
     fun setFocusedApp(app: InstalledAppInfo?) {
         _state.update { it.copy(focusedApp = app) }
@@ -1238,7 +1247,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
-                ctx.startActivity(intent)
+                ctx.startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
                 toast("Opening Google Quick Share...")
                 return true
             } catch (_: Exception) {}
@@ -1252,7 +1261,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.gms")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
-            ctx.startActivity(storeIntent)
+            ctx.startActivity(storeIntent, android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
         } catch (_: Exception) {
             toast("Opening Universal Wi-Fi AirShare...")
             openQuickShare()
@@ -1272,7 +1281,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     Intent.FLAG_ACTIVITY_TASK_ON_HOME
                 )
                 intent.putExtra("leantv_launched", true)
-                ctx.startActivity(intent)
+                ctx.startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
                 killBackgroundApps(exceptPackage = pkg)
             } catch (e: Exception) {
                 toast("Couldn't open LocalSend: ${e.message}")
@@ -1282,7 +1291,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$pkg")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
                 }
-                ctx.startActivity(storeIntent)
+                ctx.startActivity(storeIntent, android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
             } catch (_: Exception) {
                 toast("LocalSend not installed on TV. Opening Universal Wi-Fi AirShare...")
                 openQuickShare()
@@ -1448,7 +1457,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
             }
-            ctx.startActivity(intent)
+            ctx.startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
         } catch (e: Exception) {
             toast("Couldn't open URL: ${e.message}")
         }
@@ -1607,7 +1616,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                             )
                         }
                         try {
-                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME))
+                            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME), android.app.ActivityOptions.makeCustomAnimation(ctx, android.R.anim.fade_in, android.R.anim.fade_out).toBundle())
                         } catch (_: Exception) {}
                         return@launch
                     }

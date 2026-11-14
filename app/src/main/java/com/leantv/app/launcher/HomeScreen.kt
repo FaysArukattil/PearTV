@@ -90,6 +90,9 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import com.leantv.app.ui.AppleMotion
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -267,47 +270,78 @@ fun HomeScreen(vm: LauncherViewModel) {
                         .fillMaxSize()
                         .focusProperties { canFocus = !isIncomingTransfer }
                 ) {
-                    when {
-                s.showScreensaver -> {
-                    AppleTvScreensaver(
-                        mode = s.screensaverMode,
-                        customPath = s.screensaverCustomPath,
-                        onDismiss = vm::closeScreensaver
-                    )
-                }
-                s.showTvPlayer -> {
-                    TvInputPlayer(
-                        ports = s.tvPorts,
-                        activeId = s.activeInputId,
-                        onSelect = vm::switchToPort,
-                        onFailed = vm::tvPlayerFailed,
-                        onClose = vm::closeTvPlayer
-                    )
-                }
-                s.showCleanTvScreen -> {
-                    CleanTvScreen(
-                        adbClient = vm.adb,
-                        journal = vm.journal,
-                        scanner = vm.scanner,
-                        tweaks = vm.tweaks,
-                        onClose = vm::closeCleanTvScreen
-                    )
-                }
-                s.showStorageManager -> {
-                    StorageManagerScreen(
-                        adbClient = vm.adb,
-                        journal = vm.journal,
-                        onClose = vm::closeStorageManager
-                    )
-                }
-                s.showFileManager -> {
-                    FileManagerScreen(
-                        initialDir = s.fileManagerInitialDir,
-                        highlightFile = s.fileManagerHighlightFile,
-                        onClose = vm::closeFileManager
-                    )
-                }
-                else -> {
+                    val activePage = when {
+                        s.showScreensaver    -> "screensaver"
+                        s.showTvPlayer       -> "tvplayer"
+                        s.showCleanTvScreen  -> "cleantv"
+                        s.showStorageManager -> "storage"
+                        s.showFileManager    -> "filemanager"
+                        else                 -> "home"
+                    }
+                    AnimatedContent(
+                        targetState = activePage,
+                        transitionSpec = {
+                            val entering = targetState != "home"
+                            if (entering) {
+                                (fadeIn(AppleMotion.enterTween()) +
+                                 slideInVertically(AppleMotion.enterTween()) { it / 20 })
+                                    .togetherWith(
+                                        fadeOut(AppleMotion.exitTween()) +
+                                        scaleOut(AppleMotion.exitTween<Float>(), targetScale = 0.96f)
+                                    )
+                            } else {
+                                (fadeIn(AppleMotion.enterTween()) +
+                                 scaleIn(AppleMotion.enterTween<Float>(), initialScale = 0.96f))
+                                    .togetherWith(
+                                        fadeOut(AppleMotion.exitTween()) +
+                                        slideOutVertically(AppleMotion.exitTween()) { it / 20 }
+                                    )
+                            }
+                        },
+                        label = "pageTransition",
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        when (page) {
+                            "screensaver" -> {
+                                AppleTvScreensaver(
+                                    mode = s.screensaverMode,
+                                    customPath = s.screensaverCustomPath,
+                                    onDismiss = vm::closeScreensaver
+                                )
+                            }
+                            "tvplayer" -> {
+                                TvInputPlayer(
+                                    ports = s.tvPorts,
+                                    activeId = s.activeInputId,
+                                    onSelect = vm::switchToPort,
+                                    onFailed = vm::tvPlayerFailed,
+                                    onClose = vm::closeTvPlayer
+                                )
+                            }
+                            "cleantv" -> {
+                                CleanTvScreen(
+                                    adbClient = vm.adb,
+                                    journal = vm.journal,
+                                    scanner = vm.scanner,
+                                    tweaks = vm.tweaks,
+                                    onClose = vm::closeCleanTvScreen
+                                )
+                            }
+                            "storage" -> {
+                                StorageManagerScreen(
+                                    adbClient = vm.adb,
+                                    journal = vm.journal,
+                                    onClose = vm::closeStorageManager
+                                )
+                            }
+                            "filemanager" -> {
+                                FileManagerScreen(
+                                    initialDir = s.fileManagerInitialDir,
+                                    highlightFile = s.fileManagerHighlightFile,
+                                    onClose = vm::closeFileManager
+                                )
+                            }
+                            else -> {
                     // Focus state lives in holders that are only read inside small child scopes (hero title, backdrop,
                     // scroll effect). Moving focus therefore never recomposes the whole grid.
                     val focusedAppState = remember { mutableStateOf<InstalledAppInfo?>(null) }
@@ -712,6 +746,7 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 }
+}
             }
         }
     }
@@ -746,7 +781,12 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
         AnimatedContent(
             targetState = name,
             transitionSpec = {
-                (fadeIn(tween(170)) togetherWith fadeOut(tween(100))).using(SizeTransform(clip = false) { _, _ -> tween(0) })
+                (fadeIn(tween(200, easing = AppleMotion.Decelerate)) +
+                 slideInVertically(tween(200, easing = AppleMotion.Decelerate)) { (it * 0.3f).toInt() })
+                    .togetherWith(
+                        fadeOut(tween(120, easing = AppleMotion.EaseIn)) +
+                        slideOutVertically(tween(120, easing = AppleMotion.EaseIn)) { -(it * 0.3f).toInt() }
+                    ).using(SizeTransform(clip = false) { _, _ -> tween(0) })
             },
             modifier = modifier,
             label = "heroName"
@@ -999,12 +1039,14 @@ private fun TvPill(
     val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        if (focused) 1.07f else 1f,
-        spring(dampingRatio = 0.78f, stiffness = 420f),
+        targetValue = if (focused) 1.07f else 1f,
+        animationSpec = AppleMotion.SpringSnappy,
         label = "pillScale"
     )
     val fg by animateColorAsState(
-        if (focused) Color.Black else if (isSelected) Color.White else Color(0xEBFFFFFF), tween(120), label = "pillFg"
+        targetValue = if (focused) Color.Black else if (isSelected) Color.White else Color(0xEBFFFFFF),
+        animationSpec = AppleMotion.microTween(),
+        label = "pillFg"
     )
     val shape = RoundedCornerShape(50)
     val bg = when {
@@ -1086,16 +1128,38 @@ private fun ToolsMenuDialog(
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut),
+        label = "toolsScrim"
+    )
+    val panelScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.92f,
+        animationSpec = AppleMotion.SpringStandard,
+        label = "toolsScale"
+    )
+    val panelAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
+        label = "toolsAlpha"
+    )
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xE6000000))
+            .background(Color(0xE6000000).copy(alpha = 0.9f * scrimAlpha))
             .modalTrap(),
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
                 .width(560.dp)
+                .graphicsLayer {
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    alpha = panelAlpha
+                }
                 .clip(RoundedCornerShape(36.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
                 .padding(horizontal = 36.dp, vertical = 26.dp),
@@ -1184,12 +1248,30 @@ private fun CleanTvAppTile(
     var isLongPressHandled by remember { mutableStateOf(false) }
 
     val scale by animateFloatAsState(
-        if (focused) focusScale else 1f,
-        spring(dampingRatio = 0.82f, stiffness = 380f),
+        targetValue = if (focused) focusScale else 1f,
+        animationSpec = AppleMotion.SpringSnappy,
         label = "tileScale"
     )
-    val ringAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(180), label = "tileRing")
-    val nameAlpha by animateFloatAsState(if (focused) 1f else 0f, tween(160), label = "tileName")
+    val ringAlpha by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = AppleMotion.microTween(),
+        label = "tileRing"
+    )
+    val nameAlpha by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(180, easing = AppleMotion.Decelerate),
+        label = "tileName"
+    )
+    val nameOffsetY by animateFloatAsState(
+        targetValue = if (focused) 0f else 8f,
+        animationSpec = tween(200, easing = AppleMotion.Decelerate),
+        label = "tileNameY"
+    )
+    val shadowElevPx by animateFloatAsState(
+        targetValue = if (focused) 32f else 0f,
+        animationSpec = AppleMotion.SpringGentle,
+        label = "tileShadow"
+    )
     val shape = RoundedCornerShape(radius)
 
     Column(
@@ -1201,11 +1283,11 @@ private fun CleanTvAppTile(
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
-                    shadowElevation = if (focused) 20f else 0f
+                    shadowElevation = shadowElevPx
                     this.shape = shape
                     clip = false
-                    ambientShadowColor = Color(0x66000000)
-                    spotShadowColor = Color(0x99000000)
+                    ambientShadowColor = Color(0x80000000)
+                    spotShadowColor = Color(0xCC000000)
                 }
                 .clip(shape)
                 // Focus ring + soft highlight drawn in the draw phase: animating them never recomposes the tile.
@@ -1384,7 +1466,10 @@ private fun CleanTvAppTile(
                     .fillMaxWidth()
                     .padding(top = 10.dp)
                     .height(28.dp)
-                    .graphicsLayer { alpha = nameAlpha }
+                    .graphicsLayer {
+                        alpha = nameAlpha
+                        translationY = nameOffsetY
+                    }
             )
         } else {
             Spacer(Modifier.height(4.dp))

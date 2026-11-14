@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -86,10 +92,27 @@ fun PersonalizationDialog(
     onOpenFileManagerForWallpaper: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut),
+        label = "pScrim"
+    )
+    val panelScale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.92f,
+        animationSpec = AppleMotion.SpringStandard,
+        label = "pScale"
+    )
+    val panelAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
+        label = "pAlpha"
+    )
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xE6000000))
+            .background(Color(0xE6000000).copy(alpha = 0.92f * scrimAlpha))
             .modalTrap()
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
@@ -97,6 +120,11 @@ fun PersonalizationDialog(
         Column(
             modifier = Modifier
                 .width(620.dp)
+                .graphicsLayer {
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    alpha = panelAlpha
+                }
                 .glassCard()
                 .clickable(enabled = false) {}
                 .padding(28.dp),
