@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,6 +49,12 @@ import java.util.Locale
 @Composable
 fun NativeQuickShareConsentDialog(
     state: NativeQuickShareState,
+    isQuickShareActive: Boolean = false,
+    autoOffSeconds: Int? = null,
+    serverUrl: String? = null,
+    pin: String? = null,
+    deviceName: String = android.os.Build.MODEL,
+    onToggleActive: ((Boolean) -> Unit)? = null,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
     onDismiss: () -> Unit,
@@ -59,104 +66,209 @@ fun NativeQuickShareConsentDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f))
+            .background(Color.Black.copy(alpha = 0.75f))
             .modalTrap(),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .width(640.dp)
+                .width(660.dp)
                 .wrapContentHeight()
                 .glassCard(32.dp),
         ) {
             if (transfer == null) {
-                // ─── Idle / Discoverable Ready State ─────────────────────────────
+                // ─── Quick Share Control & Settings Screen ───────────────────────────────
                 Column(
-                    modifier = Modifier.padding(38.dp),
+                    modifier = Modifier.padding(34.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Color(0xFF007AFF).copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center,
+                    // Header Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            androidx.compose.ui.res.painterResource(com.leantv.app.R.drawable.ic_quick_share),
-                            contentDescription = "Quick Share",
-                            tint = Color(0xFF0A84FF),
-                            modifier = Modifier.size(40.dp),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFF007AFF).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    androidx.compose.ui.res.painterResource(com.leantv.app.R.drawable.ic_quick_share),
+                                    contentDescription = "Quick Share",
+                                    tint = Color(0xFF0A84FF),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Column {
+                                Text("Quick Share", style = Ty.Title)
+                                Text("Receive photos, videos, and files wirelessly", style = Ty.Small.copy(color = Pal.Dim))
+                            }
+                        }
+
+                        // Close button (X)
+                        Focusable(
+                            onClick = onDismiss,
+                            shape = RoundedCornerShape(50),
+                            idle = Color.White.copy(alpha = 0.08f)
+                        ) {
+                            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Pal.Dim, modifier = Modifier.size(20.dp))
+                            }
+                        }
                     }
 
-                    Text(
-                        text = "Android Quick Share",
-                        style = Ty.Title,
-                        textAlign = TextAlign.Center,
-                    )
-
+                    // Status & Inactivity Timer Card
                     Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Pal.Mint.copy(alpha = 0.16f))
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "● Ready to Receive (${android.os.Build.MODEL})",
-                            style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold)
-                        )
-                    }
-
-                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isQuickShareActive) Pal.Mint.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.05f))
+                            .border(1.dp, if (isQuickShareActive) Pal.Mint.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                            .padding(18.dp)
                     ) {
-                        Text("1. Open any photo, video, or file on your Android phone", style = Ty.Small.copy(color = Pal.Text))
-                        Text("2. Tap Share ➔ Quick Share", style = Ty.Small.copy(color = Pal.Text))
-                        Text("3. Select this TV (${android.os.Build.MODEL})", style = Ty.Small.copy(color = Pal.Text))
-                        Text("4. Accept the prompt here on your TV", style = Ty.Small.copy(color = Pal.Text))
-                        Spacer(Modifier.height(4.dp))
-                        Text("📁 Saved directly to: /storage/emulated/0/Quickshare", style = Ty.Small.copy(color = Pal.Dim))
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(if (isQuickShareActive) Pal.Mint else Color.Gray)
+                                    )
+                                    Text(
+                                        text = if (isQuickShareActive) "Active & Discoverable" else "Turned Off",
+                                        style = Ty.Body.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isQuickShareActive) Pal.Mint else Pal.Dim
+                                        )
+                                    )
+                                }
+
+                                if (isQuickShareActive && autoOffSeconds != null) {
+                                    val m = autoOffSeconds / 60
+                                    val s = autoOffSeconds % 60
+                                    Text(
+                                        text = "⏱️ Auto-off in %d:%02d".format(m, s),
+                                        style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
+                                    )
+                                }
+                            }
+
+                            if (isQuickShareActive) {
+                                Text(
+                                    text = "This TV is visible as \"$deviceName\". When someone sends a file, an Accept / Decline popup will appear anywhere on screen.",
+                                    style = Ty.Small.copy(color = Pal.Text)
+                                )
+                                Text(
+                                    text = "Note: Quick Share turns off automatically after 15 minutes of inactivity to save TV resources.",
+                                    style = Ty.Small.copy(color = Pal.Dim, fontSize = 13.sp)
+                                )
+                            } else {
+                                Text(
+                                    text = "Quick Share is turned off. Turn it on when you want to receive files from your phone or PC.",
+                                    style = Ty.Small.copy(color = Pal.Dim)
+                                )
+                                Text(
+                                    text = "Note: When turned on, it automatically turns off after 15 minutes if not used.",
+                                    style = Ty.Small.copy(color = Pal.Dim, fontSize = 13.sp)
+                                )
+                            }
+                        }
                     }
 
+                    // Main Action: Big ON / OFF Toggle Button
                     val autoFocus = rememberAutoFocus()
+                    Focusable(
+                        onClick = { onToggleActive?.invoke(!isQuickShareActive) },
+                        modifier = Modifier.fillMaxWidth().focusRequester(autoFocus),
+                        shape = RoundedCornerShape(16.dp),
+                        idle = if (isQuickShareActive) Pal.Coral.copy(alpha = 0.22f) else Pal.Mint.copy(alpha = 0.25f)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isQuickShareActive) "Turn OFF Quick Share" else "Turn ON Quick Share",
+                                style = Ty.Button.copy(
+                                    color = if (isQuickShareActive) Pal.Coral else Pal.Mint,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+
+                    // Instructions (when Active)
+                    if (isQuickShareActive) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(alpha = 0.04f))
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("📱 From Android / Windows Phone:", style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold))
+                            Text("1. Open any photo, video, or file on phone -> tap Share -> Quick Share", style = Ty.Small.copy(color = Pal.Text))
+                            Text("2. Select \"$deviceName\" from Nearby Devices", style = Ty.Small.copy(color = Pal.Text))
+                            Text("3. Accept prompt on TV (pops up automatically anywhere in the app)", style = Ty.Small.copy(color = Pal.Text))
+
+                            if (!serverUrl.isNullOrBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text("🌐 From iPhone, Mac, or PC Browser:", style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.Bold))
+                                Text("Open browser: $serverUrl${if (!pin.isNullOrBlank()) " (PIN: $pin)" else ""}", style = Ty.Small.copy(color = Pal.Mint, fontWeight = FontWeight.SemiBold))
+                            }
+                        }
+                    }
+
+                    // Bottom Navigation Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Focusable(
                             onClick = onOpenFolder,
-                            modifier = Modifier.weight(1f).focusRequester(autoFocus),
+                            modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(50),
                             idle = Pal.SurfaceHi
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Open Quickshare in Files", style = Ty.Button.copy(color = Pal.Text))
+                                Text("Open Received Files", style = Ty.Body.copy(color = Pal.Text))
                             }
                         }
 
                         Focusable(
                             onClick = onDismiss,
-                            modifier = Modifier.weight(0.7f),
+                            modifier = Modifier.weight(0.8f),
                             shape = RoundedCornerShape(50),
                             idle = Pal.Surface
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                                 horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Close", style = Ty.Button.copy(color = Pal.Dim))
+                                Text(if (isQuickShareActive) "Keep in Background" else "Close", style = Ty.Body.copy(color = Pal.Dim))
                             }
                         }
                     }

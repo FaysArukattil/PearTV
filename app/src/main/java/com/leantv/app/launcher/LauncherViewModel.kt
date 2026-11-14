@@ -98,6 +98,8 @@ data class LauncherState(
     // Quick Share Hub & Panel
     val showQuickShareHub: Boolean = false,
     val showQuickShare: Boolean = false,
+    val isQuickShareActive: Boolean = false,
+    val quickShareAutoOffSeconds: Int? = null,
     val quickShareState: com.leantv.app.share.QuickShareState = com.leantv.app.share.QuickShareState(),
 
     // Native Quick Share (mDNS / BLE receiver)
@@ -217,8 +219,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             fixKeyboard(userInitiated = false)
             syncAccountsToApps()
             startObservingTvInputs()
-            delay(1000)
-            startNativeQuickShare(openDialog = false, silent = true)
             launch(Dispatchers.IO) {
                 try {
                     com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
@@ -1029,41 +1029,83 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Quick Share Dual-Mode (Feature #8) ----------
 
+    private var qsAutoOffJob: Job? = null
+
     fun handleQuickShareClick() {
-        // Open the Hub so user can pick: Native QS (this TV appears in phone picker)
-        // or the web-based fallback.
-        _state.update { it.copy(showQuickShareHub = true) }
+        openQuickShareControl()
     }
 
     fun openAndroidQuickShare() {
-        if (!com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
-            com.leantv.app.files.FileManagerHelper.requestStoragePermission(ctx)
-        }
-        startNativeQuickShare(openDialog = true, silent = false)
+        openQuickShareControl()
     }
 
-    fun openQuickShareHub() {
-        openAndroidQuickShare()
+    fun openQuickShareControl() {
+        _state.update { it.copy(showQuickShare = true) }
+    }
+
+    fun closeQuickShareControl() {
+        _state.update { it.copy(showQuickShare = false) }
     }
 
     fun closeQuickShareHub() {
-        _state.update { it.copy(showQuickShareHub = false) }
+        closeQuickShareControl()
     }
 
-    fun launchNativeQuickShare() {
-        openAndroidQuickShare()
-    }
-
-    fun startNativeQuickShare(openDialog: Boolean = true, silent: Boolean = false) {
-        // Start the foreground service if not already running
-        val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ctx.startForegroundService(intent)
+    fun toggleQuickShare(enable: Boolean) {
+        if (enable) {
+            turnOnQuickShare()
         } else {
-            ctx.startService(intent)
+            turnOffQuickShare()
+        }
+    }
+
+    fun turnOnQuickShare() {
+        if (!com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
+            com.leantv.app.files.FileManagerHelper.requestStoragePermission(ctx)
+        }
+        startNativeQuickShare(openDialog = false, silent = true)
+        startWebQuickShare()
+        _state.update { it.copy(isQuickShareActive = true) }
+        resetQuickShareInactivityTimer()
+        toast("Quick Share is ON (auto-off in 15m)")
+    }
+
+    fun turnOffQuickShare() {
+        qsAutoOffJob?.cancel()
+        qsAutoOffJob = null
+        stopNativeQuickShare()
+        stopWebQuickShare()
+        _state.update { it.copy(isQuickShareActive = false, quickShareAutoOffSeconds = null) }
+        toast("Quick Share turned OFF")
+    }
+
+    fun resetQuickShareInactivityTimer() {
+        qsAutoOffJob?.cancel()
+        if (!_state.value.isQuickShareActive) return
+        qsAutoOffJob = viewModelScope.launch {
+            val totalSeconds = 15 * 60 // 15 minutes = 900 seconds
+            for (sec in totalSeconds downTo 1) {
+                _state.update { it.copy(quickShareAutoOffSeconds = sec) }
+                delay(1000)
+            }
+            _state.update { it.copy(quickShareAutoOffSeconds = null) }
+            turnOffQuickShare()
+            toast("Quick Share turned off due to 15 min of inactivity")
+        }
+    }
+
+    fun startNativeQuickShare(openDialog: Boolean = false, silent: Boolean = true) {
+        val intent = android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(intent)
+            } else {
+                ctx.startService(intent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherVM", "Failed to start NativeQuickShareReceiver", e)
         }
 
-        // Bind to the service to observe its state flow
         if (nativeQsConnection == null) {
             val conn = object : android.content.ServiceConnection {
                 override fun onServiceConnected(name: android.content.ComponentName?, binder: android.os.IBinder?) {
@@ -1075,13 +1117,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                                 val incoming = qsState.incomingTransfer
                                 _state.update { current ->
                                     current.copy(
-                                        nativeQuickShareState = qsState,
-                                        // When an incoming file transfer arrives from any phone, POP UP INSTANTLY
-                                        showNativeQuickShare = if (incoming != null) true else current.showNativeQuickShare
+                                        nativeQuickShareState = qsState
                                     )
                                 }
 
+                                if (incoming != null) {
+                                    resetQuickShareInactivityTimer()
+                                }
+
                                 if (incoming?.phase == com.leantv.app.share.TransferPhase.COMPLETED) {
+                                    resetQuickShareInactivityTimer()
                                     viewModelScope.launch {
                                         delay(1200)
                                         val fileOnDisk = qsState.lastReceivedFiles.firstOrNull()?.let { java.io.File(it.path) }
@@ -1099,41 +1144,54 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 override fun onServiceDisconnected(name: android.content.ComponentName?) {
                     nativeQsService = null
                     nativeQsConnection = null
-                    // Service crashed/killed — rebind silently so incoming transfers keep working
-                    startNativeQuickShare(openDialog = false, silent = true)
                 }
             }
             nativeQsConnection = conn
-            ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+            try {
+                ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+            } catch (e: Exception) {
+                android.util.Log.e("LauncherVM", "Failed to bind NativeQuickShareReceiver", e)
+            }
         }
 
         if (openDialog) {
-            _state.update { it.copy(showNativeQuickShare = true) }
-        }
-        if (!silent) {
-            toast("TV is discoverable in Quick Share!")
+            openQuickShareControl()
         }
     }
 
     fun acceptNativeTransfer() {
         nativeQsService?.submitConsent(true)
+        resetQuickShareInactivityTimer()
     }
 
     fun rejectNativeTransfer() {
         nativeQsService?.submitConsent(false)
+        resetQuickShareInactivityTimer()
+    }
+
+    fun dismissIncomingTransfer() {
+        nativeQsService?.submitConsent(false)
+        _state.update { current ->
+            current.copy(
+                nativeQuickShareState = current.nativeQuickShareState.copy(incomingTransfer = null)
+            )
+        }
     }
 
     fun closeNativeQuickShare() {
-        // Only hide the dialog — keep the service bound so new incoming transfers still trigger the popup
-        _state.update { it.copy(showNativeQuickShare = false) }
+        closeQuickShareControl()
     }
 
     fun stopNativeQuickShare() {
-        nativeQsConnection?.let { ctx.unbindService(it) }
+        try {
+            nativeQsConnection?.let { ctx.unbindService(it) }
+        } catch (_: Exception) {}
         nativeQsConnection = null
         nativeQsService = null
-        ctx.stopService(android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java))
-        _state.update { it.copy(showNativeQuickShare = false, nativeQuickShareState = com.leantv.app.share.NativeQuickShareState()) }
+        try {
+            ctx.stopService(android.content.Intent(ctx, com.leantv.app.share.NativeQuickShareReceiver::class.java))
+        } catch (_: Exception) {}
+        _state.update { it.copy(nativeQuickShareState = com.leantv.app.share.NativeQuickShareState()) }
     }
 
     private fun launchNativeGoogleQuickShareDirect(): Boolean {
@@ -1207,12 +1265,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openQuickShare() {
-        if (_state.value.showQuickShare) return
+        openQuickShareControl()
+    }
+
+    fun closeQuickShare() {
+        closeQuickShareControl()
+    }
+
+    fun startWebQuickShare() {
+        if (shareServer != null) return
 
         val server = com.leantv.app.share.QuickShareServer(
             context = ctx,
             scope = viewModelScope,
             onItemReceived = { item ->
+                resetQuickShareInactivityTimer()
                 _state.update { s ->
                     s.copy(
                         quickShareState = s.quickShareState.copy(
@@ -1226,6 +1293,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 }
             },
             onProgressUpdate = { status ->
+                if (status != null) resetQuickShareInactivityTimer()
                 _state.update { s ->
                     s.copy(quickShareState = s.quickShareState.copy(transferStatus = status))
                 }
@@ -1238,7 +1306,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         _state.update {
             it.copy(
-                showQuickShare = true,
                 quickShareState = it.quickShareState.copy(
                     isRunning = started,
                     ipAddress = ip,
@@ -1249,19 +1316,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun closeQuickShare() {
-        stopQuickShare()
-        _state.update { it.copy(showQuickShare = false) }
-    }
-
-    private fun stopQuickShare() {
-        shareServer?.stop()
+    fun stopWebQuickShare() {
+        try {
+            shareServer?.stop()
+        } catch (_: Exception) {}
         shareServer = null
         _state.update {
             it.copy(
-                quickShareState = it.quickShareState.copy(isRunning = false, transferStatus = null)
+                quickShareState = it.quickShareState.copy(
+                    isRunning = false,
+                    ipAddress = null,
+                    pin = "",
+                    transferStatus = null
+                )
             )
         }
+    }
+
+    private fun stopQuickShare() {
+        turnOffQuickShare()
     }
 
     fun openUrl(url: String) {

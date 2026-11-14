@@ -190,6 +190,8 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showStorageManager -> vm.closeStorageManager()
             s.showFileManager -> vm.closeFileManager()
             s.showPersonalization -> vm.closePersonalization()
+            s.nativeQuickShareState.incomingTransfer != null -> vm.dismissIncomingTransfer()
+            s.showQuickShare -> vm.closeQuickShareControl()
             s.showNativeQuickShare -> vm.closeNativeQuickShare()
             s.showInputsDialog -> vm.closeInputs()
             s.showProfileDialog -> vm.closeProfile()
@@ -199,74 +201,88 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.uninstallConfirmApp != null -> vm.dismissUninstallConfirm()
             s.actionMenuApp != null -> vm.dismissActionMenu()
             s.showDefaultPrompt -> vm.dismissDefaultPrompt(dontAskAgain = false)
-            s.showQuickShare -> vm.closeQuickShare()
             s.showQuickShareHub -> vm.closeQuickShareHub()
             showTools -> showTools = false
             else -> Unit // Home is the root
         }
     }
 
-    // Fullscreen Overlay Screens
+    // Fullscreen Overlay Screens (with Global Quick Share incoming transfer overlay across all screens)
     if (s.showScreensaver) {
         TvCanvas {
-            AppleTvScreensaver(
-                mode = s.screensaverMode,
-                customPath = s.screensaverCustomPath,
-                onDismiss = vm::closeScreensaver
-            )
+            Box(Modifier.fillMaxSize()) {
+                AppleTvScreensaver(
+                    mode = s.screensaverMode,
+                    customPath = s.screensaverCustomPath,
+                    onDismiss = vm::closeScreensaver
+                )
+                GlobalIncomingTransferOverlay(s, vm)
+            }
         }
         return
     }
 
     if (s.showTvPlayer) {
         TvCanvas {
-            TvInputPlayer(
-                ports = s.tvPorts,
-                activeId = s.activeInputId,
-                onSelect = vm::switchToPort,
-                onFailed = vm::tvPlayerFailed,
-                onClose = vm::closeTvPlayer
-            )
+            Box(Modifier.fillMaxSize()) {
+                TvInputPlayer(
+                    ports = s.tvPorts,
+                    activeId = s.activeInputId,
+                    onSelect = vm::switchToPort,
+                    onFailed = vm::tvPlayerFailed,
+                    onClose = vm::closeTvPlayer
+                )
+                GlobalIncomingTransferOverlay(s, vm)
+            }
         }
         return
     }
 
     if (s.showCleanTvScreen) {
         TvCanvas {
-            CleanTvScreen(
-                adbClient = vm.adb,
-                journal = vm.journal,
-                scanner = vm.scanner,
-                tweaks = vm.tweaks,
-                onClose = vm::closeCleanTvScreen
-            )
+            Box(Modifier.fillMaxSize()) {
+                CleanTvScreen(
+                    adbClient = vm.adb,
+                    journal = vm.journal,
+                    scanner = vm.scanner,
+                    tweaks = vm.tweaks,
+                    onClose = vm::closeCleanTvScreen
+                )
+                GlobalIncomingTransferOverlay(s, vm)
+            }
         }
         return
     }
 
     if (s.showStorageManager) {
         TvCanvas {
-            StorageManagerScreen(
-                adbClient = vm.adb,
-                journal = vm.journal,
-                onClose = vm::closeStorageManager
-            )
+            Box(Modifier.fillMaxSize()) {
+                StorageManagerScreen(
+                    adbClient = vm.adb,
+                    journal = vm.journal,
+                    onClose = vm::closeStorageManager
+                )
+                GlobalIncomingTransferOverlay(s, vm)
+            }
         }
         return
     }
 
     if (s.showFileManager) {
         TvCanvas {
-            FileManagerScreen(
-                initialDir = s.fileManagerInitialDir,
-                highlightFile = s.fileManagerHighlightFile,
-                onClose = vm::closeFileManager
-            )
+            Box(Modifier.fillMaxSize()) {
+                FileManagerScreen(
+                    initialDir = s.fileManagerInitialDir,
+                    highlightFile = s.fileManagerHighlightFile,
+                    onClose = vm::closeFileManager
+                )
+                GlobalIncomingTransferOverlay(s, vm)
+            }
         }
         return
     }
 
-    val modalOpen = s.showPersonalization || s.showNativeQuickShare ||
+    val modalOpen = s.showPersonalization || s.showQuickShare || s.nativeQuickShareState.incomingTransfer != null ||
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
             s.showCleanTvScreen || s.showScreensaver || s.showScreensaverSettings ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
@@ -369,7 +385,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                         pillRequesters = topBarPillRequesters,
                         dockRequesters = dockColRequesters,
                         dockSize = dock.size,
-                        onOpenQuickShare = { vm.openAndroidQuickShare() },
+                        isQuickShareActive = s.isQuickShareActive,
+                        onOpenQuickShare = { vm.openQuickShareControl() },
                         onOpenInputs = vm::openInputs,
                         onOpenNetwork = vm::openNetworkSettings,
                         onOpenCleanTv = vm::requestCleanTv,
@@ -520,7 +537,8 @@ fun HomeScreen(vm: LauncherViewModel) {
             if (showTools) {
                 ToolsMenuDialog(
                     accountName = s.tvProfile.displayName,
-                    onQuickShare = { showTools = false; vm.openAndroidQuickShare() },
+                    isQuickShareActive = s.isQuickShareActive,
+                    onQuickShare = { showTools = false; vm.openQuickShareControl() },
                     onStorage = { showTools = false; vm.openStorageManager() },
                     onFiles = { showTools = false; vm.openFileManager() },
                     onTheme = { showTools = false; vm.openPersonalization() },
@@ -592,15 +610,23 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
-            // Native Android Quick Share – consent / discoverable dialog
-            if (s.showNativeQuickShare) {
+            // Quick Share control / consent dialog
+            if (s.showQuickShare || s.nativeQuickShareState.incomingTransfer != null) {
                 com.leantv.app.share.NativeQuickShareConsentDialog(
                     state = s.nativeQuickShareState,
+                    isQuickShareActive = s.isQuickShareActive,
+                    autoOffSeconds = s.quickShareAutoOffSeconds,
+                    serverUrl = s.quickShareState.serverUrl,
+                    pin = s.quickShareState.pin,
+                    deviceName = s.detectedDeviceLabel.ifBlank { android.os.Build.MODEL },
+                    onToggleActive = vm::toggleQuickShare,
                     onAccept = vm::acceptNativeTransfer,
                     onDecline = vm::rejectNativeTransfer,
-                    onDismiss = vm::closeNativeQuickShare,
+                    onDismiss = {
+                        if (s.nativeQuickShareState.incomingTransfer != null) vm.dismissIncomingTransfer() else vm.closeQuickShareControl()
+                    },
                     onOpenFolder = {
-                        vm.closeNativeQuickShare()
+                        if (s.nativeQuickShareState.incomingTransfer != null) vm.dismissIncomingTransfer() else vm.closeQuickShareControl()
                         vm.openFileManager(
                             initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
                             highlightFile = null
@@ -740,6 +766,32 @@ private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
 }
 
 @Composable
+private fun GlobalIncomingTransferOverlay(s: LauncherState, vm: LauncherViewModel) {
+    val incoming = s.nativeQuickShareState.incomingTransfer
+    if (incoming != null) {
+        com.leantv.app.share.NativeQuickShareConsentDialog(
+            state = s.nativeQuickShareState,
+            isQuickShareActive = s.isQuickShareActive,
+            autoOffSeconds = s.quickShareAutoOffSeconds,
+            serverUrl = s.quickShareState.serverUrl,
+            pin = s.quickShareState.pin,
+            deviceName = s.detectedDeviceLabel.ifBlank { android.os.Build.MODEL },
+            onToggleActive = vm::toggleQuickShare,
+            onAccept = vm::acceptNativeTransfer,
+            onDecline = vm::rejectNativeTransfer,
+            onDismiss = vm::dismissIncomingTransfer,
+            onOpenFolder = {
+                vm.dismissIncomingTransfer()
+                vm.openFileManager(
+                    initialDir = com.leantv.app.files.FileManagerHelper.ensureQuickShareDir(),
+                    highlightFile = null
+                )
+            }
+        )
+    }
+}
+
+@Composable
 private fun AppSectionHeader(title: String) {
     Text(
         text = title,
@@ -783,6 +835,7 @@ private fun CleanTvTopBar(
     pillRequesters: List<FocusRequester> = emptyList(),
     dockRequesters: List<FocusRequester> = emptyList(),
     dockSize: Int = 4,
+    isQuickShareActive: Boolean = false,
     onOpenQuickShare: () -> Unit,
     onOpenInputs: () -> Unit,
     onOpenNetwork: () -> Unit,
@@ -896,7 +949,7 @@ private fun CleanTvTopBar(
         ) {
             // Real Quick Share icon pill
             TvPill(
-                label = null,
+                label = if (isQuickShareActive) "Quick Share ●" else null,
                 iconRes = R.drawable.ic_quick_share,
                 contentDescription = "Quick Share",
                 modifier = pillFocusModifier(0),
@@ -1041,6 +1094,7 @@ private fun TvPill(
 @Composable
 private fun ToolsMenuDialog(
     accountName: String,
+    isQuickShareActive: Boolean = false,
     onQuickShare: () -> Unit,
     onStorage: () -> Unit,
     onFiles: () -> Unit,
@@ -1068,7 +1122,8 @@ private fun ToolsMenuDialog(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Tools", style = Ty.Title.copy(fontSize = 38.sp), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
-            TvPill("Quick Share", Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 54.dp, textSize = 20.sp, fill = true)
+            val qsLabel = if (isQuickShareActive) "Quick Share (Active ●)" else "Quick Share (Off)"
+            TvPill(qsLabel, Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
             TvPill("Theme", Icons.Rounded.Palette, onTheme, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)

@@ -120,10 +120,15 @@ class NativeQuickShareReceiver : Service() {
                 val port = server.start()
 
                 // mDNS advertisement – returns a closeable handle
-                val disc = Discovery(ctx, instanceEndpointIdProvider = { endpointId })
-                discovery = disc
-                val handle = disc.advertise(endpointInfo, port)
-                advertiseHandle = handle
+                try {
+                    val disc = Discovery(ctx, instanceEndpointIdProvider = { endpointId })
+                    discovery = disc
+                    val handle = disc.advertise(endpointInfo, port)
+                    advertiseHandle = handle
+                    Log.i(TAG, "Quick Share mDNS advertising started on port $port")
+                } catch (e: Exception) {
+                    Log.w(TAG, "mDNS advertise failed (non-fatal): ${e.message}")
+                }
 
                 // BLE advertisement for Samsung/stock Pixel picker visibility
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
