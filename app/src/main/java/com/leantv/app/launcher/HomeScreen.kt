@@ -42,6 +42,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
@@ -269,9 +271,13 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     TvCanvas {
+        var focusedApp by remember { mutableStateOf<InstalledAppInfo?>(null) }
+        var focusedGridRow by remember { mutableIntStateOf(-1) }
+        val listState = rememberLazyListState()
+
         CleanTvBackdrop(
             themeId = s.wallpaperTheme,
-            focusedApp = s.focusedApp ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull()
+            focusedApp = focusedApp ?: s.dockApps.firstOrNull() ?: s.allApps.firstOrNull()
         ) {
             // Layout follows the reference launcher (tvOS style), scaled x1.33 for the 1280dp canvas:
             // header, hero name, pinned glass dock, then a scrolling grid of banner tiles.
@@ -287,10 +293,16 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val dock = s.dockApps.ifEmpty { s.allApps.take(cols) }.take(cols)
                 val gridApps = s.allApps // Show all installed applications on the home screen
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
-                val heroName = s.focusedApp?.appName
-                    ?: dock.firstOrNull()?.appName
-                    ?: s.allApps.firstOrNull()?.appName
-                    ?: ""
+                val heroName = (focusedApp ?: dock.firstOrNull() ?: s.allApps.firstOrNull())?.appName ?: ""
+
+                LaunchedEffect(focusedGridRow) {
+                    if (focusedGridRow >= 0) {
+                        val targetIndex = if (dock.isNotEmpty()) focusedGridRow + 2 else focusedGridRow
+                        listState.animateScrollToItem(targetIndex, 0)
+                    } else {
+                        listState.animateScrollToItem(0, 0)
+                    }
+                }
 
                 val topBarPillRequesters = remember { List(7) { FocusRequester() } }
                 val dockColRequesters = remember { List(cols) { FocusRequester() } }
@@ -332,21 +344,13 @@ fun HomeScreen(vm: LauncherViewModel) {
 
                     Spacer(Modifier.height(14.dp))
 
-                    AnimatedContent(
-                        targetState = heroName,
-                        transitionSpec = {
-                            fadeIn(tween(180)) togetherWith fadeOut(tween(140))
-                        },
-                        label = "heroNameAnim"
-                    ) { targetName ->
-                        Text(
-                            text = targetName,
-                            style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 6.dp).height(72.dp)
-                        )
-                    }
+                    Text(
+                        text = heroName,
+                        style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 6.dp).height(72.dp)
+                    )
 
                     AnimatedContent(
                         targetState = s.isLoading,
@@ -381,6 +385,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                             }
                         } else {
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
                                 verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -408,7 +413,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                                     .focusProperties {
                                                         up = topBarPillRequesters[topIdx]
                                                         if (gridRows.isNotEmpty()) {
-                                                            down = gridRow0ColRequesters[gridTargetCol]
+                                                             down = gridRow0ColRequesters[gridTargetCol]
                                                         }
                                                     }
                                                     .onPreviewKeyEvent { ev ->
@@ -430,7 +435,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                                                         } else false
                                                     }
                                             },
-                                            onFocus = { vm.setFocusedApp(it) },
+                                            onFocus = {
+                                                focusedApp = it
+                                                focusedGridRow = -1
+                                            },
                                             onClick = { vm.launch(it) },
                                             onLongClick = { vm.showActionMenu(it) },
                                         )
@@ -477,7 +485,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                                                 }
                                         } else null,
                                         badge = null,
-                                        onFocus = { vm.setFocusedApp(it) },
+                                        onFocus = {
+                                            focusedApp = it
+                                            focusedGridRow = rowIndex
+                                        },
                                         onClick = { vm.launch(it) },
                                         onLongClick = { vm.showActionMenu(it) },
                                     )
@@ -527,7 +538,6 @@ fun HomeScreen(vm: LauncherViewModel) {
                 InputsSwitcherDialog(
                     ports = s.tvPorts,
                     onSelectPort = vm::switchToPort,
-                    onOpenNativeInputs = vm::openNativeTvInputs,
                     onDismiss = vm::closeInputs
                 )
             }
@@ -1274,15 +1284,23 @@ private fun CleanTvBackdrop(
     val theme = WALLPAPER_THEMES.find { it.id == themeId } ?: WALLPAPER_THEMES.first()
     val ctx = LocalContext.current
     val fallbackHue = extractFallbackHue(focusedApp)
-    val ambientColor by produceState(fallbackHue, focusedApp?.packageName) {
-        value = fallbackHue
-        focusedApp?.let { app ->
-            IconCache.loadVisuals(ctx, app.packageName)?.glow?.let { value = it }
+    val ambientColor by produceState(
+        initialValue = focusedApp?.let { IconCache.get(it.packageName)?.glow } ?: fallbackHue,
+        key1 = focusedApp?.packageName
+    ) {
+        val cached = focusedApp?.let { IconCache.get(it.packageName)?.glow }
+        if (cached != null) {
+            value = cached
+        } else {
+            value = fallbackHue
+            focusedApp?.let { app ->
+                IconCache.loadVisuals(ctx, app.packageName)?.glow?.let { value = it }
+            }
         }
     }
     val animatedAmbient by animateColorAsState(
         targetValue = ambientColor,
-        animationSpec = tween(500),
+        animationSpec = tween(220),
         label = "ambientGlow"
     )
 
@@ -1415,7 +1433,6 @@ private fun CleanTvSuccessDialog(
 private fun InputsSwitcherDialog(
     ports: List<TvPort>,
     onSelectPort: (TvPort) -> Unit,
-    onOpenNativeInputs: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -1429,15 +1446,15 @@ private fun InputsSwitcherDialog(
     ) {
         Column(
             Modifier
-                .width(760.dp)
+                .width(720.dp)
                 .clip(RoundedCornerShape(32.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
                 .padding(horizontal = 40.dp, vertical = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Inputs & Sources", style = Ty.Title.copy(color = Color.White, fontSize = 34.sp))
-            Text("Switch to TV hardware inputs or system source picker", style = Ty.Dim.copy(fontSize = 18.sp))
+            Text("TV Inputs", style = Ty.Title.copy(color = Color.White, fontSize = 32.sp))
+            Text("Switch to external devices connected to this TV", style = Ty.Dim.copy(fontSize = 17.sp))
             Spacer(Modifier.height(10.dp))
 
             if (ports.isEmpty()) {
@@ -1448,7 +1465,7 @@ private fun InputsSwitcherDialog(
                     Icon(Icons.Rounded.SettingsInputHdmi, contentDescription = null, tint = Color(0x66FFFFFF), modifier = Modifier.size(64.dp))
                     Text("No Hardware Inputs Detected", style = Ty.Heading.copy(color = Color.White, fontSize = 24.sp))
                     Text(
-                        "This device may not expose HDMI/AV ports via Android TV API.\nUse the system source picker below.",
+                        "No external HDMI or AV sources detected on this TV.",
                         style = Ty.Dim.copy(fontSize = 16.sp),
                         textAlign = TextAlign.Center
                     )
@@ -1464,7 +1481,7 @@ private fun InputsSwitcherDialog(
                                     port = port,
                                     onClick = { onSelectPort(port) },
                                     modifier = Modifier
-                                        .width(216.dp)
+                                        .width(204.dp)
                                         .let { if (rowIdx == 0 && colIdx == 0) it.focusRequester(autoFocus) else it }
                                 )
                             }
@@ -1472,29 +1489,6 @@ private fun InputsSwitcherDialog(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-            }
-
-            // Always show native TV Source selector button
-            Focusable(
-                onClick = onOpenNativeInputs,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .let { if (ports.isEmpty()) it.focusRequester(autoFocus) else it },
-                shape = RoundedCornerShape(18.dp),
-                idle = Color(0x260A84FF)
-            ) { focused ->
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Tv, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "Open System TV Inputs",
-                        style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    )
-                }
             }
 
             Spacer(Modifier.height(8.dp))

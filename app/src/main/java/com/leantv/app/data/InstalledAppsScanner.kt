@@ -79,28 +79,11 @@ object InstalledAppsScanner {
                 ?: "v${PackageInfoCompat.getLongVersionCode(pi)}"
             val versionCode = PackageInfoCompat.getLongVersionCode(pi)
 
-            var sizeBytes = 0L
-            try {
-                if (ai.sourceDir != null) {
-                    val baseApk = File(ai.sourceDir)
-                    if (baseApk.exists()) sizeBytes += baseApk.length()
-                }
-                ai.splitSourceDirs?.forEach { splitDir ->
-                    val splitFile = File(splitDir)
-                    if (splitFile.exists()) sizeBytes += splitFile.length()
-                }
-            } catch (_: Exception) {}
+            val sizeBytes = 0L
 
-            var hasLaunchIntent = pkg in launchablePackages
-            if (!hasLaunchIntent) {
-                // Quick fallback check
-                hasLaunchIntent = try {
-                    pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null
-                } catch (_: Exception) { false }
-            }
+            val hasLaunchIntent = pkg in launchablePackages
 
-            cachedApps = result
-        result.add(
+            result.add(
                 InstalledAppInfo(
                     packageName = pkg,
                     appName = label,

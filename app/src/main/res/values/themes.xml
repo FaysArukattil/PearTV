@@ -6,7 +6,8 @@
     </style>
 
     <style name="Theme.LeanTv.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#000000</item>
+        <item name="windowSplashScreenBackground">#0D0E12</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/banner</item>
         <item name="postSplashScreenTheme">@style/Theme.LeanTv</item>
     </style>
 </resources>

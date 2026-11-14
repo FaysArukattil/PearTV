@@ -265,15 +265,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             Intent("android.settings.WIFI_SETTINGS"),
             Intent(Settings.ACTION_WIFI_SETTINGS),
             Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
             Intent(Settings.ACTION_SETTINGS)
         )
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(ctx.packageManager) != null) {
-                    ctx.startActivity(intent)
-                    return
-                }
+                ctx.startActivity(intent)
+                return
             } catch (_: Exception) {}
         }
     }
@@ -379,6 +378,30 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 AppSortMode.valueOf(journal.appSortMode)
             } catch (_: Exception) {
                 AppSortMode.RECENCY
+            }
+
+            val initialSortedAll = when (currentSortMode) {
+                AppSortMode.RECENCY -> launchable.sortedWith(
+                    compareByDescending<InstalledAppInfo> {
+                        if (journal.getLastLaunchTime(it.packageName) > 0L) journal.getLastLaunchTime(it.packageName)
+                        else if (journal.getLaunchCount(it.packageName) > 0) 1000L else 0L
+                    }.thenBy { it.appName.lowercase(Locale.ROOT) }
+                )
+                AppSortMode.ALPHABETICAL -> launchable.sortedBy { it.appName.lowercase(Locale.ROOT) }
+            }
+
+            val initialDock = if (favorites.isNotEmpty()) favorites.take(4) else initialSortedAll.take(4)
+
+            // Immediately emit apps so home screen loads with zero delay
+            _state.update {
+                it.copy(
+                    appSortMode = currentSortMode,
+                    featuredApps = favorites.take(5),
+                    favoriteApps = favorites,
+                    dockApps = initialDock,
+                    allApps = initialSortedAll,
+                    isLoading = false,
+                )
             }
 
             val sysUsage = withContext(Dispatchers.IO) { getSystemUsageMap() }
@@ -851,15 +874,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             Intent().setComponent(android.content.ComponentName("com.samsung.android.app.share", "com.samsung.android.app.share.ShareActivity"))
         )
 
-        val pm = ctx.packageManager
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(pm) != null) {
-                    ctx.startActivity(intent)
-                    toast("Opening Google Quick Share...")
-                    return true
-                }
+                ctx.startActivity(intent)
+                toast("Opening Google Quick Share...")
+                return true
             } catch (_: Exception) {}
         }
         return false
@@ -987,14 +1007,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             Intent("android.settings.SETTINGS"),
             Intent(Settings.ACTION_SETTINGS)
         )
-        val pm = ctx.packageManager
         for (intent in settingsIntents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(pm) != null) {
-                    ctx.startActivity(intent)
-                    return
-                }
+                ctx.startActivity(intent)
+                return
             } catch (_: Exception) {}
         }
 

@@ -21,10 +21,8 @@ class HomeActivity : ComponentActivity() {
     private val vm: LauncherViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
+        installSplashScreen()
         super.onCreate(savedInstanceState)
-        // Keep the splash visible while apps are loading
-        splashScreen.setKeepOnScreenCondition { vm.state.value.isLoading }
         TvSound.init(applicationContext)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)

@@ -68,8 +68,7 @@ object TvInputHelper {
                         TvInputInfo.TYPE_DISPLAY_PORT,
                         TvInputInfo.TYPE_VGA,
                         TvInputInfo.TYPE_DVI -> true
-                        TvInputInfo.TYPE_TUNER -> true
-                        else -> info.isPassthroughInput
+                        else -> false
                     }
                 }
 
@@ -130,11 +129,10 @@ object TvInputHelper {
         // Fallback: If no ports were detected from the system TV service (e.g. TV box or custom ROM),
         // present standard ports matching our aesthetic that trigger the native input switchers
         return listOf(
-            TvPort(id = "default_tuner", label = "Live TV", typeName = "Tuner", isConnected = true, isStandby = false, isPassthrough = true, kind = "TV", subtitle = "Antenna / Cable"),
-            TvPort(id = "default_hdmi1", label = "HDMI 1", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Console / Player"),
-            TvPort(id = "default_hdmi2", label = "HDMI 2 (eARC)", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Audio Return / TV Box"),
-            TvPort(id = "default_hdmi3", label = "HDMI 3", typeName = "HDMI", isConnected = false, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = "Auxiliary"),
-            TvPort(id = "default_av", label = "AV / Composite", typeName = "AV", isConnected = false, isStandby = false, isPassthrough = true, kind = "AV", subtitle = "Composite Input")
+            TvPort(id = "default_hdmi1", label = "HDMI 1", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = null),
+            TvPort(id = "default_hdmi2", label = "HDMI 2 (eARC)", typeName = "HDMI", isConnected = true, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = null),
+            TvPort(id = "default_hdmi3", label = "HDMI 3", typeName = "HDMI", isConnected = false, isStandby = false, isPassthrough = true, kind = "HDMI", subtitle = null),
+            TvPort(id = "default_av", label = "AV / Composite", typeName = "AV", isConnected = false, isStandby = false, isPassthrough = true, kind = "AV", subtitle = null)
         )
     }
 
