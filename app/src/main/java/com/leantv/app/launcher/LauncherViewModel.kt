@@ -311,11 +311,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         TvInputHelper.startFirstResolvable(ctx, intents)
 
     fun openNetworkSettings() {
+        // Direct, universal Wi-Fi screen first; OEM-specific / generic screens only as fallbacks.
         val ok = launchFirstResolvable(
             listOf(
+                Intent(Settings.ACTION_WIFI_SETTINGS),
                 Intent("android.settings.WIFI_SETTINGS"),
                 Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.connectivity.NetworkActivity")),
-                Intent(Settings.ACTION_WIFI_SETTINGS),
                 Intent(Settings.ACTION_WIRELESS_SETTINGS),
                 Intent(Settings.ACTION_SETTINGS)
             )
@@ -1277,12 +1278,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Native TV Settings (Feature #5) ----------
 
     fun openSystemSettings() {
+        // Standard Settings first (works on every Android / Google TV), then known OEM entry points.
         val ok = launchFirstResolvable(
             listOf(
+                Intent(Settings.ACTION_SETTINGS),
                 Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
                 Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
-                Intent("android.settings.SETTINGS"),
-                Intent(Settings.ACTION_SETTINGS)
+                Intent("android.settings.SETTINGS")
             )
         )
         if (ok) return

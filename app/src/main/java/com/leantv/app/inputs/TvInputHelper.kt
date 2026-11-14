@@ -1,9 +1,12 @@
 package com.leantv.app.inputs
 
+import android.app.ActivityOptions
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Build
+import android.os.Bundle
 import android.media.tv.TvContract
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
@@ -218,16 +221,31 @@ object TvInputHelper {
         }
     }
 
-    /** Starts the first intent that some installed app can actually handle. Back returns to our Home. */
+    /**
+     * Starts the first intent the TV can handle, as fast as Android allows.
+     *
+     * - No resolveActivity() pre-check: that was an extra blocking binder call per intent on the main
+     *   thread. startActivity() itself throws ActivityNotFoundException when nothing handles the intent,
+     *   so we simply try the next one.
+     * - Our own transition animation is switched off so the target screen appears the moment it is ready
+     *   instead of waiting for Home's fade-out on slow TV chipsets.
+     * Back from the launched screen returns to our Home (TASK_ON_HOME).
+     */
     fun startFirstResolvable(ctx: Context, intents: List<Intent>): Boolean {
-        val pm = ctx.packageManager
+        val options: Bundle? = try {
+            ActivityOptions.makeCustomAnimation(ctx, 0, 0).toBundle()
+        } catch (_: Throwable) { null }
         for (intent in intents) {
             try {
-                if (pm.resolveActivity(intent, 0) == null) continue
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
-                ctx.startActivity(intent)
+                if (options != null) ctx.startActivity(intent, options) else ctx.startActivity(intent)
                 return true
-            } catch (_: Exception) {}
+            } catch (_: ActivityNotFoundException) {
+                // Not on this TV - try the next one.
+            } catch (_: SecurityException) {
+                // Exists but is not exported to us - try the next one.
+            } catch (_: Exception) {
+            }
         }
         return false
     }
