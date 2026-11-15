@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
+import android.os.Environment
 import android.view.KeyEvent
 import android.view.Surface
 import android.view.TextureView
@@ -26,6 +27,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +48,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -117,7 +123,8 @@ val APPLE_AERIAL_PRESETS = listOf(
 )
 
 enum class ScreensaverSource(val id: String, val title: String, val desc: String) {
-    AERIAL("aerial", "Apple Aerial Videos", "Real Apple TV 1080p aerial landscapes streaming from Apple CDN"),
+    LOCAL_VIDEO("local_video", "Local Videos (No Internet)", "Play videos saved to /sdcard/Movies/Screensaver/ — no data usage"),
+    AERIAL("aerial", "Apple Aerial Streaming", "Stream Apple TV 1080p aerials from Apple CDN — requires internet"),
     SLIDESHOW("slideshow", "Custom Photos Slideshow", "Cycle smoothly through photos in a chosen folder"),
     SINGLE_IMAGE("image", "Single Custom Image", "Display a chosen custom wallpaper with Apple TV motion")
 }
@@ -185,6 +192,9 @@ fun AppleTvScreensaver(
             }
     ) {
         when (mode) {
+            ScreensaverSource.LOCAL_VIDEO -> {
+                LocalVideoPlayer(onEmpty = { AppleAerialVideoPlayer() })
+            }
             ScreensaverSource.AERIAL -> {
                 AppleAerialVideoPlayer()
             }
@@ -603,6 +613,187 @@ private fun SingleImageBackdrop(
         KenBurnsImage(bitmap = bmp)
     } else {
         onEmpty()
+    }
+}
+
+/**
+ * Local Video Player — plays .mp4/.mov/.mkv files from /sdcard/Movies/Screensaver/
+ * Zero internet usage. Falls back to onEmpty() when folder is empty.
+ */
+@Composable
+private fun LocalVideoPlayer(onEmpty: @Composable () -> Unit) {
+    val ctx = LocalContext.current
+    val LOCAL_DIR = "/sdcard/Movies/Screensaver"
+
+    val videoFiles = remember {
+        val dir = File(LOCAL_DIR)
+        if (dir.exists() && dir.isDirectory) {
+            dir.listFiles { f ->
+                val n = f.name.lowercase(Locale.ROOT)
+                n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".mkv") || n.endsWith(".m4v")
+            }?.toList()?.shuffled() ?: emptyList()
+        } else emptyList()
+    }
+
+    if (videoFiles.isEmpty()) {
+        // Show setup instructions if no videos found
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0A0A10)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(48.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.FolderOpen,
+                    contentDescription = null,
+                    tint = Color(0xFF64B5F6),
+                    modifier = Modifier.size(72.dp)
+                )
+                Text(
+                    "No local videos found",
+                    style = Ty.Title.copy(color = Color.White, fontSize = 32.sp),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "Copy .mp4, .mov, or .mkv video files to:\n$LOCAL_DIR",
+                    style = Ty.Body.copy(color = Color(0xAAFFFFFF), fontSize = 20.sp),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "Then come back to Screensaver Settings and select Local Videos again.",
+                    style = Ty.Small.copy(color = Color(0x88FFFFFF), fontSize = 16.sp),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
+    val player0 = remember { TextureVideoPlayer(ctx) }
+    val player1 = remember { TextureVideoPlayer(ctx) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            player0.releaseAll()
+            player1.releaseAll()
+        }
+    }
+
+    var activeSlot by remember { mutableIntStateOf(0) }
+    var isFirstVideoReady by remember { mutableStateOf(false) }
+    var currentIndex by remember { mutableIntStateOf(0) }
+    var currentFileName by remember { mutableStateOf(videoFiles.firstOrNull()?.nameWithoutExtension ?: "") }
+
+    val alpha0 by animateFloatAsState(
+        targetValue = if (activeSlot == 0 && isFirstVideoReady) 1f else 0f,
+        animationSpec = tween(1500, easing = FastOutSlowInEasing),
+        label = "localAlpha0"
+    )
+    val alpha1 by animateFloatAsState(
+        targetValue = if (activeSlot == 1) 1f else 0f,
+        animationSpec = tween(1500, easing = FastOutSlowInEasing),
+        label = "localAlpha1"
+    )
+
+    // Show location label for local video name
+    var showLabel by remember { mutableStateOf(false) }
+    LaunchedEffect(isFirstVideoReady) {
+        if (isFirstVideoReady) { delay(500L); showLabel = true }
+    }
+    val labelAlpha by animateFloatAsState(
+        targetValue = if (showLabel) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "labelAlpha"
+    )
+
+    LaunchedEffect(Unit) {
+        // Start first video
+        val firstFile = videoFiles[currentIndex]
+        currentFileName = firstFile.nameWithoutExtension
+        player0.prepare(firstFile.absolutePath) {
+            player0.start()
+            isFirstVideoReady = true
+        }
+
+        while (true) {
+            delay(28000L) // 28 seconds per clip (longer for local — no buffering needed)
+
+            val idlePlayer = if (activeSlot == 0) player1 else player0
+            val nextIndex = (currentIndex + 1) % videoFiles.size
+            val nextFile = videoFiles[nextIndex]
+
+            val readySignal = CompletableDeferred<Boolean>()
+            idlePlayer.prepare(nextFile.absolutePath) {
+                readySignal.complete(true)
+            }
+
+            val loaded = withTimeoutOrNull(8000L) { readySignal.await() } ?: false
+            if (loaded) {
+                idlePlayer.start()
+                currentIndex = nextIndex
+                currentFileName = nextFile.nameWithoutExtension
+                activeSlot = if (activeSlot == 0) 1 else 0
+                delay(1500L)
+                val prevPlayer = if (activeSlot == 0) player1 else player0
+                prevPlayer.releasePlayer()
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        AndroidView(
+            factory = { player0.textureView },
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = alpha0 }
+        )
+        AndroidView(
+            factory = { player1.textureView },
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = alpha1 }
+        )
+
+        // Bottom-left: show video filename as location label
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 64.dp, bottom = 48.dp)
+                .graphicsLayer { alpha = labelAlpha }
+        ) {
+            Column(horizontalAlignment = Alignment.Start) {
+                Text(
+                    text = currentFileName,
+                    style = Ty.Display.copy(
+                        fontSize = 36.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.Light,
+                        letterSpacing = (-0.5f).sp,
+                        color = Color.White.copy(alpha = 0.90f),
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.75f),
+                            offset = Offset(0f, 2f),
+                            blurRadius = 14f
+                        )
+                    )
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Local Video",
+                    style = Ty.Small.copy(
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        letterSpacing = 1.sp
+                    )
+                )
+            }
+        }
     }
 }
 

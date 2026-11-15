@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tv
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -137,6 +138,49 @@ fun ScreensaverSettingsDialog(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // ─── Local Video Info Box ───
+            if (currentMode == ScreensaverSource.LOCAL_VIDEO) {
+                val LOCAL_DIR = "/sdcard/Movies/Screensaver"
+                val videoCount = remember {
+                    val dir = java.io.File(LOCAL_DIR)
+                    if (dir.exists() && dir.isDirectory) {
+                        dir.listFiles { f ->
+                            val n = f.name.lowercase()
+                            n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".mkv") || n.endsWith(".m4v")
+                        }?.size ?: 0
+                    } else 0
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0x1A64B5F6))
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(26.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "Copy videos to your TV at:",
+                            style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        )
+                        Text(
+                            LOCAL_DIR,
+                            style = Ty.Small.copy(color = Color(0xFF64B5F6), fontSize = 14.sp)
+                        )
+                        Text(
+                            if (videoCount == 0) "No videos found yet — add .mp4 / .mov / .mkv files to that folder"
+                            else "$videoCount video${if (videoCount == 1) "" else "s"} found — ready to play!",
+                            style = Ty.Small.copy(
+                                color = if (videoCount == 0) Color(0xFFFF9800) else Color(0xFF81C784),
+                                fontSize = 14.sp
+                            )
+                        )
                     }
                 }
             }

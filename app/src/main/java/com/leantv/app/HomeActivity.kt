@@ -177,7 +177,9 @@ class HomeActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        // An app is coming to the front (or the screen is turning off): cancel any pending "close all apps".
+        // An app is coming to the front (input switch, screen off, etc.):
+        // Always close the screensaver immediately — it must NEVER render over another HDMI input!
+        vm.closeScreensaver()
         vm.onPause()
         super.onPause()
     }
