@@ -117,6 +117,7 @@ fun Focusable(
                 }
                 focused = it.isFocused
             }
+            .focusable(enabled = enabled)
             .clickable(
                 enabled = enabled,
                 onClick = {
@@ -176,6 +177,7 @@ fun TvButton(
                 }
                 focused = it.isFocused
             }
+            .focusable(enabled = enabled)
             .clickable(
                 enabled = enabled,
                 onClick = {

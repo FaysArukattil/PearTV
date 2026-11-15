@@ -371,6 +371,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 AppleTvScreensaver(
                                     mode = s.screensaverMode,
                                     customPath = s.screensaverCustomPath,
+                                    selectedUrl = s.screensaverSelectedUrl,
+                                    autoCache = s.screensaverAutoCache,
                                     onDismiss = vm::closeScreensaver
                                 )
                             }
@@ -707,8 +709,12 @@ fun HomeScreen(vm: LauncherViewModel) {
                     currentMode = s.screensaverMode,
                     customPath = s.screensaverCustomPath,
                     idleMinutes = s.screensaverIdleMinutes,
+                    autoCache = s.screensaverAutoCache,
+                    selectedUrl = s.screensaverSelectedUrl,
                     onSelectMode = vm::setScreensaverMode,
                     onSelectIdleMinutes = vm::setScreensaverIdleMinutes,
+                    onToggleAutoCache = vm::setScreensaverAutoCache,
+                    onSelectVideoUrl = vm::setScreensaverSelectedUrl,
                     onPickPath = {
                         vm.closeScreensaverSettings()
                         vm.openFileManager(

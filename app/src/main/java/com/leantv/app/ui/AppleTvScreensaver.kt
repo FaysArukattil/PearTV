@@ -71,56 +71,57 @@ import kotlin.random.Random
 data class AppleAerialVideo(
     val location: String,
     val subtext: String,
-    val url: String
+    val url: String,
+    val sizeMb: Int
 )
 
 val APPLE_AERIAL_PRESETS = listOf(
     // Dubai
-    AppleAerialVideo("Dubai", "Night Skyline & Burj Khalifa", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_DB_D011_D009_SIGNCMP_v15_6Mbps.mov"),
-    AppleAerialVideo("Dubai", "Desert Dunes & Coastline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_DB_D001_C001_v03_6Mbps.mov"),
-    AppleAerialVideo("Dubai", "City Lights at Twilight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b6-2.mov"),
-    AppleAerialVideo("Dubai", "Downtown & Financial Centre", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b6-1.mov"),
+    AppleAerialVideo("Dubai", "Night Skyline & Burj Khalifa", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_DB_D011_D009_SIGNCMP_v15_6Mbps.mov", 175),
+    AppleAerialVideo("Dubai", "Desert Dunes & Coastline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_DB_D001_C001_v03_6Mbps.mov", 351),
+    AppleAerialVideo("Dubai", "City Lights at Twilight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b6-2.mov", 95),
+    AppleAerialVideo("Dubai", "Downtown & Financial Centre", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b6-1.mov", 169),
 
     // Greenland
-    AppleAerialVideo("Greenland", "Ilulissat Icefjord", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_GL_G004_C010_v03_6Mbps.mov"),
-    AppleAerialVideo("Greenland", "Icefjords & Icebergs", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_GL_G010_C006_v08_6Mbps.mov"),
-    AppleAerialVideo("Greenland", "Glacier Overflight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b7-1.mov"),
+    AppleAerialVideo("Greenland", "Ilulissat Icefjord", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_GL_G004_C010_v03_6Mbps.mov", 211),
+    AppleAerialVideo("Greenland", "Icefjords & Icebergs", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_GL_G010_C006_v08_6Mbps.mov", 432),
+    AppleAerialVideo("Greenland", "Glacier Overflight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b7-1.mov", 244),
 
     // Hong Kong
-    AppleAerialVideo("Hong Kong", "Victoria Harbour at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HK_B005_C011_t9_6M_tag0.mov"),
-    AppleAerialVideo("Hong Kong", "Daytime Peaks & Bay", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HK_H004_C008_v10_6Mbps.mov"),
-    AppleAerialVideo("Hong Kong", "Kowloon Skyline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b8-2.mov"),
+    AppleAerialVideo("Hong Kong", "Victoria Harbour at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HK_B005_C011_t9_6M_tag0.mov", 239),
+    AppleAerialVideo("Hong Kong", "Daytime Peaks & Bay", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_HK_H004_C008_v10_6Mbps.mov", 487),
+    AppleAerialVideo("Hong Kong", "Kowloon Skyline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b8-2.mov", 276),
 
     // Los Angeles
-    AppleAerialVideo("Los Angeles", "Downtown Twilight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LA_A005_C009_v05_t9_6M.mov"),
-    AppleAerialVideo("Los Angeles", "Night Skyline & Traffic", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LA_A009_C009_t9_6M_tag0.mov"),
-    AppleAerialVideo("Los Angeles", "Metropolis Freeways", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b9-1.mov"),
+    AppleAerialVideo("Los Angeles", "Downtown Twilight", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LA_A005_C009_v05_t9_6M.mov", 155),
+    AppleAerialVideo("Los Angeles", "Night Skyline & Traffic", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/comp_LA_A009_C009_t9_6M_tag0.mov", 162),
+    AppleAerialVideo("Los Angeles", "Metropolis Freeways", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b9-1.mov", 274),
 
     // Hawaii
-    AppleAerialVideo("Hawaii", "Na Pali Coast Cliffs", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-1.mov"),
-    AppleAerialVideo("Hawaii", "Tropical Island Sunset", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-2.mov"),
-    AppleAerialVideo("Hawaii", "Emerald Coastline Waves", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-3.mov"),
+    AppleAerialVideo("Hawaii", "Na Pali Coast Cliffs", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-1.mov", 148),
+    AppleAerialVideo("Hawaii", "Tropical Island Sunset", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-2.mov", 107),
+    AppleAerialVideo("Hawaii", "Emerald Coastline Waves", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b1-3.mov", 83),
 
     // London
-    AppleAerialVideo("London", "Tower Bridge & River Thames", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-1.mov"),
-    AppleAerialVideo("London", "Westminster & Big Ben", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-2.mov"),
-    AppleAerialVideo("London", "City Skyline at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-3.mov"),
+    AppleAerialVideo("London", "Tower Bridge & River Thames", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-1.mov", 111),
+    AppleAerialVideo("London", "Westminster & Big Ben", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-2.mov", 274),
+    AppleAerialVideo("London", "City Skyline at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b2-3.mov", 136),
 
     // New York City
-    AppleAerialVideo("New York City", "Manhattan Skyline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b3-1.mov"),
-    AppleAerialVideo("New York City", "Central Park & Midtown", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b3-2.mov"),
+    AppleAerialVideo("New York City", "Manhattan Skyline", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b3-1.mov", 205),
+    AppleAerialVideo("New York City", "Central Park & Midtown", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b3-2.mov", 111),
 
     // San Francisco
-    AppleAerialVideo("San Francisco", "Golden Gate Bridge", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b4-1.mov"),
-    AppleAerialVideo("San Francisco", "Bay Bridge at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b4-2.mov"),
+    AppleAerialVideo("San Francisco", "Golden Gate Bridge", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b4-1.mov", 136),
+    AppleAerialVideo("San Francisco", "Bay Bridge at Night", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b4-2.mov", 108),
 
     // China
-    AppleAerialVideo("China", "Great Wall of China", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b5-1.mov"),
-    AppleAerialVideo("China", "Li River Mountains", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b5-2.mov"),
+    AppleAerialVideo("China", "Great Wall of China", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b5-1.mov", 59),
+    AppleAerialVideo("China", "Li River Mountains", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b5-2.mov", 256),
 
     // Liwa / UAE
-    AppleAerialVideo("Liwa", "Endless Desert Dunes", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b10-1.mov"),
-    AppleAerialVideo("Liwa", "Desert Sunset", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b10-2.mov")
+    AppleAerialVideo("Liwa", "Endless Desert Dunes", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b10-1.mov", 148),
+    AppleAerialVideo("Liwa", "Desert Sunset", "http://a1.phobos.apple.com/us/r1000/000/Features/atv/AutumnResources/videos/b10-2.mov", 136)
 )
 
 enum class ScreensaverSource(val id: String, val title: String, val desc: String) {
@@ -144,6 +145,8 @@ enum class ScreensaverSource(val id: String, val title: String, val desc: String
 fun AppleTvScreensaver(
     mode: ScreensaverSource = ScreensaverSource.AERIAL,
     customPath: String? = null,
+    selectedUrl: String? = null,
+    autoCache: Boolean = true,
     onDismiss: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -193,18 +196,18 @@ fun AppleTvScreensaver(
     ) {
         when (mode) {
             ScreensaverSource.AERIAL -> {
-                AppleAerialVideoPlayer()
+                AppleAerialVideoPlayer(selectedUrl = selectedUrl, autoCache = autoCache)
             }
             ScreensaverSource.SLIDESHOW -> {
                 CustomPhotoSlideshow(
                     folderPath = customPath,
-                    onEmpty = { AppleAerialVideoPlayer() }
+                    onEmpty = { AppleAerialVideoPlayer(selectedUrl = selectedUrl, autoCache = autoCache) }
                 )
             }
             ScreensaverSource.SINGLE_IMAGE -> {
                 SingleImageBackdrop(
                     filePath = customPath,
-                    onEmpty = { AppleAerialVideoPlayer() }
+                    onEmpty = { AppleAerialVideoPlayer(selectedUrl = selectedUrl, autoCache = autoCache) }
                 )
             }
         }
@@ -404,38 +407,114 @@ object AerialVideoCache {
         dir.listFiles()?.forEach { runCatching { it.delete() } }
     }
 
-    suspend fun downloadToCache(context: Context, url: String) = withContext(Dispatchers.IO) {
+    /** Delete only the cached file for a single URL. Returns true if deleted. */
+    fun deleteFromCache(context: Context, url: String): Boolean {
+        val file = getCacheFile(context, url)
+        return file.exists() && file.delete()
+    }
+
+    /** File size of a cached video in MB, or 0 if not cached. */
+    fun getCachedFileSizeMb(context: Context, url: String): Int {
+        val file = getCacheFile(context, url)
+        return if (file.exists()) (file.length() / (1024 * 1024)).toInt() else 0
+    }
+
+    data class DownloadProgress(
+        val bytesDownloaded: Long = 0L,
+        val totalBytes: Long = 0L,
+        val speedBps: Double = 0.0
+    ) {
+        val percent: Int get() = if (totalBytes > 0) ((bytesDownloaded * 100) / totalBytes).toInt().coerceIn(0, 100) else 0
+        val downloadedMb: Double get() = bytesDownloaded / (1024.0 * 1024.0)
+        val totalMb: Double get() = totalBytes / (1024.0 * 1024.0)
+        val speedMbPerSec: Double get() = speedBps / (1024.0 * 1024.0)
+    }
+
+    suspend fun downloadToCache(
+        context: Context,
+        url: String,
+        onProgress: ((DownloadProgress) -> Unit)? = null
+    ): Boolean = withContext(Dispatchers.IO) {
         val target = getCacheFile(context, url)
-        if (target.exists() && target.length() >= MIN_VALID_SIZE) return@withContext
+        if (target.exists() && target.length() >= MIN_VALID_SIZE) {
+            onProgress?.invoke(DownloadProgress(target.length(), target.length(), 0.0))
+            return@withContext true
+        }
         val temp = File(target.parentFile, "${target.name}.download")
         runCatching {
             val u = java.net.URL(url)
             val conn = u.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 15000
-            conn.readTimeout = 30000
+            conn.connectTimeout = 12000
+            conn.readTimeout = 25000
             conn.instanceFollowRedirects = true
+            // AppleCoreMedia header uncaps Apple Akamai CDN bandwidth limit
+            conn.setRequestProperty("User-Agent", "AppleCoreMedia/1.0.0.18J386 (Apple TV; U; CPU OS 14_0 like Mac OS X; en_us)")
+            conn.setRequestProperty("Accept", "*/*")
+            conn.setRequestProperty("Connection", "keep-alive")
+
+            // Support resume if partial download exists
+            var existingBytes = if (temp.exists()) temp.length() else 0L
+            if (existingBytes > 0L) {
+                conn.setRequestProperty("Range", "bytes=$existingBytes-")
+            }
+
             conn.connect()
-            if (conn.responseCode == java.net.HttpURLConnection.HTTP_OK) {
-                conn.inputStream.use { input ->
-                    temp.outputStream().use { output ->
-                        val buf = ByteArray(64 * 1024)
+            val code = conn.responseCode
+            val isPartial = (code == java.net.HttpURLConnection.HTTP_PARTIAL)
+            val isOk = (code == java.net.HttpURLConnection.HTTP_OK)
+
+            if (!isPartial) {
+                existingBytes = 0L
+            }
+
+            if (isOk || isPartial) {
+                val contentLength = conn.contentLength.takeIf { it > 0 }?.toLong() ?: 0L
+                val totalBytes = if (isPartial) existingBytes + contentLength else {
+                    if (contentLength > 0L) contentLength else {
+                        val preset = APPLE_AERIAL_PRESETS.firstOrNull { it.url == url }
+                        (preset?.sizeMb ?: 150) * 1024L * 1024L
+                    }
+                }
+
+                var downloaded = existingBytes
+                var lastTime = System.currentTimeMillis()
+                var lastBytes = downloaded
+                var speedBps = 0.0
+
+                val append = isPartial && existingBytes > 0L
+                java.io.BufferedInputStream(conn.inputStream, 256 * 1024).use { input ->
+                    java.io.BufferedOutputStream(java.io.FileOutputStream(temp, append), 256 * 1024).use { output ->
+                        val buf = ByteArray(256 * 1024)
                         var read: Int
                         while (input.read(buf).also { read = it } != -1) {
                             output.write(buf, 0, read)
+                            downloaded += read
+
+                            val now = System.currentTimeMillis()
+                            val elapsed = now - lastTime
+                            if (elapsed >= 200L) {
+                                speedBps = ((downloaded - lastBytes) * 1000.0) / elapsed
+                                lastTime = now
+                                lastBytes = downloaded
+                                onProgress?.invoke(DownloadProgress(downloaded, totalBytes, speedBps))
+                            }
                         }
                         output.flush()
                     }
                 }
                 if (temp.length() >= MIN_VALID_SIZE) {
                     temp.renameTo(target)
+                    onProgress?.invoke(DownloadProgress(target.length(), target.length(), 0.0))
+                    true
                 } else {
-                    temp.delete()
+                    false
                 }
             } else {
                 temp.delete()
+                false
             }
-        }.onFailure {
-            runCatching { temp.delete() }
+        }.getOrElse {
+            false
         }
     }
 }
@@ -448,7 +527,11 @@ object AerialVideoCache {
  * - Automatically caches downloaded videos locally and loops them to stop eating data!
  */
 @Composable
-private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
+private fun AppleAerialVideoPlayer(
+    selectedUrl: String? = null,
+    autoCache: Boolean = true,
+    onReady: () -> Unit = {}
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -466,13 +549,33 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
     var isFirstVideoReady by remember { mutableStateOf(false) }
     var showLocationText by remember { mutableStateOf(false) }
 
-    var currentPresetIndex by remember {
-        val cachedIndices = APPLE_AERIAL_PRESETS.indices.filter { idx ->
-            AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[idx].url)
+    val selectedUrlSet = remember(selectedUrl) {
+        selectedUrl?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+    }
+
+    // Active pool of indices to cycle through
+    val activeIndices by remember(selectedUrl, autoCache) {
+        derivedStateOf {
+            when {
+                selectedUrlSet.isNotEmpty() -> {
+                    val matching = APPLE_AERIAL_PRESETS.indices.filter { APPLE_AERIAL_PRESETS[it].url in selectedUrlSet }
+                    if (matching.isNotEmpty()) matching else APPLE_AERIAL_PRESETS.indices.toList()
+                }
+                autoCache -> {
+                    // Downloaded Only mode: loop among cached videos
+                    val cached = APPLE_AERIAL_PRESETS.indices.filter { AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[it].url) }
+                    if (cached.isNotEmpty()) cached else APPLE_AERIAL_PRESETS.indices.toList()
+                }
+                else -> {
+                    // Stream All mode: all presets, pure streaming, 0 disk storage
+                    APPLE_AERIAL_PRESETS.indices.toList()
+                }
+            }
         }
-        mutableIntStateOf(
-            cachedIndices.randomOrNull() ?: Random.nextInt(APPLE_AERIAL_PRESETS.size)
-        )
+    }
+
+    var currentPresetIndex by remember(activeIndices) {
+        mutableIntStateOf(activeIndices.randomOrNull() ?: 0)
     }
     val currentPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
 
@@ -507,12 +610,11 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
         label = "locationSlideY"
     )
 
-    // Preload, Caching & Crossfade orchestration loop
-    LaunchedEffect(Unit) {
+    // Preload, Caching & Crossfade orchestration loop (NEVER auto-downloads in background)
+    LaunchedEffect(activeIndices) {
         // Step 1: Start initial video on Player 0
-        val initialPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
+        val initialPreset = APPLE_AERIAL_PRESETS.getOrNull(currentPresetIndex) ?: APPLE_AERIAL_PRESETS[0]
         val initialSource = AerialVideoCache.getPlayableSource(ctx, initialPreset.url)
-        val initialIsCached = AerialVideoCache.isCached(ctx, initialPreset.url)
 
         player0.prepare(initialSource) {
             player0.start()
@@ -520,29 +622,20 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
             onReady()
         }
 
-        if (!initialIsCached) {
-            scope.launch { AerialVideoCache.downloadToCache(ctx, initialPreset.url) }
-        }
-
         while (true) {
             // Cinematic 40 seconds per scene
             delay(40000L)
 
-            // Step 2: Preload next video in background on idle player
-            // If we have cached videos, preferentially loop among them to preserve bandwidth!
-            val cachedIndices = APPLE_AERIAL_PRESETS.indices.filter { idx ->
-                AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[idx].url)
-            }
-            val targetNextIndex = if (cachedIndices.size >= 2) {
-                val pool = cachedIndices.filter { it != currentPresetIndex }
-                pool.randomOrNull() ?: ((currentPresetIndex + 1) % APPLE_AERIAL_PRESETS.size)
+            // Step 2: Choose next video from active pool
+            val pool = activeIndices.filter { it != currentPresetIndex }
+            val targetNextIndex = if (pool.isNotEmpty()) {
+                pool.random()
             } else {
-                (currentPresetIndex + 1) % APPLE_AERIAL_PRESETS.size
+                currentPresetIndex
             }
 
             val nextPreset = APPLE_AERIAL_PRESETS[targetNextIndex]
             val nextSource = AerialVideoCache.getPlayableSource(ctx, nextPreset.url)
-            val nextIsCached = AerialVideoCache.isCached(ctx, nextPreset.url)
 
             val idlePlayer = if (activeSlot == 0) player1 else player0
             val readySignal = CompletableDeferred<Boolean>()
@@ -557,10 +650,6 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
                 idlePlayer.start()
                 currentPresetIndex = targetNextIndex
                 activeSlot = if (activeSlot == 0) 1 else 0
-
-                if (!nextIsCached) {
-                    scope.launch { AerialVideoCache.downloadToCache(ctx, nextPreset.url) }
-                }
 
                 // Allow 1.5s for crossfade animation to complete before stopping previous player
                 delay(1500L)

@@ -183,6 +183,8 @@ data class LauncherState(
     val screensaverMode: com.leantv.app.ui.ScreensaverSource = com.leantv.app.ui.ScreensaverSource.AERIAL,
     val screensaverCustomPath: String? = null,
     val screensaverIdleMinutes: Int = 3,
+    val screensaverAutoCache: Boolean = true,
+    val screensaverSelectedUrl: String? = null,
 
     // Personalization & Wallpapers
     val showPersonalization: Boolean = false,
@@ -293,7 +295,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 screensaverMode = com.leantv.app.ui.ScreensaverSource.entries
                     .find { m -> m.id == journal.screensaverMode } ?: com.leantv.app.ui.ScreensaverSource.AERIAL,
                 screensaverCustomPath = journal.screensaverCustomPath,
-                screensaverIdleMinutes = journal.screensaverIdleMinutes
+                screensaverIdleMinutes = journal.screensaverIdleMinutes,
+                screensaverAutoCache = journal.screensaverAutoCache,
+                screensaverSelectedUrl = journal.screensaverSelectedUrl
             )
         }
         startTimeTicker()
@@ -1890,6 +1894,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun setScreensaverIdleMinutes(mins: Int) {
         journal.screensaverIdleMinutes = mins
         _state.update { it.copy(screensaverIdleMinutes = mins) }
+    }
+
+    fun setScreensaverAutoCache(enabled: Boolean) {
+        journal.screensaverAutoCache = enabled
+        _state.update { it.copy(screensaverAutoCache = enabled) }
+    }
+
+    fun setScreensaverSelectedUrl(url: String?) {
+        journal.screensaverSelectedUrl = url
+        _state.update { it.copy(screensaverSelectedUrl = url) }
     }
 
     fun startScreensaverNow() {

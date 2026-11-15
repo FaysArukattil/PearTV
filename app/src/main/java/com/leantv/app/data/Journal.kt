@@ -197,6 +197,14 @@ class Journal(ctx: Context) {
         get() = sp.getInt("screensaver_idle_minutes", 3)
         set(v) = sp.edit().putInt("screensaver_idle_minutes", v).apply()
 
+    var screensaverAutoCache: Boolean
+        get() = sp.getBoolean("screensaver_auto_cache", true)
+        set(v) = sp.edit().putBoolean("screensaver_auto_cache", v).apply()
+
+    var screensaverSelectedUrl: String?
+        get() = sp.getString("screensaver_selected_url", null)
+        set(v) = sp.edit().putString("screensaver_selected_url", v).apply()
+
     /**
      * Last computed home-screen layout (app order, dock, recents) as JSON. Lets the launcher paint the real
      * home screen on the very first frame of the next start, before any package scanning has finished.
