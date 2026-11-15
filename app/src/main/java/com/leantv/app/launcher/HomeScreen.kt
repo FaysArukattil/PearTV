@@ -307,25 +307,21 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     val lastInteractionMs by vm.lastInteractionMs.collectAsState()
-    val homeVisible by vm.homeVisibleFlow.collectAsState()
     val idleMinutes = s.screensaverIdleMinutes
-    // Never start the screensaver while something else owns the screen (popups, pages, live TV input,
-    // file transfers) or while the launcher isn't the foreground app.
-    val idleBlocked = modalOpen || s.showTvPlayer || s.showNativeQuickShare || s.showQuickShareHub || !homeVisible
-    LaunchedEffect(idleMinutes, idleBlocked, lastInteractionMs) {
-        if (idleMinutes <= 0 || idleBlocked) return@LaunchedEffect
-        val idleLimitMs = idleMinutes * 60_000L
+    LaunchedEffect(idleMinutes, modalOpen, lastInteractionMs) {
+        if (idleMinutes <= 0) return@LaunchedEffect
         while (true) {
-            val remaining = idleLimitMs - (System.currentTimeMillis() - lastInteractionMs)
+            val idleFor = System.currentTimeMillis() - lastInteractionMs
+            val remaining = (idleMinutes * 60 * 1000L) - idleFor
             if (remaining <= 0L) {
                 val cur = vm.state.value
-                if (!cur.showScreensaver && !cur.showTvPlayer) {
+                if (!modalOpen && !cur.showScreensaver && !cur.showStorageManager && !cur.showFileManager && !cur.showCleanTvScreen) {
                     vm.openScreensaver()
                 }
+                vm.resetIdleTimer()
                 break
             }
-            // Wake up exactly when the limit is reached (capped so wall-clock changes are noticed).
-            delay(remaining.coerceIn(250L, 5_000L))
+            delay(minOf(remaining, 5000L).coerceAtLeast(1000L))
         }
     }
 

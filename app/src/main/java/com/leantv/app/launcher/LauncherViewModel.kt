@@ -234,9 +234,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     /** True while Home is the visible screen. "Close all apps" only runs while this is true. */
     @Volatile private var homeVisible = false
-    private val _homeVisibleFlow = MutableStateFlow(false)
-    /** True only while the launcher is the foreground activity (the idle timer must not run otherwise). */
-    val homeVisibleFlow: StateFlow<Boolean> = _homeVisibleFlow.asStateFlow()
     private var closeAppsJob: Job? = null
 
     /** Set when the app list may be out of date (an app was launched, installed, removed or updated). */
@@ -540,10 +537,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onResume() {
         homeVisible = true
-        _homeVisibleFlow.value = true
-        // Coming back from another app / input: the idle countdown starts fresh from NOW,
-        // otherwise a stale timestamp would pop the screensaver up the instant Home appears.
-        resetIdleTimer()
         // The very first resume happens right after init, which already loaded everything.
         if (resumedOnce) {
             com.leantv.app.ui.TvSound.playAppClose()
@@ -564,7 +557,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onPause() {
         homeVisible = false
-        _homeVisibleFlow.value = false
         // Another app is coming to the front: never kill anything while it is starting.
         closeAppsJob?.cancel()
         closeAppsJob = null
@@ -1873,32 +1865,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         loadApps(silent = true)
     }
 
-    @Volatile private var screensaverShownAtMs = 0L
-
-    fun isScreensaverShowing(): Boolean = _state.value.showScreensaver
-
     fun openScreensaver() {
-        screensaverShownAtMs = System.currentTimeMillis()
         _state.update { it.copy(showScreensaver = true) }
     }
 
     fun closeScreensaver() {
         _state.update { it.copy(showScreensaver = false) }
-        // Idle countdown restarts from the moment the screensaver goes away.
-        resetIdleTimer()
-    }
-
-    /**
-     * Called by the Activity for the first press of any remote key while the screensaver is showing.
-     * Returns true if the screensaver was dismissed. The Activity swallows the key either way, so it never
-     * reaches the Home screen underneath.
-     */
-    fun wakeScreensaver(): Boolean {
-        if (!_state.value.showScreensaver) return false
-        // Small guard so the click that started a "Preview" can't instantly dismiss it.
-        if (System.currentTimeMillis() - screensaverShownAtMs < 500L) return false
-        closeScreensaver()
-        return true
     }
 
     fun openScreensaverSettings() {
