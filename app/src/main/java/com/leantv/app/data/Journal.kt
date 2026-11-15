@@ -198,7 +198,7 @@ class Journal(ctx: Context) {
         set(v) = sp.edit().putInt("screensaver_idle_minutes", v).apply()
 
     var screensaverAutoCache: Boolean
-        get() = sp.getBoolean("screensaver_auto_cache", true)
+        get() = sp.getBoolean("screensaver_auto_cache", false)
         set(v) = sp.edit().putBoolean("screensaver_auto_cache", v).apply()
 
     var screensaverSelectedUrl: String?

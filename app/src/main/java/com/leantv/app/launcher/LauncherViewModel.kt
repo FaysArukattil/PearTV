@@ -183,7 +183,7 @@ data class LauncherState(
     val screensaverMode: com.leantv.app.ui.ScreensaverSource = com.leantv.app.ui.ScreensaverSource.AERIAL,
     val screensaverCustomPath: String? = null,
     val screensaverIdleMinutes: Int = 3,
-    val screensaverAutoCache: Boolean = true,
+    val screensaverAutoCache: Boolean = false,
     val screensaverSelectedUrl: String? = null,
 
     // Personalization & Wallpapers
@@ -1891,9 +1891,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(screensaverCustomPath = path) }
     }
 
+    private val _lastInteractionMs = MutableStateFlow(System.currentTimeMillis())
+    val lastInteractionMs: StateFlow<Long> = _lastInteractionMs.asStateFlow()
+
+    fun resetIdleTimer() {
+        _lastInteractionMs.value = System.currentTimeMillis()
+    }
+
     fun setScreensaverIdleMinutes(mins: Int) {
         journal.screensaverIdleMinutes = mins
         _state.update { it.copy(screensaverIdleMinutes = mins) }
+        resetIdleTimer()
     }
 
     fun setScreensaverAutoCache(enabled: Boolean) {
