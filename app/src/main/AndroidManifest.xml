@@ -59,19 +59,19 @@
             android:name=".HomeActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true"
+            android:alwaysRetainTaskState="false"
             android:resumeWhilePausing="true"
             android:windowSoftInputMode="adjustPan"
             android:theme="@style/Theme.LeanTv.Starting"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode">
-            <intent-filter android:priority="2">
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 

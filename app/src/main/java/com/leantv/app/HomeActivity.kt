@@ -116,9 +116,17 @@ class HomeActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
             if (event.action == android.view.KeyEvent.ACTION_UP) {
-                vm.handleBackPress()
+                if (!vm.handleBackPress()) {
+                    vm.goHome()
+                }
             }
             return true // ALWAYS consume Back key: Home is the root, never finish or pop to previous app!
+        }
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_HOME) {
+            if (event.action == android.view.KeyEvent.ACTION_UP) {
+                vm.goHome()
+            }
+            return true
         }
         if (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
             event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN ||
@@ -129,6 +137,23 @@ class HomeActivity : ComponentActivity() {
             return true // Suppress ugly system volume dialog and show our custom smooth Apple TV volume HUD!
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK || keyCode == android.view.KeyEvent.KEYCODE_HOME) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK || keyCode == android.view.KeyEvent.KEYCODE_HOME) {
+            if (!vm.handleBackPress()) {
+                vm.goHome()
+            }
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     private companion object {
@@ -148,6 +173,7 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.onResume()
+        vm.goHome() // Always reset to clean Home state when resuming, making Back identical to Home!
     }
 
     override fun onPause() {
@@ -159,6 +185,8 @@ class HomeActivity : ComponentActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         // Safe: Never call super.onBackPressed() or fallback which kills the activity!
-        vm.handleBackPress()
+        if (!vm.handleBackPress()) {
+            vm.goHome()
+        }
     }
 }

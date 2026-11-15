@@ -22,6 +22,7 @@ import kotlin.math.sin
  */
 object TvSound {
     private var soundPool: SoundPool? = null
+    private val loadedSoundIds = java.util.Collections.synchronizedSet(HashSet<Int>())
     private var moveSoundId: Int = 0
     private var topOptionSoundId: Int = 0
     private var clickSoundId: Int = 0
@@ -37,14 +38,20 @@ object TvSound {
 
         try {
             val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
 
             val pool = SoundPool.Builder()
                 .setMaxStreams(8)
                 .setAudioAttributes(attrs)
                 .build()
+
+            pool.setOnLoadCompleteListener { _, sampleId, status ->
+                if (status == 0) {
+                    loadedSoundIds.add(sampleId)
+                }
+            }
 
             soundPool = pool
 
@@ -159,8 +166,9 @@ object TvSound {
      */
     fun playMove(view: View? = null) {
         val pool = soundPool
-        if (pool != null && moveSoundId != 0) {
-            pool.play(moveSoundId, 0.85f, 0.85f, 1, 0, 1.0f)
+        if (pool != null && moveSoundId != 0 && loadedSoundIds.contains(moveSoundId)) {
+            val sid = pool.play(moveSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+            if (sid == 0) view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
         } else {
             view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
         }
@@ -171,8 +179,9 @@ object TvSound {
      */
     fun playTopOptionMove(view: View? = null) {
         val pool = soundPool
-        if (pool != null && topOptionSoundId != 0) {
-            pool.play(topOptionSoundId, 0.88f, 0.88f, 1, 0, 1.0f)
+        if (pool != null && topOptionSoundId != 0 && loadedSoundIds.contains(topOptionSoundId)) {
+            val sid = pool.play(topOptionSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+            if (sid == 0) view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
         } else {
             view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
         }
@@ -183,8 +192,9 @@ object TvSound {
      */
     fun playClick(view: View? = null) {
         val pool = soundPool
-        if (pool != null && clickSoundId != 0) {
-            pool.play(clickSoundId, 0.90f, 0.90f, 1, 0, 1.0f)
+        if (pool != null && clickSoundId != 0 && loadedSoundIds.contains(clickSoundId)) {
+            val sid = pool.play(clickSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+            if (sid == 0) view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         } else {
             view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }
@@ -195,8 +205,9 @@ object TvSound {
      */
     fun playAppOpen(view: View? = null) {
         val pool = soundPool
-        if (pool != null && openSoundId != 0) {
-            pool.play(openSoundId, 0.95f, 0.95f, 2, 0, 1.0f)
+        if (pool != null && openSoundId != 0 && loadedSoundIds.contains(openSoundId)) {
+            val sid = pool.play(openSoundId, 1.0f, 1.0f, 2, 0, 1.0f)
+            if (sid == 0) view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         } else {
             view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }
@@ -207,8 +218,8 @@ object TvSound {
      */
     fun playAppClose(view: View? = null) {
         val pool = soundPool
-        if (pool != null && closeSoundId != 0) {
-            pool.play(closeSoundId, 0.90f, 0.90f, 2, 0, 1.0f)
+        if (pool != null && closeSoundId != 0 && loadedSoundIds.contains(closeSoundId)) {
+            pool.play(closeSoundId, 1.0f, 1.0f, 2, 0, 1.0f)
         }
     }
 
@@ -217,8 +228,8 @@ object TvSound {
      */
     fun playUninstall(view: View? = null) {
         val pool = soundPool
-        if (pool != null && uninstallSoundId != 0) {
-            pool.play(uninstallSoundId, 0.95f, 0.95f, 2, 0, 1.0f)
+        if (pool != null && uninstallSoundId != 0 && loadedSoundIds.contains(uninstallSoundId)) {
+            pool.play(uninstallSoundId, 1.0f, 1.0f, 2, 0, 1.0f)
         }
     }
 
@@ -227,8 +238,9 @@ object TvSound {
      */
     fun playVolumeTick(view: View? = null) {
         val pool = soundPool
-        if (pool != null && volumeSoundId != 0) {
-            pool.play(volumeSoundId, 0.85f, 0.85f, 1, 0, 1.0f)
+        if (pool != null && volumeSoundId != 0 && loadedSoundIds.contains(volumeSoundId)) {
+            val sid = pool.play(volumeSoundId, 1.0f, 1.0f, 1, 0, 1.0f)
+            if (sid == 0) view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         } else {
             view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }

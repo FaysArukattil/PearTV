@@ -441,22 +441,35 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val tileW = (maxWidth - sideMargin * 2 - bandPad * 2 - gap * (cols - 1)) / cols
                 val tileH = tileW * 9f / 16f
                 val radius = 22.dp
+                val rowH = tileH + 42.dp
+                val rowGap = 16.dp
+                val gridViewportH = rowH * 2 + rowGap + 16.dp
 
                 val dock = s.dockApps.ifEmpty { s.allApps.take(cols) }.take(cols)
                 val gridApps = s.allApps // Show all installed applications on the home screen
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
                 val hasDock = dock.isNotEmpty()
 
-                // Time-based, interruptible scroll: holding the D-pad glides smoothly into place.
-                // Rows always fit properly without cutting into the top row's app name or artwork.
+                // 2-row windowed glide: exactly 2 full rows are displayed in the viewport.
+                // Holding or pressing D-pad glides smoothly into place without cutting any row in its name area.
+                var topVisibleRow by remember { mutableIntStateOf(-1) }
                 LaunchedEffect(hasDock) {
-                    snapshotFlow { focusedGridRowState.intValue }.collectLatest { row ->
-                        val target = when {
-                            row <= 0 -> 0 // Dock and Row 0 both keep Dock visible at the top
-                            hasDock -> row + 1 // Row 1 keeps Row 0 at top; Row 2 keeps Row 1 at top
-                            else -> row
+                    snapshotFlow { focusedGridRowState.intValue }.collectLatest { r ->
+                        if (r == -1) {
+                            topVisibleRow = -1
+                            smoothScrollToItem(listState, 0)
+                        } else if (topVisibleRow == -1) {
+                            topVisibleRow = 0
+                            smoothScrollToItem(listState, if (hasDock) 2 else 1)
+                        } else if (r > topVisibleRow + 1) {
+                            topVisibleRow = r - 1
+                            val targetIndex = (if (hasDock) 2 else 1) + topVisibleRow
+                            smoothScrollToItem(listState, targetIndex)
+                        } else if (r < topVisibleRow) {
+                            topVisibleRow = r
+                            val targetIndex = (if (hasDock) 2 else 1) + topVisibleRow
+                            smoothScrollToItem(listState, targetIndex)
                         }
-                        smoothScrollToItem(listState, target)
                     }
                 }
 
@@ -534,9 +547,9 @@ fun HomeScreen(vm: LauncherViewModel) {
                         } else {
                             LazyColumn(
                                 state = listState,
-                                modifier = Modifier.fillMaxSize().clipToBounds(),
-                                contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                                modifier = Modifier.fillMaxWidth().height(gridViewportH).clipToBounds(),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(rowGap)
                             ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {

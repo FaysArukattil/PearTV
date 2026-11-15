@@ -1010,9 +1010,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
         try {
             val intent = Intent(base)
-            // Standard clean launcher task flags. Avoid FLAG_ACTIVITY_TASK_ON_HOME as it corrupts
-            // OEM Android TV task hierarchies and causes default home launcher reset dialogs.
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            // Anchor launched app directly on top of Home task so Back button always returns directly to Home!
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
+                Intent.FLAG_ACTIVITY_TASK_ON_HOME
+            )
             intent.putExtra("leantv_launched", true)
             // With tile bounds the caller passes makeScaleUpAnimation (native zoom from the tile).
             // Without bounds, use an instant cut so the app's own splash appears immediately.
