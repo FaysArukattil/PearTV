@@ -207,15 +207,13 @@ fun HomeScreen(vm: LauncherViewModel) {
     // Home layer zoom. It NEVER scales below 1 (that exposed dark edges around the screen) and has no dark scrim.
     //  • launching: Home eases slightly larger while the app zooms in over it
     //  • returning: Home starts a touch larger and settles to 1, like landing back on the iOS Home Screen
-    val homeScale = remember { Animatable(1f) }
-    LaunchedEffect(isAppLaunching, isReturningFromApp) {
-        when {
-            isAppLaunching -> Unit // no full-screen animation while the app is starting: every frame counts
-            isReturningFromApp -> {
-                homeScale.snapTo(1.06f)
-                homeScale.animateTo(1f, tween(420, easing = AppleMotion.LaunchZoomEasing))
-            }
-            else -> homeScale.animateTo(1f, tween(200, easing = AppleMotion.EaseOut))
+    // Return from an app: ONE short, calm settle (gentle fade + tiny scale, no bounce). Android already plays its own
+    // close transition for the app, so a big zoom of ours on top of it looked busy. 0 = just returned, 1 = settled.
+    val returnProgress = remember { Animatable(1f) }
+    LaunchedEffect(isReturningFromApp) {
+        if (isReturningFromApp) {
+            returnProgress.snapTo(0f)
+            returnProgress.animateTo(1f, tween(240, easing = AppleMotion.EaseOut))
         }
     }
 
@@ -241,7 +239,7 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     LaunchedEffect(isReturningFromApp) {
         if (isReturningFromApp) {
-            delay(AppleMotion.DurAppClose.toLong())
+            delay(300L)
             isReturningFromApp = false
             returningAppPackage = null
         }
@@ -445,8 +443,11 @@ fun HomeScreen(vm: LauncherViewModel) {
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        scaleX = homeScale.value
-                        scaleY = homeScale.value
+                        val p = returnProgress.value
+                        val sc = 1.025f - 0.025f * p
+                        scaleX = sc
+                        scaleY = sc
+                        alpha = 0.6f + 0.4f * p
                     }
             ) {
                 // Window width in the scaled TV-canvas dp (replaces BoxWithConstraints: no sub-composition in layout).
@@ -625,7 +626,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }, contentType = { _, _ -> "row" }) { rowIndex, rowApps ->
                                     AppRow(
                                         apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
-                                        focusScale = 1.08f, showNames = true,
+                                        focusScale = 1.06f, showNames = true,
                                         returningPkg = returningAppPackage,
                                         modifier = Modifier.padding(start = bandPad),
                                         tileModifier = if (rowIndex == 0) { index, _ ->
@@ -890,9 +891,9 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
     } else {
         // One Text whose fade/glide restarts on every change. Much cheaper than AnimatedContent (no second text
         // layout, no overlapping texts) and it stays fluid when the D-pad is held down.
-        val reveal = remember(name) { Animatable(0.3f) }
+        val reveal = remember(name) { Animatable(0.5f) }
         LaunchedEffect(reveal) {
-            reveal.animateTo(1f, tween(180, easing = AppleMotion.LaunchZoomEasing))
+            reveal.animateTo(1f, tween(150, easing = AppleMotion.EaseOut))
         }
         Box(modifier, contentAlignment = Alignment.TopStart) {
             Text(
@@ -902,7 +903,7 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.graphicsLayer {
                     alpha = reveal.value
-                    translationX = (1f - reveal.value) * 20f
+                    translationX = (1f - reveal.value) * 12f
                 }
             )
         }
@@ -915,7 +916,8 @@ private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
     val item = info.visibleItemsInfo.firstOrNull { it.index == index }
     if (item != null) {
         val delta = (item.offset - info.beforeContentPadding).toFloat()
-        if (delta != 0f) state.animateScrollBy(delta, tween(300, easing = AppleMotion.LaunchZoomEasing))
+        // Standard ease (gentle start, soft stop). The old curve jumped most of the distance in the first frames.
+        if (delta != 0f) state.animateScrollBy(delta, tween(260, easing = AppleMotion.EaseOut))
     } else {
         state.animateScrollToItem(index, 0)
     }
@@ -1175,7 +1177,7 @@ private fun TvPill(
     var focused by remember { mutableStateOf(false) }
     val pillFocus by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.9f, stiffness = 520f),
+        animationSpec = tween(130, easing = AppleMotion.EaseOut),
         label = "pillFocus"
     )
     val fg by animateColorAsState(
@@ -1186,7 +1188,8 @@ private fun TvPill(
     // 0 = icon only, 1 = icon + label. Read only inside layout/graphicsLayer lambdas below.
     val expand = animateFloatAsState(
         targetValue = if (!collapsible || focused) 1f else 0f,
-        animationSpec = tween(340, easing = AppleMotion.LaunchZoomEasing),
+        // Short and plain: the pill's label slides out in 170 ms. (340 ms with a front-loaded curve felt stuck.)
+        animationSpec = tween(170, easing = AppleMotion.EaseOut),
         label = "pillExpand"
     )
     val shape = RoundedCornerShape(50)
@@ -1201,7 +1204,7 @@ private fun TvPill(
         modifier
             .height(height)
             .graphicsLayer {
-                val sc = 1f + 0.05f * pillFocus
+                val sc = 1f + 0.03f * pillFocus
                 scaleX = sc
                 scaleY = sc
             }
@@ -1427,18 +1430,7 @@ private fun CleanTvAppTile(
 
     // Apple TV-style welcome landing spring when returning to this app's tile from the app
     val landingScale = remember { Animatable(1f) }
-    LaunchedEffect(isReturning) {
-        if (isReturning) {
-            landingScale.snapTo(1.04f)
-            landingScale.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = 1f,
-                    stiffness = 260f
-                )
-            )
-        }
-    }
+    // (No separate bouncing landing on the tile any more: the whole Home screen settles once, see returnProgress.)
 
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 0.93f else 1f,
@@ -1458,7 +1450,8 @@ private fun CleanTvAppTile(
     // ONE progress value (0..1) drives scale, ring, shadow and name: 1 animation per tile instead of 6.
     val focusProgress by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.9f, stiffness = 700f),
+        // Critically damped: grows smoothly and stops dead, no wobble when D-pad moves quickly.
+        animationSpec = spring(dampingRatio = 1f, stiffness = 520f),
         label = "tileFocus"
     )
     val shape = RoundedCornerShape(radius)

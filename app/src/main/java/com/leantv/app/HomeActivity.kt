@@ -131,13 +131,14 @@ class HomeActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val SPLASH_MAX_MS = 1500L
+        const val SPLASH_MAX_MS = 900L
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page.
+        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page,
+        // and (goHome) every other app, so nothing is left running in memory.
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             vm.goHome()
         }
@@ -147,6 +148,12 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.onResume()
+    }
+
+    override fun onPause() {
+        // An app is coming to the front (or the screen is turning off): cancel any pending "close all apps".
+        vm.onPause()
+        super.onPause()
     }
 
     @Deprecated("Deprecated in Java")

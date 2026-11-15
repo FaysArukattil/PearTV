@@ -11,6 +11,7 @@ import org.json.JSONObject
  */
 class Journal(ctx: Context) {
     private val sp = ctx.getSharedPreferences("leantv", Context.MODE_PRIVATE)
+    private val snapshotFile = java.io.File(ctx.applicationContext.filesDir, "home_snapshot.json")
 
     var onboarded: Boolean
         get() = sp.getBoolean("onboarded", false)
@@ -201,6 +202,36 @@ class Journal(ctx: Context) {
      * home screen on the very first frame of the next start, before any package scanning has finished.
      */
     var appSnapshot: String?
-        get() = sp.getString("app_snapshot", null)
-        set(v) = sp.edit().putString("app_snapshot", v).apply()
+        get() {
+            try {
+                if (snapshotFile.exists()) return snapshotFile.readText()
+            } catch (_: Exception) {}
+            // Older versions kept the snapshot inside the shared preferences file.
+            return sp.getString("app_snapshot", null)
+        }
+        set(v) {
+            // Own small file, written atomically. It no longer bloats (and re-writes) the preferences file
+            // every time a launch count or favourite changes.
+            try {
+                if (v == null) {
+                    snapshotFile.delete()
+                } else {
+                    val tmp = java.io.File(snapshotFile.parentFile, "home_snapshot.json.tmp")
+                    tmp.writeText(v)
+                    if (!tmp.renameTo(snapshotFile)) {
+                        snapshotFile.writeText(v)
+                        tmp.delete()
+                    }
+                }
+                if (sp.contains("app_snapshot")) sp.edit().remove("app_snapshot").apply()
+            } catch (_: Exception) {}
+        }
+
+    /**
+     * When true, every return to Home (Home key, or Back out of an app) closes all other apps and frees their memory.
+     * Default ON. Set to false to keep apps in the background like a normal launcher.
+     */
+    var closeAppsOnHome: Boolean
+        get() = sp.getBoolean("close_apps_on_home", true)
+        set(v) = sp.edit().putBoolean("close_apps_on_home", v).apply()
 }

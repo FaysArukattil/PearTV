@@ -62,6 +62,58 @@ enum class AppSortMode(val label: String) {
     ALPHABETICAL("A-Z"),
 }
 
+/**
+ * Packages that "close all apps" never touches. Killing these only makes the TV slower (they restart straight away)
+ * or breaks input / settings / Google services. Everything else is closed when you return to Home.
+ */
+private val PROTECTED_PREFIXES = listOf(
+    "android",
+    "com.android.systemui",
+    "com.android.tv",
+    "com.android.settings",
+    "com.android.providers",
+    "com.android.inputmethod",
+    "com.android.bluetooth",
+    "com.android.keychain",
+    "com.android.phone",
+    "com.android.server",
+    "com.android.packageinstaller",
+    "com.android.permissioncontroller",
+    "com.google.android.gms",
+    "com.google.android.gsf",
+    "com.google.android.inputmethod",
+    "com.google.android.tvlauncher",
+    "com.google.android.tvrecommendations",
+    "com.google.android.apps.tv.launcherx",
+    "com.google.android.katniss",
+    "com.google.android.packageinstaller",
+    "com.google.android.permissioncontroller",
+    "com.google.android.tts",
+    "com.google.android.webview",
+    "com.google.android.trichromelibrary",
+    "com.google.android.overlay",
+    "com.mediatek",
+    "com.amlogic",
+    "com.droidlogic",
+    "com.realtek",
+    "com.hisilicon",
+    "com.broadcom",
+    "com.nvidia",
+    "com.shizuku",
+    "moe.shizuku",
+    "rikka.shizuku",
+)
+
+private fun isProtectedPackage(pkg: String): Boolean {
+    for (p in PROTECTED_PREFIXES) {
+        if (pkg == p || pkg.startsWith("$p.")) return true
+    }
+    return false
+}
+
+/** How long Quick Share stays on without any activity. */
+private const val QS_AUTO_OFF_MS = 15L * 60L * 1000L
+
 data class LauncherState(
     val featuredApps: List<InstalledAppInfo> = emptyList(),
     val favoriteApps: List<InstalledAppInfo> = emptyList(),
@@ -130,6 +182,8 @@ data class LauncherState(
     val customWallpaperUri: String? = null,
     val is24hClock: Boolean = false,
     val showGreeting: Boolean = true,
+    /** Returning to Home closes every other app and frees its memory. */
+    val closeAppsOnHome: Boolean = true,
 
     // 1-Click Auto Debloater Wizard
     val isDebloating: Boolean = false,
@@ -168,6 +222,39 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private var prefetching = false
     private var resumedOnce = false
 
+    /** True while Home is the visible screen. "Close all apps" only runs while this is true. */
+    @Volatile private var homeVisible = false
+    private var closeAppsJob: Job? = null
+
+    /** Set when the app list may be out of date (an app was launched, installed, removed or updated). */
+    @Volatile private var appsDirty = true
+    @Volatile private var lastLoadAt = 0L
+    private var pkgReloadJob: Job? = null
+    private var lastSnapshotSig = 0
+
+    // Clock formatters, created once. They MUST be declared above the init block, which already reads the clock.
+    private var timeFmt: SimpleDateFormat? = null
+    private var timeFmtIs24h = false
+    private val dateFmt = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH)
+    private var lastCloseAt = -10_000L
+
+    /** Apps this launcher has started during this process, so they can be closed again even if hidden from Home. */
+    private val launchedPkgs: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private val pkgReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            val changed = i?.data?.schemeSpecificPart
+            if (changed == ctx.packageName) return
+            appsDirty = true
+            pkgReloadJob?.cancel()
+            // Debounced: installing an app fires several broadcasts in a row.
+            pkgReloadJob = viewModelScope.launch {
+                delay(1500)
+                loadApps(silent = true)
+            }
+        }
+    }
+
     @Volatile private var usageCache: Map<String, SysUsage>? = null
     @Volatile private var usageCacheAt = 0L
 
@@ -183,7 +270,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             wallpaperTheme = journal.wallpaperTheme,
             customWallpaperUri = journal.customWallpaperUri,
             is24hClock = journal.clockFormat24h,
-            showGreeting = journal.showGreeting
+            showGreeting = journal.showGreeting,
+            closeAppsOnHome = journal.closeAppsOnHome
         )
     )
     val state: StateFlow<LauncherState> = _state.asStateFlow()
@@ -205,26 +293,54 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         loadApps(silent = restored)
         if (restored) prefetchAndRelease((_state.value.dockApps + _state.value.allApps).distinct())
 
+        // Installs / uninstalls / updates refresh Home by themselves (instead of re-scanning on every resume).
+        try {
+            val filter = android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addDataScheme("package")
+            }
+            androidx.core.content.ContextCompat.registerReceiver(
+                ctx, pkgReceiver, filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (_: Exception) {}
+
         // 2) Everything else waits until Home is already on screen.
         deferredStartup()
     }
 
+    /**
+     * Start-up work that is NOT needed for the first frame. It runs in small steps, spread over the first seconds,
+     * so none of it competes with the splash hand-off, the first scroll or launching your first app.
+     */
     private fun deferredStartup() {
         checkFirstRunDebloat()
         viewModelScope.launch {
-            delay(500)
+            delay(1500)
             launch(Dispatchers.IO) { detectDevice() }
             checkDefaultLauncherPrompt()
             loadProfile()
-            fixKeyboard(userInitiated = false)
-            syncAccountsToApps()
+
+            delay(700)
             startObservingTvInputs()
+            fixKeyboard(userInitiated = false)
             launch(Dispatchers.IO) {
                 try {
                     com.leantv.app.files.FileManagerHelper.ensureQuickShareDir()
                 } catch (_: Exception) {}
             }
-            if (com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
+
+            delay(1500)
+            syncAccountsToApps()
+
+            // Quick Share (Bluetooth + mDNS + sockets) is the heaviest piece: last, and well after Home is usable.
+            delay(3000)
+            val canStart = withContext(Dispatchers.IO) {
+                com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)
+            }
+            if (canStart) {
                 startNativeQuickShare(openDialog = false, silent = true)
                 _state.update { it.copy(isQuickShareActive = true) }
             }
@@ -249,6 +365,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    @Synchronized
     private fun clockFields(): Triple<String, String, String> {
         val now = Date()
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -257,23 +374,39 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             in 12..16 -> "GOOD AFTERNOON"
             else -> "GOOD EVENING"
         }
-        val pattern = if (journal.clockFormat24h) "HH:mm" else "h:mm a"
-        val timeStr = SimpleDateFormat(pattern, Locale.getDefault()).format(now).uppercase()
-        val dateStr = SimpleDateFormat("EEEE d MMMM", Locale.ENGLISH).format(now).uppercase()
+        val is24h = journal.clockFormat24h
+        val cachedFmt = timeFmt
+        val fmt = if (cachedFmt != null && timeFmtIs24h == is24h) {
+            cachedFmt
+        } else {
+            SimpleDateFormat(if (is24h) "HH:mm" else "h:mm a", Locale.getDefault()).also {
+                timeFmt = it
+                timeFmtIs24h = is24h
+            }
+        }
+        val timeStr = fmt.format(now).uppercase()
+        val dateStr = dateFmt.format(now).uppercase()
         return Triple(greeting, timeStr, dateStr)
     }
 
     private fun startTimeTicker() {
         // Off the main thread: the network lookup is a binder call and must never delay a frame.
+        // The clock text only changes once a minute, so there is no reason to wake up every second.
         viewModelScope.launch(Dispatchers.Default) {
-            var tick = 0
             var net: Pair<String, Boolean> = Pair("Wi-Fi", true)
+            var lastNetAt = 0L
             while (isActive) {
                 val (greeting, timeStr, dateStr) = clockFields()
-                if (tick % 5 == 0) net = getNetworkStatus()
-                tick++
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - lastNetAt >= 5_000L) {
+                    net = getNetworkStatus()
+                    lastNetAt = nowMs
+                }
                 _state.update {
-                    it.copy(
+                    if (it.greetingText == greeting && it.timeText == timeStr && it.dateText == dateStr &&
+                        it.networkLabel == net.first && it.networkIsConnected == net.second
+                    ) it
+                    else it.copy(
                         greetingText = greeting,
                         timeText = timeStr,
                         dateText = dateStr,
@@ -281,7 +414,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         networkIsConnected = net.second
                     )
                 }
-                delay(1000)
+                val msToNextMinute = 60_000L - (System.currentTimeMillis() % 60_000L) + 50L
+                delay(minOf(5_000L, msToNextMinute))
             }
         }
     }
@@ -331,6 +465,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Remote Home key: close every popup / full-screen page and show plain Home. */
     fun goHome() {
         if (_state.value.showMonitorPanel) stopMonitorPolling()
+        stopQsCountdownTicker()
+        // Same as closing everything: every other app is shut down and its memory freed.
+        closeAppsSoon()
         _state.update {
             it.copy(
                 showStorageManager = false,
@@ -360,12 +497,16 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onResume() {
+        homeVisible = true
         // The very first resume happens right after init, which already loaded everything.
         if (resumedOnce) {
+            // Back from an app (Back key): close it, exactly like the Home key does.
+            closeAppsSoon()
             viewModelScope.launch(Dispatchers.IO) {
                 // Defer background sync so resuming and landing animations stay 100% fluid at 60fps
                 delay(1800)
-                loadApps(silent = true)
+                // Re-scan only when something changed (app launched / installed / removed) or the list is old.
+                if (appsDirty || SystemClock.elapsedRealtime() - lastLoadAt > 60_000L) loadApps(silent = true)
                 loadProfile()
                 syncAccountsToApps()
             }
@@ -376,8 +517,98 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun onPause() {
+        homeVisible = false
+        // Another app is coming to the front: never kill anything while it is starting.
+        closeAppsJob?.cancel()
+        closeAppsJob = null
+    }
+
+    // ---------- Close all apps when returning to Home ----------
+
+    fun toggleCloseAppsOnHome() {
+        val enabled = !journal.closeAppsOnHome
+        journal.closeAppsOnHome = enabled
+        _state.update {
+            it.copy(
+                closeAppsOnHome = enabled,
+                toastMessage = if (enabled) "Apps now close when you press Home" else "Apps stay open in the background"
+            )
+        }
+    }
+
+    /**
+     * Schedules "close everything". Waits a moment so the return-to-Home animation is never interrupted and the app
+     * has really left the foreground, then closes all other apps. Cancelled if another app starts in the meantime.
+     */
+    fun closeAppsSoon() {
+        if (!journal.closeAppsOnHome) return
+        closeAppsJob?.cancel()
+        closeAppsJob = viewModelScope.launch(Dispatchers.IO) {
+            // After the return animation has fully finished, so killing processes never competes with it.
+            delay(1300)
+            if (!homeVisible) return@launch
+            // Loop guards: never run more than once every 10 s, and only when this launcher really is the default
+            // Home app. Otherwise killing the other launcher makes Android re-open the "Select a Home app" chooser.
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastCloseAt < 10_000L) return@launch
+            if (!isCurrentLauncherDefault()) return@launch
+            lastCloseAt = now
+            closeAllAppsNow()
+        }
+    }
+
+    /** Packages of the default keyboard and enabled accessibility services (remote-mapper apps etc.). */
+    private fun dynamicProtectedPackages(): Set<String> {
+        val out = HashSet<String>()
+        // Every other Home launcher on the TV (stock launcher, vendor launchers) must never be killed.
+        try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            @Suppress("DEPRECATION")
+            ctx.packageManager.queryIntentActivities(homeIntent, 0).forEach { ri ->
+                ri.activityInfo?.packageName?.let { out.add(it) }
+            }
+        } catch (_: Throwable) {}
+        try {
+            val cr = ctx.contentResolver
+            Settings.Secure.getString(cr, Settings.Secure.DEFAULT_INPUT_METHOD)
+                ?.substringBefore('/')?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+            Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                ?.split(':')
+                ?.forEach { s -> s.substringBefore('/').takeIf { it.isNotBlank() }?.let { out.add(it) } }
+        } catch (_: Throwable) {}
+        return out
+    }
+
+    /**
+     * Ends the background processes of every app we know about except this launcher, system essentials and the
+     * keyboard / accessibility services. Apps playing music or running a foreground service are left alone by Android.
+     */
+    private fun closeAllAppsNow(): Int {
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return 0
+        val targets = LinkedHashSet<String>()
+        for (a in _state.value.allApps) targets.add(a.packageName)
+        targets.addAll(launchedPkgs)
+        try {
+            am.runningAppProcesses?.forEach { p -> p.pkgList?.forEach { targets.add(it) } }
+        } catch (_: Throwable) {}
+
+        val keep = dynamicProtectedPackages()
+        val me = ctx.packageName
+        var closed = 0
+        for (pkg in targets) {
+            if (pkg == me || pkg in keep || isProtectedPackage(pkg)) continue
+            try {
+                am.killBackgroundProcesses(pkg)
+                closed++
+            } catch (_: Throwable) {}
+        }
+        return closed
+    }
+
     override fun onCleared() {
         super.onCleared()
+        try { ctx.unregisterReceiver(pkgReceiver) } catch (_: Exception) {}
         stopMonitorPolling()
         stopQuickShare()
         adb.close()
@@ -528,6 +759,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun loadApps(silent: Boolean = false) {
         if (!silent && _state.value.allApps.isEmpty()) _state.update { it.copy(isLoading = true) }
         loadJob?.cancel()
+        appsDirty = false
+        lastLoadAt = SystemClock.elapsedRealtime()
         loadJob = viewModelScope.launch {
             val installed = InstalledAppsScanner.scanLaunchable(ctx)
 
@@ -572,9 +805,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     isLoading = false,
                 )
             }
-            saveSnapshot()
+            // Only rewrite the saved layout when it really changed (it is rebuilt after every launch otherwise).
+            val sig = layoutSignature(_state.value)
+            if (sig != lastSnapshotSig) {
+                lastSnapshotSig = sig
+                saveSnapshot()
+            }
             if (!prefetching) splashReady = true
         }
+    }
+
+    private fun layoutSignature(s: LauncherState): Int {
+        var h = s.allApps.size
+        for (a in s.allApps) h = h * 31 + a.packageName.hashCode()
+        for (a in s.dockApps) h = h * 31 + a.packageName.hashCode() + 7
+        for (a in s.favoriteApps) h = h * 31 + a.packageName.hashCode() + 13
+        for (a in s.frequentApps) h = h * 31 + a.packageName.hashCode() + 17
+        for (a in s.recentApps) h = h * 31 + a.packageName.hashCode() + 19
+        return h
     }
 
     // ---------- Instant start: remember the last home layout ----------
@@ -673,7 +921,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (splashReady || prefetching) return
         prefetching = true
         viewModelScope.launch {
-            withTimeoutOrNull(800L) {
+            // Short on purpose: opening fast matters more than having every banner ready on frame one.
+            withTimeoutOrNull(300L) {
                 apps.take(12).map { app ->
                     async(Dispatchers.IO) { IconCache.loadVisuals(ctx, app.packageName) }
                 }.awaitAll()
@@ -760,11 +1009,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // 2) Bookkeeping AFTER the app is starting, and never while it is starting: the disk write goes to IO and the
-        //    list refresh (re-sort by recency) waits until the app is up and Home is hidden.
+        //    list refresh (re-sort by recency) waits until the app is fully up (8 s), and only if Home is still hidden.
+        launchedPkgs.add(app.packageName)
+        appsDirty = true
+        closeAppsJob?.cancel()
         viewModelScope.launch {
             withContext(Dispatchers.IO) { journal.recordAppLaunch(app.packageName) }
-            delay(2500)
-            loadApps(silent = true)
+            delay(8000)
+            if (!homeVisible) loadApps(silent = true)
         }
     }
 
@@ -1072,7 +1324,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleClockFormat() {
         val newFormat = !journal.clockFormat24h
         journal.clockFormat24h = newFormat
-        _state.update { it.copy(is24hClock = newFormat) }
+        // The ticker only wakes up every few seconds now, so apply the new format immediately.
+        val (greeting, timeStr, dateStr) = clockFields()
+        _state.update {
+            it.copy(is24hClock = newFormat, greetingText = greeting, timeText = timeStr, dateText = dateStr)
+        }
     }
 
     fun toggleGreeting() {
@@ -1084,6 +1340,36 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Quick Share Dual-Mode (Feature #8) ----------
 
     private var qsAutoOffJob: Job? = null
+    private var qsTickerJob: Job? = null
+    @Volatile private var qsDeadlineMs = 0L
+    private var lastWebProgressAt = 0L
+    private var lastNativeProgressAt = 0L
+
+    /**
+     * Shows the "turns off in mm:ss" countdown, but ONLY while the Quick Share panel is open.
+     * It used to write a new value into the Home state every second for 15 minutes, which re-ran the whole
+     * Home screen once per second, all the time. Now Home is left completely alone.
+     */
+    private fun startQsCountdownTicker() {
+        qsTickerJob?.cancel()
+        qsTickerJob = null
+        if (!_state.value.isQuickShareActive || qsAutoOffJob?.isActive != true) {
+            _state.update { if (it.quickShareAutoOffSeconds == null) it else it.copy(quickShareAutoOffSeconds = null) }
+            return
+        }
+        qsTickerJob = viewModelScope.launch {
+            while (isActive && _state.value.showQuickShare) {
+                val sec = ((qsDeadlineMs - SystemClock.elapsedRealtime()) / 1000L).toInt().coerceAtLeast(0)
+                _state.update { if (it.quickShareAutoOffSeconds == sec) it else it.copy(quickShareAutoOffSeconds = sec) }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun stopQsCountdownTicker() {
+        qsTickerJob?.cancel()
+        qsTickerJob = null
+    }
 
     fun handleQuickShareClick() {
         openQuickShareControl()
@@ -1095,9 +1381,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openQuickShareControl() {
         _state.update { it.copy(showQuickShare = true) }
+        startQsCountdownTicker()
     }
 
     fun closeQuickShareControl() {
+        stopQsCountdownTicker()
         _state.update { it.copy(showQuickShare = false) }
     }
 
@@ -1121,28 +1409,34 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         startWebQuickShare()
         _state.update { it.copy(isQuickShareActive = true) }
         resetQuickShareInactivityTimer()
+        if (_state.value.showQuickShare) startQsCountdownTicker()
         toast("Quick Share is ON (auto-off in 15m)")
     }
 
     fun turnOffQuickShare() {
         qsAutoOffJob?.cancel()
         qsAutoOffJob = null
+        stopQsCountdownTicker()
         stopNativeQuickShare()
         stopWebQuickShare()
         _state.update { it.copy(isQuickShareActive = false, quickShareAutoOffSeconds = null) }
         toast("Quick Share turned OFF")
     }
 
+    /**
+     * Pushes the auto-off deadline 15 minutes into the future. Called very often (every transfer progress event), so
+     * it only moves a number; a single watcher coroutine sleeps until that deadline and then turns Quick Share off.
+     */
     fun resetQuickShareInactivityTimer() {
-        qsAutoOffJob?.cancel()
         if (!_state.value.isQuickShareActive) return
+        qsDeadlineMs = SystemClock.elapsedRealtime() + QS_AUTO_OFF_MS
+        if (qsAutoOffJob?.isActive == true) return
         qsAutoOffJob = viewModelScope.launch {
-            val totalSeconds = 15 * 60 // 15 minutes = 900 seconds
-            for (sec in totalSeconds downTo 1) {
-                _state.update { it.copy(quickShareAutoOffSeconds = sec) }
-                delay(1000)
+            while (true) {
+                val remaining = qsDeadlineMs - SystemClock.elapsedRealtime()
+                if (remaining <= 0L) break
+                delay(remaining)
             }
-            _state.update { it.copy(quickShareAutoOffSeconds = null) }
             turnOffQuickShare()
             toast("Quick Share turned off due to 15 min of inactivity")
         }
@@ -1174,6 +1468,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                         viewModelScope.launch {
                             svc.state.collect { qsState ->
                                 val incoming = qsState.incomingTransfer
+                                // Same transfer, same phase, only the progress number moved: at most ~7 updates/second.
+                                val prevPhase = _state.value.nativeQuickShareState.incomingTransfer?.phase
+                                val progressOnly = incoming != null && incoming.phase == prevPhase &&
+                                    incoming.phase == com.leantv.app.share.TransferPhase.RECEIVING
+                                val nowMs = SystemClock.elapsedRealtime()
+                                if (progressOnly && nowMs - lastNativeProgressAt < 150L) return@collect
+                                if (progressOnly) lastNativeProgressAt = nowMs
                                 _state.update { current ->
                                     val currentWebIncoming = current.nativeQuickShareState.incomingTransfer?.takeIf { it.connection == null }
                                     val effectiveIncoming = incoming ?: currentWebIncoming
@@ -1397,17 +1698,22 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             },
             onTransferProgress = { fraction, bytesPerSec ->
                 resetQuickShareInactivityTimer()
-                _state.update { s ->
-                    val cur = s.nativeQuickShareState.incomingTransfer ?: return@update s
-                    s.copy(
-                        nativeQuickShareState = s.nativeQuickShareState.copy(
-                            incomingTransfer = cur.copy(
-                                phase = com.leantv.app.share.TransferPhase.RECEIVING,
-                                progressFraction = fraction,
-                                bytesPerSecond = bytesPerSec
+                // At most ~7 UI updates per second: a fast transfer used to re-run the whole screen on every chunk.
+                val nowMs = SystemClock.elapsedRealtime()
+                if (fraction >= 1f || nowMs - lastWebProgressAt >= 150L) {
+                    lastWebProgressAt = nowMs
+                    _state.update { s ->
+                        val cur = s.nativeQuickShareState.incomingTransfer ?: return@update s
+                        s.copy(
+                            nativeQuickShareState = s.nativeQuickShareState.copy(
+                                incomingTransfer = cur.copy(
+                                    phase = com.leantv.app.share.TransferPhase.RECEIVING,
+                                    progressFraction = fraction,
+                                    bytesPerSecond = bytesPerSec
+                                )
                             )
                         )
-                    )
+                    }
                 }
             },
             onTransferComplete = { file ->
@@ -1812,11 +2118,36 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Default Launcher Flow ----------
 
     private suspend fun checkDefaultLauncherPrompt() {
-        if (!journal.defaultLauncherPromptDismissed) {
+        // Asked on every start until LeanTV really is the default Home app (a reinstall wipes the saved default, and
+        // without a default Android shows "Select a Home app"). "Later" only closes it for this start.
+        run {
             val isDefault = withContext(Dispatchers.IO) { isCurrentLauncherDefault() }
             if (!isDefault) {
+                // If on-device ADB is already connected, just fix it silently (no popup at all).
+                if (adb.isConnected && setDefaultViaAdb(allowConnect = false)) return
                 _state.update { it.copy(showDefaultPrompt = true) }
             }
+        }
+    }
+
+    /**
+     * Registers LeanTV as the system's default Home app using the TV's own ADB (same as running
+     * `adb shell cmd package set-home-activity ...`). Unlike tapping "Always" in the chooser, this survives
+     * reinstalls of the same build and never leaves Android without a default, so "Select a Home app" stops appearing.
+     */
+    private suspend fun setDefaultViaAdb(allowConnect: Boolean): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (!adb.isConnected) {
+                if (!allowConnect) return@withContext false
+                if (adb.connect() !is ConnResult.Ok) return@withContext false
+            }
+            val pkg = ctx.packageName
+            adb.shell("cmd package set-home-activity --user 0 $pkg/com.leantv.app.HomeActivity")
+            if (isCurrentLauncherDefault()) return@withContext true
+            adb.shell("cmd role add-role-holder --user 0 android.app.role.HOME $pkg")
+            isCurrentLauncherDefault()
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -1839,7 +2170,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestSetDefaultLauncher() {
-        dismissDefaultPrompt(dontAskAgain = true)
+        // Not "don't ask again": if this fails or is cancelled we ask again next start.
+        dismissDefaultPrompt(dontAskAgain = false)
+        viewModelScope.launch {
+            // 1) Reliable way: set it through the TV's ADB. 2) Fallback: the system's own request screen.
+            if (setDefaultViaAdb(allowConnect = true)) {
+                toast("LeanTV is now your default Home app")
+                return@launch
+            }
+            requestDefaultLauncherFromSystem()
+        }
+    }
+
+    private fun requestDefaultLauncherFromSystem() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val roleManager = ctx.getSystemService(Context.ROLE_SERVICE) as? RoleManager
