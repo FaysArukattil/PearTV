@@ -190,34 +190,72 @@ fun HomeScreen(vm: LauncherViewModel) {
     val view = LocalView.current
     var showTools by remember { mutableStateOf(false) }
 
-    // ─── App Launch / Close Zoom State ───
-    // Stores the last-launched tile's screen bounds so we can:
-    //   • open: pass to ActivityOptions.makeScaleUpAnimation (system handles zoom-in)
-    //   • close: play a Compose reverse-zoom overlay (fullscreen → tile) on resume
-    var lastLaunchBounds by remember { mutableStateOf<Rect?>(null) }
-    var lastLaunchApp by remember { mutableStateOf<InstalledAppInfo?>(null) }
-    var showCloseZoom by remember { mutableStateOf(false) }
+    // ─── App Launch / Close Spatial Transition State ───
+    // • Open: tactile press & pop with ascending chime + native makeScaleUpAnimation from tile bounds
+    // • Close: soothing return droplet chime + 100% GPU-accelerated Apple depth breathe-in and landing spring
+    var isAppLaunched by remember { mutableStateOf(false) }
+    var isAppLaunching by remember { mutableStateOf(false) }
+    var isReturningFromApp by remember { mutableStateOf(false) }
+    var returningAppPackage by remember { mutableStateOf<String?>(null) }
+
+    val homeDepthScale by animateFloatAsState(
+        targetValue = if (isAppLaunching) 0.95f else if (isReturningFromApp) 0.96f else 1.0f,
+        animationSpec = tween(
+            durationMillis = if (isAppLaunching) 220 else AppleMotion.DurAppClose,
+            easing = AppleMotion.AppleCloseEasing
+        ),
+        label = "homeDepthScale"
+    )
+    val homeDepthScrim by animateFloatAsState(
+        targetValue = if (isAppLaunching) 0.25f else if (isReturningFromApp) 0.18f else 0.0f,
+        animationSpec = tween(
+            durationMillis = if (isAppLaunching) 200 else AppleMotion.DurAppClose,
+            easing = AppleMotion.AppleCloseEasing
+        ),
+        label = "homeDepthScrim"
+    )
 
     LifecycleResumeEffect(Unit) {
-        // We just came back from a launched app → trigger close-zoom
-        if (lastLaunchBounds != null && lastLaunchApp != null) {
-            showCloseZoom = true
+        if (isAppLaunched) {
+            isReturningFromApp = true
+            TvSound.playAppClose(view)
+            isAppLaunched = false
         }
+        isAppLaunching = false
         onPauseOrDispose { }
     }
 
-    // Home key pressed on the remote: drop local popups + any zoom overlay.
+    // Home key pressed on the remote: close menus, and if returning from an app, trigger return transition
     LaunchedEffect(s.homeResetTick) {
         showTools = false
-        showCloseZoom = false
-        lastLaunchBounds = null
-        lastLaunchApp = null
+        if (isAppLaunched) {
+            isReturningFromApp = true
+            TvSound.playAppClose(view)
+            isAppLaunched = false
+        }
     }
 
-    // Tile press → launch with system scale-up animation (no Compose overlay on open).
+    LaunchedEffect(isReturningFromApp) {
+        if (isReturningFromApp) {
+            delay(AppleMotion.DurAppClose.toLong())
+            isReturningFromApp = false
+            returningAppPackage = null
+        }
+    }
+
+    LaunchedEffect(isAppLaunching) {
+        if (isAppLaunching) {
+            delay(800)
+            isAppLaunching = false
+        }
+    }
+
+    // Tile press → launch with system scale-up animation and launcher depth zoom.
     val launchApp: (InstalledAppInfo, Rect?) -> Unit = { app, bounds ->
-        lastLaunchApp = app
-        lastLaunchBounds = bounds
+        isAppLaunched = true
+        isAppLaunching = true
+        isReturningFromApp = false
+        returningAppPackage = app.packageName
         val options = if (bounds != null && bounds.width > 0 && bounds.height > 0) {
             android.app.ActivityOptions.makeScaleUpAnimation(
                 view,
@@ -397,7 +435,22 @@ fun HomeScreen(vm: LauncherViewModel) {
         ) {
             // Layout follows the reference launcher (tvOS style), scaled x1.33 for the 1280dp canvas:
             // header, hero name, pinned glass dock, then a scrolling grid of banner tiles.
-            Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = homeDepthScale
+                        scaleY = homeDepthScale
+                    }
+            ) {
+                if (homeDepthScrim > 0.01f) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = homeDepthScrim))
+                            .focusProperties { canFocus = false }
+                    )
+                }
                 // Window width in the scaled TV-canvas dp (replaces BoxWithConstraints: no sub-composition in layout).
                 val maxWidth = (LocalContext.current.resources.displayMetrics.widthPixels / LocalDensity.current.density).dp
                 val cols = 4
@@ -506,6 +559,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         AppRow(
                                             apps = dock, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                             focusScale = 1.05f, showNames = false,
+                                            returningPkg = returningAppPackage,
                                             tileModifier = { index, _ ->
                                                 val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
                                                 val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
@@ -565,6 +619,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                     AppRow(
                                         apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                         focusScale = 1.08f, showNames = true,
+                                        returningPkg = returningAppPackage,
                                         modifier = Modifier.padding(start = bandPad),
                                         tileModifier = if (rowIndex == 0) { index, _ ->
                                             val dockTargetCol = index.coerceAtMost((dock.size - 1).coerceAtLeast(0))
@@ -794,19 +849,7 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 
-            // ─── App Close Zoom-Back Overlay ───
-            // When returning from a launched app, shrinks fullscreen → tile icon position.
-            if (showCloseZoom) {
-                AppCloseZoomOverlay(
-                    app = lastLaunchApp,
-                    targetBounds = lastLaunchBounds,
-                    onFinished = {
-                        showCloseZoom = false
-                        lastLaunchBounds = null
-                        lastLaunchApp = null
-                    }
-                )
-            }
+
 
             // ─── Universal Quick Share Incoming Consent Popup ───
             // Appears on top of EVERYTHING across the entire app (File Manager, Settings, Screensaver, etc.)
@@ -828,128 +871,7 @@ fun HomeScreen(vm: LauncherViewModel) {
         }
     }
 
-/**
- * Apple TV-style app close zoom-back overlay.
- * When returning from a launched app, the fullscreen shrinks smoothly back to the tile's
- * position on the home screen — the reverse of the system scale-up open animation.
- * Uses a black scrim that contracts from fullscreen to the tile bounds.
- */
-@Composable
-private fun AppCloseZoomOverlay(
-    app: InstalledAppInfo?,
-    targetBounds: Rect?,
-    onFinished: () -> Unit,
-) {
-    if (app == null) { onFinished(); return }
 
-    val density = LocalDensity.current
-    val view = LocalView.current
-    val context = LocalContext.current
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-
-    val configScreenW = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val configScreenH = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val screenW = if (view.width > 0) view.width.toFloat() else configScreenW
-    val screenH = if (view.height > 0) view.height.toFloat() else configScreenH
-
-    // Fallback: center of screen if bounds are unknown
-    val defaultW = with(density) { 260.dp.toPx() }
-    val defaultH = with(density) { 146.dp.toPx() }
-    val endLeft = targetBounds?.left ?: ((screenW - defaultW) / 2f)
-    val endTop = targetBounds?.top ?: ((screenH - defaultH) / 2f)
-    val endW = targetBounds?.width?.coerceAtLeast(40f) ?: defaultW
-    val endH = targetBounds?.height?.coerceAtLeast(40f) ?: defaultH
-    val endRadiusPx = with(density) { 22.dp.toPx() }
-
-    // Load tile visuals for the shrinking card
-    var visuals by remember(app.packageName) { mutableStateOf(IconCache.get(app.packageName)) }
-    LaunchedEffect(app.packageName) {
-        if (visuals == null) visuals = IconCache.loadVisuals(context, app.packageName)
-    }
-
-    // progress: 0 = fullscreen, 1 = tile size
-    val anim = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        anim.snapTo(0f)
-        anim.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 280, easing = AppleMotion.EaseOut)
-        )
-        onFinished()
-    }
-
-    val p = anim.value
-
-    val curLeft = androidx.compose.ui.util.lerp(0f, endLeft, p)
-    val curTop = androidx.compose.ui.util.lerp(0f, endTop, p)
-    val curWidth = androidx.compose.ui.util.lerp(screenW, endW, p)
-    val curHeight = androidx.compose.ui.util.lerp(screenH, endH, p)
-    val curRadius = androidx.compose.ui.util.lerp(0f, endRadiusPx, p)
-
-    val curLeftDp = with(density) { curLeft.toDp() }
-    val curTopDp = with(density) { curTop.toDp() }
-    val curWidthDp = with(density) { curWidth.toDp() }
-    val curHeightDp = with(density) { curHeight.toDp() }
-    val curRadiusDp = with(density) { curRadius.toDp() }
-
-    // Scrim: fades from opaque black → transparent as the card shrinks
-    val scrimAlpha = ((1f - p) * 0.7f).coerceIn(0f, 0.7f)
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .focusProperties { canFocus = false }
-    ) {
-        // Background scrim
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = scrimAlpha))
-        )
-
-        // Shrinking card
-        Box(
-            Modifier
-                .offset(x = curLeftDp, y = curTopDp)
-                .size(curWidthDp, curHeightDp)
-                .clip(RoundedCornerShape(curRadiusDp))
-                .background(Color(0xFF1C1C1E))
-        ) {
-            val v = visuals
-            if (v != null && v.isBanner) {
-                Image(
-                    bitmap = v.bitmap,
-                    contentDescription = app.appName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                val plateTop = v?.topColor ?: extractFallbackHue(app)
-                val plateBottom = v?.bottomColor ?: Color(0xFF101216)
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(plateTop.copy(alpha = 0.96f), plateBottom)
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (v?.bitmap != null) {
-                        Image(
-                            bitmap = v.bitmap,
-                            contentDescription = app.appName,
-                            modifier = Modifier
-                                .size(with(density) { (endH * 0.58f).toDp() })
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 /** Big app name above the grid. Reads the focused name itself, so only this small scope recomposes on focus moves. */
 @Composable
@@ -1370,6 +1292,7 @@ private fun AppRow(
     onClick: (InstalledAppInfo, Rect?) -> Unit,
     onLongClick: (InstalledAppInfo) -> Unit,
     modifier: Modifier = Modifier,
+    returningPkg: String? = null,
     badge: ((InstalledAppInfo) -> String?)? = null,
     tileModifier: ((index: Int, app: InstalledAppInfo) -> Modifier)? = null,
 ) {
@@ -1379,6 +1302,7 @@ private fun AppRow(
                 app = app, tileW = tileW, tileH = tileH, radius = radius,
                 focusScale = focusScale, showName = showNames,
                 badgeText = badge?.invoke(app),
+                isReturning = (returningPkg == app.packageName),
                 modifier = tileModifier?.invoke(index, app) ?: Modifier,
                 onFocus = { onFocus(app) },
                 onClick = { bounds -> onClick(app, bounds) },
@@ -1402,6 +1326,7 @@ private fun CleanTvAppTile(
     focusScale: Float,
     showName: Boolean,
     badgeText: String? = null,
+    isReturning: Boolean = false,
     modifier: Modifier = Modifier,
     onFocus: () -> Unit,
     onClick: (Rect?) -> Unit,
@@ -1425,14 +1350,40 @@ private fun CleanTvAppTile(
 
     var focused by remember { mutableStateOf(false) }
     var isPressed by remember { mutableStateOf(false) }
+    var isLaunching by remember { mutableStateOf(false) }
     var tileBounds by remember { mutableStateOf<Rect?>(null) }
     var longPressJob by remember { mutableStateOf<Job?>(null) }
     var isLongPressHandled by remember { mutableStateOf(false) }
+
+    // Apple TV-style welcome landing spring when returning to this app's tile from the app
+    val landingScale = remember { Animatable(1f) }
+    LaunchedEffect(isReturning) {
+        if (isReturning) {
+            landingScale.snapTo(1.10f)
+            landingScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.75f,
+                    stiffness = 240f
+                )
+            )
+        }
+    }
 
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 0.93f else 1f,
         animationSpec = AppleMotion.SpringSnappy,
         label = "tilePressScale"
+    )
+    val launchPopScale by animateFloatAsState(
+        targetValue = if (isLaunching) 1.15f else 1f,
+        animationSpec = tween(280, easing = AppleMotion.EaseOut),
+        label = "tileLaunchPop"
+    )
+    val launchSheen by animateFloatAsState(
+        targetValue = if (isLaunching) 1f else 0f,
+        animationSpec = tween(240, easing = AppleMotion.EaseOut),
+        label = "tileLaunchSheen"
     )
     val scale by animateFloatAsState(
         targetValue = if (focused) focusScale else 1f,
@@ -1475,9 +1426,9 @@ private fun CleanTvAppTile(
                     }
                 }
                 .graphicsLayer {
-                    scaleX = scale * pressScale
-                    scaleY = scale * pressScale
-                    shadowElevation = shadowElevPx
+                    scaleX = scale * pressScale * launchPopScale * landingScale.value
+                    scaleY = scale * pressScale * launchPopScale * landingScale.value
+                    shadowElevation = if (isLaunching) 48f else shadowElevPx
                     this.shape = shape
                     clip = false
                     ambientShadowColor = Color(0x80000000)
@@ -1487,6 +1438,17 @@ private fun CleanTvAppTile(
                 // Focus ring + soft highlight drawn in the draw phase: animating them never recomposes the tile.
                 .drawWithContent {
                     drawContent()
+                    if (launchSheen > 0.01f) {
+                        drawRect(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = launchSheen * 0.40f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                    }
                     val a = ringAlpha
                     if (a > 0.01f) {
                         val sw = 2.5.dp.toPx()
@@ -1511,6 +1473,7 @@ private fun CleanTvAppTile(
                     focused = it.isFocused
                     if (!it.isFocused) {
                         isPressed = false
+                        isLaunching = false
                         longPressJob?.cancel()
                     }
                     if (it.isFocused) onFocus()
@@ -1548,7 +1511,8 @@ private fun CleanTvAppTile(
                             longPressJob = null
                             isLongPressHandled = false
                             if (!wasLong) {
-                                TvSound.playClick(view)
+                                TvSound.playAppOpen(view)
+                                isLaunching = true
                                 onClick(tileBounds)
                             }
                             true

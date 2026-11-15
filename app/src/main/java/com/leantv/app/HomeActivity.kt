@@ -114,15 +114,20 @@ class HomeActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // Let standard window & Compose hierarchy process the key event first so dialogs,
+        // focus managers, and child components receive their key callbacks normally.
+        if (super.dispatchKeyEvent(event)) return true
+
+        // If unhandled Back reaches the root activity level:
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
             if (event.action == android.view.KeyEvent.ACTION_UP) {
                 if (onBackPressedDispatcher.hasEnabledCallbacks()) {
                     onBackPressedDispatcher.onBackPressed()
                 }
             }
-            return true // Consume back key: Home is the root, never exit or pop to previous app!
+            return true // Consume back key: Home is the root, never exit to previous app or crash!
         }
-        return super.dispatchKeyEvent(event)
+        return false
     }
 
     private companion object {

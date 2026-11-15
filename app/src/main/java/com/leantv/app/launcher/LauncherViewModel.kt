@@ -362,12 +362,15 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun onResume() {
         // The very first resume happens right after init, which already loaded everything.
         if (resumedOnce) {
-            loadApps(silent = true)
-            loadProfile()
-            syncAccountsToApps() // e.g. YouTube was just installed from the Play Store
+            viewModelScope.launch(Dispatchers.IO) {
+                // Defer background sync so resuming and landing animations stay 100% fluid at 60fps
+                delay(1800)
+                loadApps(silent = true)
+                loadProfile()
+                syncAccountsToApps()
+            }
         }
         resumedOnce = true
-        killBackgroundApps()
         if (_state.value.showMonitorPanel) {
             startMonitorPolling()
         }
@@ -706,10 +709,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         if (intent != null) {
             try {
+                // Standard clean launcher task flags. Avoid FLAG_ACTIVITY_TASK_ON_HOME as it corrupts
+                // OEM Android TV task hierarchies and causes default home launcher reset dialogs.
                 intent.addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED or
-                    Intent.FLAG_ACTIVITY_TASK_ON_HOME
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                 )
                 intent.putExtra("leantv_launched", true)
                 // When we have tile bounds, the caller passes makeScaleUpAnimation options
@@ -718,7 +722,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val launchOptions = options?.toBundle()
                     ?: android.app.ActivityOptions.makeCustomAnimation(ctx, 0, 0).toBundle()
                 ctx.startActivity(intent, launchOptions)
-                killBackgroundApps(exceptPackage = app.packageName)
             } catch (e: Exception) {
                 toast("Couldn't open app: ${e.message}")
             }

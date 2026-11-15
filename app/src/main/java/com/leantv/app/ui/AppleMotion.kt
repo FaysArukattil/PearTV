@@ -26,6 +26,8 @@ object AppleMotion {
     val EaseOut = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
     /** Apple app launch zoom easing – swift initial expansion with smooth continuous deceleration into full screen. */
     val LaunchZoomEasing = CubicBezierEasing(0.16f, 1.0f, 0.3f, 1.0f)
+    /** Apple tvOS app close / minimize easing – starts with smooth weight, decelerates slowly and gracefully into the tile. */
+    val AppleCloseEasing = CubicBezierEasing(0.20f, 1.0f, 0.32f, 1.0f)
     /** Apple "ease in" – slow start, fast exit (for elements leaving screen). */
     val EaseIn  = CubicBezierEasing(0.0f, 0.0f, 0.6f, 1.0f)
     /** Apple decelerate – used for things entering the screen. */
@@ -37,6 +39,7 @@ object AppleMotion {
     const val DurStandard = 300  // standard transitions
     const val DurEnter    = 380  // screen enter
     const val DurExit     = 220  // screen exit (faster feels snappier)
+    const val DurAppClose = 560  // tvOS app return / minimize transition (smooth and cinematic)
 
     // ── Reusable AnimationSpecs ───────────────────────────────────────────────
     fun <T> enterTween() = tween<T>(DurEnter, easing = Decelerate)
