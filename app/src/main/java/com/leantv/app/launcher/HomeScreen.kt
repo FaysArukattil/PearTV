@@ -306,22 +306,22 @@ fun HomeScreen(vm: LauncherViewModel) {
         wasModalOpen = modalOpen
     }
 
-    val lastInteractionMs by vm.lastInteractionMs.collectAsState()
+    // Written on every key press but never READ during composition, so D-pad input does not recompose Home.
+    val lastInteractionMs = remember { mutableLongStateOf(System.currentTimeMillis()) }
     val idleMinutes = s.screensaverIdleMinutes
-    LaunchedEffect(idleMinutes, modalOpen, lastInteractionMs) {
-        if (idleMinutes <= 0) return@LaunchedEffect
-        while (true) {
-            val idleFor = System.currentTimeMillis() - lastInteractionMs
-            val remaining = (idleMinutes * 60 * 1000L) - idleFor
-            if (remaining <= 0L) {
+    LaunchedEffect(idleMinutes, modalOpen) {
+        while (idleMinutes > 0) {
+            val idleFor = System.currentTimeMillis() - lastInteractionMs.longValue
+            val remaining = idleMinutes * 60 * 1000L - idleFor
+            if (remaining > 0L) {
+                delay(remaining)
+            } else {
                 val cur = vm.state.value
                 if (!modalOpen && !cur.showScreensaver && !cur.showStorageManager && !cur.showFileManager && !cur.showCleanTvScreen) {
                     vm.openScreensaver()
                 }
-                vm.resetIdleTimer()
-                break
+                lastInteractionMs.longValue = System.currentTimeMillis()
             }
-            delay(minOf(remaining, 5000L).coerceAtLeast(1000L))
         }
     }
 
@@ -490,7 +490,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                         .focusRestorer()
                         .onPreviewKeyEvent { ev ->
                             if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                                vm.resetIdleTimer()
+                                lastInteractionMs.longValue = System.currentTimeMillis()
                             }
                             false
                         }
@@ -555,7 +555,6 @@ fun HomeScreen(vm: LauncherViewModel) {
                                     state = listState,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .focusProperties { canFocus = !modalOpen }
                                         .clipToBounds(),
                                     contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)

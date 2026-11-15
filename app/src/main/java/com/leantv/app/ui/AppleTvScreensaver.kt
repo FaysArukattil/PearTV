@@ -358,74 +358,24 @@ private class TextureVideoPlayer(context: Context) {
 
 /**
  * Intelligent Local Video Disk Cache for Apple Aerial Streams.
- * - Stores downloaded video assets in public storage (/sdcard/Movies/LeanTVScreensaver)
- *   so Android OS does NOT add the file sizes to LeanTV's "App Size / User Data" in TV Settings.
+ * - Stores downloaded video assets in local app storage (/sdcard/Android/data/.../files/aerial_cache)
  * - Automatically checks if a video is already cached before requesting network stream.
  * - Once cached, MediaPlayer plays directly from local storage with ZERO bytes used over internet.
  * - In the screensaver loop, it preferentially loops among cached videos, completely eliminating network usage!
  */
 object AerialVideoCache {
-    private const val PUBLIC_DIR_NAME = "LeanTVScreensaver"
-    private const val LEGACY_CACHE_DIR_NAME = "aerial_cache"
+    private const val CACHE_DIR_NAME = "aerial_cache"
     const val MIN_VALID_SIZE = 10_000_000L // 10MB minimum to be considered a complete valid video
 
     fun getCacheDir(context: Context): File {
-        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-        val dir = File(moviesDir, PUBLIC_DIR_NAME)
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
-        return if (dir.exists() && dir.canWrite()) {
-            dir
-        } else {
-            // Fallback to app external files dir only if public storage cannot be created
-            context.getExternalFilesDir(LEGACY_CACHE_DIR_NAME) ?: File(context.cacheDir, LEGACY_CACHE_DIR_NAME).also { it.mkdirs() }
-        }
-    }
-
-    private fun getLegacyCacheDir(context: Context): File? {
-        return context.getExternalFilesDir(LEGACY_CACHE_DIR_NAME)
+        val dir = context.getExternalFilesDir(CACHE_DIR_NAME) ?: File(context.cacheDir, CACHE_DIR_NAME)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
     }
 
     fun getCacheFile(context: Context, url: String): File {
         val filename = url.substringAfterLast('/')
-        val publicDir = getCacheDir(context)
-        val publicFile = File(publicDir, filename)
-        if (publicFile.exists() && publicFile.length() >= MIN_VALID_SIZE) {
-            return publicFile
-        }
-
-        // Return legacy file if present (migration to public storage happens in background)
-        val legacyDir = getLegacyCacheDir(context)
-        if (legacyDir != null && legacyDir.exists()) {
-            val legacyFile = File(legacyDir, filename)
-            if (legacyFile.exists() && legacyFile.length() >= MIN_VALID_SIZE) {
-                return legacyFile
-            }
-        }
-
-        return publicFile
-    }
-
-    suspend fun migrateLegacyCacheIfNeeded(context: Context) = withContext(Dispatchers.IO) {
-        val legacyDir = getLegacyCacheDir(context) ?: return@withContext
-        if (!legacyDir.exists()) return@withContext
-        val publicDir = getCacheDir(context)
-        legacyDir.listFiles()?.forEach { file ->
-            runCatching {
-                if (file.isFile) {
-                    if (file.name.endsWith(".mov") && file.length() >= MIN_VALID_SIZE) {
-                        val target = File(publicDir, file.name)
-                        if (!file.renameTo(target)) {
-                            file.copyTo(target, overwrite = true)
-                            file.delete()
-                        }
-                    } else {
-                        file.delete()
-                    }
-                }
-            }
-        }
+        return File(getCacheDir(context), filename)
     }
 
     fun isCached(context: Context, url: String): Boolean {
@@ -444,42 +394,23 @@ object AerialVideoCache {
 
     fun getCachedCount(context: Context): Int {
         val dir = getCacheDir(context)
-        val publicCount = dir.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
-        if (publicCount > 0) return publicCount
-        val legacyDir = getLegacyCacheDir(context)
-        return legacyDir?.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
+        return dir.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
     }
 
     fun getTotalCacheSizeBytes(context: Context): Long {
         val dir = getCacheDir(context)
-        var total = dir.listFiles { f -> f.isFile && !f.name.endsWith(".download") }?.sumOf { it.length() } ?: 0L
-        val legacyDir = getLegacyCacheDir(context)
-        if (legacyDir != null && legacyDir.exists()) {
-            total += legacyDir.listFiles { f -> f.isFile && !f.name.endsWith(".download") }?.sumOf { it.length() } ?: 0L
-        }
-        return total
+        return dir.listFiles { f -> f.isFile }?.sumOf { it.length() } ?: 0L
     }
 
     fun clearCache(context: Context) {
         val dir = getCacheDir(context)
         dir.listFiles()?.forEach { runCatching { it.delete() } }
-        val legacyDir = getLegacyCacheDir(context)
-        legacyDir?.listFiles()?.forEach { runCatching { it.delete() } }
     }
 
     /** Delete only the cached file for a single URL. Returns true if deleted. */
     fun deleteFromCache(context: Context, url: String): Boolean {
-        val filename = url.substringAfterLast('/')
-        val file = File(getCacheDir(context), filename)
-        var deleted = file.exists() && file.delete()
-        val legacyDir = getLegacyCacheDir(context)
-        if (legacyDir != null && legacyDir.exists()) {
-            val legacyFile = File(legacyDir, filename)
-            if (legacyFile.exists() && legacyFile.delete()) {
-                deleted = true
-            }
-        }
-        return deleted
+        val file = getCacheFile(context, url)
+        return file.exists() && file.delete()
     }
 
     /** File size of a cached video in MB, or 0 if not cached. */
