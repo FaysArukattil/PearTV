@@ -23,9 +23,12 @@ import kotlin.math.sin
 object TvSound {
     private var soundPool: SoundPool? = null
     private var moveSoundId: Int = 0
+    private var topOptionSoundId: Int = 0
     private var clickSoundId: Int = 0
     private var openSoundId: Int = 0
     private var closeSoundId: Int = 0
+    private var uninstallSoundId: Int = 0
+    private var volumeSoundId: Int = 0
     private var initialized = false
 
     fun init(context: Context) {
@@ -34,12 +37,12 @@ object TvSound {
 
         try {
             val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
 
             val pool = SoundPool.Builder()
-                .setMaxStreams(6)
+                .setMaxStreams(8)
                 .setAudioAttributes(attrs)
                 .build()
 
@@ -51,59 +54,101 @@ object TvSound {
 
                     // 1. Gentle, warm Apple TV navigation pop (moving around apps)
                     val tickWav = generateToneWav(
-                        durationMs = 22,
-                        startFreq = 320.0,
-                        endFreq = 200.0,
-                        attackMs = 4,
-                        decayFactor = 11.0,
+                        durationMs = 26,
+                        startFreq = 340.0,
+                        endFreq = 210.0,
+                        attackMs = 3,
+                        decayFactor = 10.0,
                         harmonicRatio = 1.5,
                         harmonicMix = 0.12,
-                        gain = 0.45
+                        gain = 0.88
                     )
                     val tickFile = File.createTempFile("tv_tick", ".wav", cache).apply { deleteOnExit(); writeBytes(tickWav) }
                     moveSoundId = pool.load(tickFile.absolutePath, 1)
 
-                    // 2. Soft, warm confirmation tap (selecting a button or setting)
-                    val clickWav = generateToneWav(
-                        durationMs = 28,
-                        startFreq = 260.0,
-                        endFreq = 150.0,
-                        attackMs = 5,
-                        decayFactor = 8.5,
+                    // 2. Light, crisp, crystalline glass tick (navigating top bar options)
+                    val topWav = generateToneWav(
+                        durationMs = 24,
+                        startFreq = 540.0,
+                        endFreq = 380.0,
+                        attackMs = 2,
+                        decayFactor = 11.0,
                         harmonicRatio = 2.0,
-                        harmonicMix = 0.15,
-                        gain = 0.48
+                        harmonicMix = 0.22,
+                        gain = 0.88
+                    )
+                    val topFile = File.createTempFile("tv_top", ".wav", cache).apply { deleteOnExit(); writeBytes(topWav) }
+                    topOptionSoundId = pool.load(topFile.absolutePath, 1)
+
+                    // 3. Soft, warm confirmation tap (selecting a button or setting)
+                    val clickWav = generateToneWav(
+                        durationMs = 32,
+                        startFreq = 300.0,
+                        endFreq = 160.0,
+                        attackMs = 4,
+                        decayFactor = 7.5,
+                        harmonicRatio = 2.0,
+                        harmonicMix = 0.18,
+                        gain = 0.90
                     )
                     val clickFile = File.createTempFile("tv_click", ".wav", cache).apply { deleteOnExit(); writeBytes(clickWav) }
                     clickSoundId = pool.load(clickFile.absolutePath, 1)
 
-                    // 3. Pleasant, cheerful ascending chime for opening an app
+                    // 4. Pleasant, cheerful ascending chime for opening an app
                     val openWav = generateToneWav(
-                        durationMs = 130,
-                        startFreq = 280.0,
-                        endFreq = 580.0,
-                        attackMs = 18,
-                        decayFactor = 5.5,
+                        durationMs = 150,
+                        startFreq = 300.0,
+                        endFreq = 650.0,
+                        attackMs = 14,
+                        decayFactor = 4.8,
                         harmonicRatio = 2.0,
-                        harmonicMix = 0.25,
-                        gain = 0.52
+                        harmonicMix = 0.28,
+                        gain = 0.92
                     )
                     val openFile = File.createTempFile("tv_open", ".wav", cache).apply { deleteOnExit(); writeBytes(openWav) }
                     openSoundId = pool.load(openFile.absolutePath, 1)
 
-                    // 4. Soothing, gentle descending settle droplet tone for closing an app / returning home
+                    // 5. Soothing, gentle descending settle droplet tone for closing an app / returning home
                     val closeWav = generateToneWav(
-                        durationMs = 140,
-                        startFreq = 540.0,
-                        endFreq = 270.0,
-                        attackMs = 16,
-                        decayFactor = 6.0,
+                        durationMs = 150,
+                        startFreq = 560.0,
+                        endFreq = 260.0,
+                        attackMs = 12,
+                        decayFactor = 5.2,
                         harmonicRatio = 0.5,
-                        harmonicMix = 0.20,
-                        gain = 0.50
+                        harmonicMix = 0.22,
+                        gain = 0.90
                     )
                     val closeFile = File.createTempFile("tv_close", ".wav", cache).apply { deleteOnExit(); writeBytes(closeWav) }
                     closeSoundId = pool.load(closeFile.absolutePath, 1)
+
+                    // 6. Distinct dissolution swoosh-pop for uninstalling an app
+                    val uninstallWav = generateToneWav(
+                        durationMs = 210,
+                        startFreq = 450.0,
+                        endFreq = 110.0,
+                        attackMs = 8,
+                        decayFactor = 4.2,
+                        harmonicRatio = 0.75,
+                        harmonicMix = 0.32,
+                        gain = 0.95
+                    )
+                    val uninstallFile = File.createTempFile("tv_uninstall", ".wav", cache).apply { deleteOnExit(); writeBytes(uninstallWav) }
+                    uninstallSoundId = pool.load(uninstallFile.absolutePath, 1)
+
+                    // 7. Subtle, satisfying micro-click for volume + / - remote controls
+                    val volWav = generateToneWav(
+                        durationMs = 20,
+                        startFreq = 620.0,
+                        endFreq = 440.0,
+                        attackMs = 2,
+                        decayFactor = 12.0,
+                        harmonicRatio = 1.5,
+                        harmonicMix = 0.10,
+                        gain = 0.85
+                    )
+                    val volFile = File.createTempFile("tv_vol", ".wav", cache).apply { deleteOnExit(); writeBytes(volWav) }
+                    volumeSoundId = pool.load(volFile.absolutePath, 1)
                 } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
@@ -113,9 +158,23 @@ object TvSound {
      * Play gentle acoustic feedback when cursor moves between TV grid items or apps.
      */
     fun playMove(view: View? = null) {
-        val pool = soundPool ?: return
-        if (moveSoundId != 0) {
-            pool.play(moveSoundId, 0.22f, 0.22f, 1, 0, 1.0f)
+        val pool = soundPool
+        if (pool != null && moveSoundId != 0) {
+            pool.play(moveSoundId, 0.85f, 0.85f, 1, 0, 1.0f)
+        } else {
+            view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
+        }
+    }
+
+    /**
+     * Play lighter, crystalline glass tick when navigating top bar options.
+     */
+    fun playTopOptionMove(view: View? = null) {
+        val pool = soundPool
+        if (pool != null && topOptionSoundId != 0) {
+            pool.play(topOptionSoundId, 0.88f, 0.88f, 1, 0, 1.0f)
+        } else {
+            view?.playSoundEffect(android.view.SoundEffectConstants.NAVIGATION_RIGHT)
         }
     }
 
@@ -123,9 +182,11 @@ object TvSound {
      * Play soft confirmation tap when selecting / clicking a button or setting.
      */
     fun playClick(view: View? = null) {
-        val pool = soundPool ?: return
-        if (clickSoundId != 0) {
-            pool.play(clickSoundId, 0.25f, 0.25f, 1, 0, 1.0f)
+        val pool = soundPool
+        if (pool != null && clickSoundId != 0) {
+            pool.play(clickSoundId, 0.90f, 0.90f, 1, 0, 1.0f)
+        } else {
+            view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }
     }
 
@@ -133,9 +194,11 @@ object TvSound {
      * Play pleasant, inspiring ascending chime when an app is launched.
      */
     fun playAppOpen(view: View? = null) {
-        val pool = soundPool ?: return
-        if (openSoundId != 0) {
-            pool.play(openSoundId, 0.35f, 0.35f, 2, 0, 1.0f)
+        val pool = soundPool
+        if (pool != null && openSoundId != 0) {
+            pool.play(openSoundId, 0.95f, 0.95f, 2, 0, 1.0f)
+        } else {
+            view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }
     }
 
@@ -143,9 +206,31 @@ object TvSound {
      * Play soothing, gentle descending droplet tone when returning from an app back to Home.
      */
     fun playAppClose(view: View? = null) {
-        val pool = soundPool ?: return
-        if (closeSoundId != 0) {
-            pool.play(closeSoundId, 0.32f, 0.32f, 2, 0, 1.0f)
+        val pool = soundPool
+        if (pool != null && closeSoundId != 0) {
+            pool.play(closeSoundId, 0.90f, 0.90f, 2, 0, 1.0f)
+        }
+    }
+
+    /**
+     * Play distinct dissolution swoosh-pop when an app is uninstalled.
+     */
+    fun playUninstall(view: View? = null) {
+        val pool = soundPool
+        if (pool != null && uninstallSoundId != 0) {
+            pool.play(uninstallSoundId, 0.95f, 0.95f, 2, 0, 1.0f)
+        }
+    }
+
+    /**
+     * Play subtle tactile micro-click on volume remote adjustment.
+     */
+    fun playVolumeTick(view: View? = null) {
+        val pool = soundPool
+        if (pool != null && volumeSoundId != 0) {
+            pool.play(volumeSoundId, 0.85f, 0.85f, 1, 0, 1.0f)
+        } else {
+            view?.playSoundEffect(android.view.SoundEffectConstants.CLICK)
         }
     }
 

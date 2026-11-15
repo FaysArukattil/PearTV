@@ -114,20 +114,21 @@ class HomeActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        // Let standard window & Compose hierarchy process the key event first so dialogs,
-        // focus managers, and child components receive their key callbacks normally.
-        if (super.dispatchKeyEvent(event)) return true
-
-        // If unhandled Back reaches the root activity level:
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
             if (event.action == android.view.KeyEvent.ACTION_UP) {
-                if (onBackPressedDispatcher.hasEnabledCallbacks()) {
-                    onBackPressedDispatcher.onBackPressed()
-                }
+                vm.handleBackPress()
             }
-            return true // Consume back key: Home is the root, never exit to previous app or crash!
+            return true // ALWAYS consume Back key: Home is the root, never finish or pop to previous app!
         }
-        return false
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ||
+            event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN ||
+            event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_MUTE) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+                vm.handleVolumeKey(event.keyCode)
+            }
+            return true // Suppress ugly system volume dialog and show our custom smooth Apple TV volume HUD!
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private companion object {
@@ -137,8 +138,7 @@ class HomeActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page,
-        // and (goHome) every other app, so nothing is left running in memory.
+        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page.
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             vm.goHome()
         }
@@ -158,11 +158,7 @@ class HomeActivity : ComponentActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Compose BackHandler in HomeScreen handles any active dialogs/overlays.
-        // If on the root home screen, consume the back press so the launcher never exits.
-        if (onBackPressedDispatcher.hasEnabledCallbacks()) {
-            @Suppress("DEPRECATION")
-            super.onBackPressed()
-        }
+        // Safe: Never call super.onBackPressed() or fallback which kills the activity!
+        vm.handleBackPress()
     }
 }

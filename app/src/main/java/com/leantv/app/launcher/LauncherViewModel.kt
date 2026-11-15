@@ -4,10 +4,12 @@ import android.app.Application
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.leantv.app.MainActivity
@@ -133,6 +135,12 @@ data class LauncherState(
     val actionMenuApp: InstalledAppInfo? = null,
     val uninstallConfirmApp: InstalledAppInfo? = null,
     val toastMessage: String? = null,
+
+    // Custom TV Volume HUD
+    val showVolumeBar: Boolean = false,
+    val volumeLevel: Int = 0,
+    val volumeMax: Int = 100,
+    val volumeIsMuted: Boolean = false,
 
     // Live TV Hardware Inputs
     val showInputsDialog: Boolean = false,
@@ -334,16 +342,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
             delay(1500)
             syncAccountsToApps()
-
-            // Quick Share (Bluetooth + mDNS + sockets) is the heaviest piece: last, and well after Home is usable.
-            delay(3000)
-            val canStart = withContext(Dispatchers.IO) {
-                com.leantv.app.files.FileManagerHelper.hasStoragePermission(ctx)
-            }
-            if (canStart) {
-                startNativeQuickShare(openDialog = false, silent = true)
-                _state.update { it.copy(isQuickShareActive = true) }
-            }
         }
     }
 
@@ -466,8 +464,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun goHome() {
         if (_state.value.showMonitorPanel) stopMonitorPolling()
         stopQsCountdownTicker()
-        // Same as closing everything: every other app is shut down and its memory freed.
-        closeAppsSoon()
         _state.update {
             it.copy(
                 showStorageManager = false,
@@ -496,12 +492,50 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Handles the Back key from the remote.
+     * Dismisses any active modal/dialog/sub-screen.
+     * If already at the root Home screen, does nothing (never exits or restarts).
+     */
+    fun handleBackPress(): Boolean {
+        val s = _state.value
+        return when {
+            s.nativeQuickShareState.incomingTransfer != null -> {
+                val t = s.nativeQuickShareState.incomingTransfer
+                if (t?.phase == com.leantv.app.share.TransferPhase.WAITING_CONSENT) {
+                    rejectNativeTransfer()
+                } else {
+                    dismissIncomingTransfer()
+                }
+                true
+            }
+            s.showScreensaver -> { closeScreensaver(); true }
+            s.showTvPlayer -> { closeTvPlayer(); true }
+            s.showScreensaverSettings -> { closeScreensaverSettings(); true }
+            s.showCleanTvScreen -> { closeCleanTvScreen(); true }
+            s.showStorageManager -> { closeStorageManager(); true }
+            s.showFileManager -> { closeFileManager(); true }
+            s.showPersonalization -> { closePersonalization(); true }
+            s.showQuickShare -> { closeQuickShareControl(); true }
+            s.showNativeQuickShare -> { closeNativeQuickShare(); true }
+            s.showInputsDialog -> { closeInputs(); true }
+            s.showProfileDialog -> { closeProfile(); true }
+            s.showCleanTvWizard -> { dismissCleanTvWizard(); true }
+            s.debloatSuccessSummary != null -> { dismissDebloatSummary(); true }
+            s.showMonitorPanel -> { closeSystemMonitor(); true }
+            s.uninstallConfirmApp != null -> { dismissUninstallConfirm(); true }
+            s.actionMenuApp != null -> { dismissActionMenu(); true }
+            s.showDefaultPrompt -> { dismissDefaultPrompt(dontAskAgain = false); true }
+            s.showQuickShareHub -> { closeQuickShareHub(); true }
+            else -> false // At root Home: safely consumed with no action
+        }
+    }
+
     fun onResume() {
         homeVisible = true
         // The very first resume happens right after init, which already loaded everything.
         if (resumedOnce) {
-            // Back from an app (Back key): close it, exactly like the Home key does.
-            closeAppsSoon()
+            com.leantv.app.ui.TvSound.playAppClose()
             viewModelScope.launch(Dispatchers.IO) {
                 // Defer background sync so resuming and landing animations stay 100% fluid at 60fps
                 delay(1800)
@@ -537,25 +571,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Schedules "close everything". Waits a moment so the return-to-Home animation is never interrupted and the app
-     * has really left the foreground, then closes all other apps. Cancelled if another app starts in the meantime.
-     */
+    /** Safe no-op: apps are left in their natural Android task lifecycle so the OS never restarts them. */
     fun closeAppsSoon() {
-        if (!journal.closeAppsOnHome) return
-        closeAppsJob?.cancel()
-        closeAppsJob = viewModelScope.launch(Dispatchers.IO) {
-            // After the return animation has fully finished, so killing processes never competes with it.
-            delay(1300)
-            if (!homeVisible) return@launch
-            // Loop guards: never run more than once every 10 s, and only when this launcher really is the default
-            // Home app. Otherwise killing the other launcher makes Android re-open the "Select a Home app" chooser.
-            val now = SystemClock.elapsedRealtime()
-            if (now - lastCloseAt < 10_000L) return@launch
-            if (!isCurrentLauncherDefault()) return@launch
-            lastCloseAt = now
-            closeAllAppsNow()
-        }
+        // No-op: Killing background processes caused Android to resurrect paused tasks
     }
 
     /** Packages of the default keyboard and enabled accessibility services (remote-mapper apps etc.). */
@@ -1112,6 +1130,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             )
             when (res) {
                 is com.leantv.app.data.DebloatResult.Success -> {
+                    com.leantv.app.ui.TvSound.playUninstall()
                     toast(res.message)
                     loadApps(silent = true)
                 }
@@ -1407,10 +1426,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
         startNativeQuickShare(openDialog = false, silent = true)
         startWebQuickShare()
-        _state.update { it.copy(isQuickShareActive = true) }
-        resetQuickShareInactivityTimer()
-        if (_state.value.showQuickShare) startQsCountdownTicker()
-        toast("Quick Share is ON (auto-off in 15m)")
+        _state.update { it.copy(isQuickShareActive = true, quickShareAutoOffSeconds = null) }
+        toast("Quick Share is ON")
     }
 
     fun turnOffQuickShare() {
@@ -1423,23 +1440,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         toast("Quick Share turned OFF")
     }
 
-    /**
-     * Pushes the auto-off deadline 15 minutes into the future. Called very often (every transfer progress event), so
-     * it only moves a number; a single watcher coroutine sleeps until that deadline and then turns Quick Share off.
-     */
+    /** Quick Share now stays ON until explicitly turned off by the user. */
     fun resetQuickShareInactivityTimer() {
-        if (!_state.value.isQuickShareActive) return
-        qsDeadlineMs = SystemClock.elapsedRealtime() + QS_AUTO_OFF_MS
-        if (qsAutoOffJob?.isActive == true) return
-        qsAutoOffJob = viewModelScope.launch {
-            while (true) {
-                val remaining = qsDeadlineMs - SystemClock.elapsedRealtime()
-                if (remaining <= 0L) break
-                delay(remaining)
-            }
-            turnOffQuickShare()
-            toast("Quick Share turned off due to 15 min of inactivity")
-        }
+        // No auto-off timer: stays on until user turns it off
     }
 
     fun startNativeQuickShare(openDialog: Boolean = false, silent: Boolean = true) {
@@ -2118,15 +2121,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Default Launcher Flow ----------
 
     private suspend fun checkDefaultLauncherPrompt() {
-        // Asked on every start until LeanTV really is the default Home app (a reinstall wipes the saved default, and
-        // without a default Android shows "Select a Home app"). "Later" only closes it for this start.
-        run {
-            val isDefault = withContext(Dispatchers.IO) { isCurrentLauncherDefault() }
-            if (!isDefault) {
-                // If on-device ADB is already connected, just fix it silently (no popup at all).
-                if (adb.isConnected && setDefaultViaAdb(allowConnect = false)) return
-                _state.update { it.copy(showDefaultPrompt = true) }
-            }
+        if (journal.defaultLauncherPromptDismissed) return
+        val isDefault = withContext(Dispatchers.IO) { isCurrentLauncherDefault() }
+        if (!isDefault) {
+            // If on-device ADB is connected, fix it silently without annoying popups
+            if (setDefaultViaAdb(allowConnect = false)) return
+            _state.update { it.copy(showDefaultPrompt = true) }
         }
     }
 
@@ -2142,8 +2142,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 if (adb.connect() !is ConnResult.Ok) return@withContext false
             }
             val pkg = ctx.packageName
+            adb.shell("pm disable-user com.duokan.factorytest")
             adb.shell("cmd package set-home-activity --user 0 $pkg/com.leantv.app.HomeActivity")
-            if (isCurrentLauncherDefault()) return@withContext true
             adb.shell("cmd role add-role-holder --user 0 android.app.role.HOME $pkg")
             isCurrentLauncherDefault()
         } catch (_: Throwable) {
@@ -2170,10 +2170,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestSetDefaultLauncher() {
-        // Not "don't ask again": if this fails or is cancelled we ask again next start.
-        dismissDefaultPrompt(dontAskAgain = false)
+        dismissDefaultPrompt(dontAskAgain = true)
         viewModelScope.launch {
-            // 1) Reliable way: set it through the TV's ADB. 2) Fallback: the system's own request screen.
             if (setDefaultViaAdb(allowConnect = true)) {
                 toast("LeanTV is now your default Home app")
                 return@launch
@@ -2188,7 +2186,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val roleManager = ctx.getSystemService(Context.ROLE_SERVICE) as? RoleManager
                 if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
                     val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     ctx.startActivity(intent)
                     return
                 }
@@ -2197,20 +2195,66 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
         try {
             val homeSettingsIntent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(homeSettingsIntent)
         } catch (_: Exception) {
             try {
                 val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 ctx.startActivity(settingsIntent)
-                toast("Go to Apps -> Default Apps -> Home app to set CleanYourTV as default.")
+                toast("Go to Apps -> Default Apps -> Home app to set LeanTV as default.")
             } catch (_: Exception) {
-                toast("Please set CleanYourTV as default in TV Settings -> Home app.")
+                toast("Please set LeanTV as default in TV Settings -> Home app.")
             }
         }
+    }
+
+    // ---------- Custom TV Volume HUD ----------
+
+    private var volumeHideJob: Job? = null
+    private val audioManager by lazy { ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
+
+    fun handleVolumeKey(keyCode: Int) {
+        val am = audioManager ?: return
+        try {
+            val stream = AudioManager.STREAM_MUSIC
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    am.adjustStreamVolume(stream, AudioManager.ADJUST_RAISE, 0)
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    am.adjustStreamVolume(stream, AudioManager.ADJUST_LOWER, 0)
+                }
+                KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                    am.adjustStreamVolume(stream, AudioManager.ADJUST_TOGGLE_MUTE, 0)
+                }
+            }
+            com.leantv.app.ui.TvSound.playVolumeTick()
+            val cur = am.getStreamVolume(stream)
+            val max = am.getStreamMaxVolume(stream).coerceAtLeast(1)
+            val isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.isStreamMute(stream)
+            } else {
+                cur == 0
+            }
+
+            _state.update {
+                it.copy(
+                    showVolumeBar = true,
+                    volumeLevel = cur,
+                    volumeMax = max,
+                    volumeIsMuted = isMuted
+                )
+            }
+
+            volumeHideJob?.cancel()
+            volumeHideJob = viewModelScope.launch {
+                delay(2000)
+                _state.update { it.copy(showVolumeBar = false) }
+            }
+        } catch (_: Exception) {}
     }
 
     fun clearToast() = _state.update { it.copy(toastMessage = null) }

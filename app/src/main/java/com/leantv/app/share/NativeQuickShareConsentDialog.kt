@@ -112,15 +112,8 @@ fun NativeQuickShareConsentDialog(
                         }
                         Column {
                             Text("Quick Share", style = Ty.Title)
-                            if (isQuickShareActive && autoOffSeconds != null) {
-                                val m = autoOffSeconds / 60
-                                val s = autoOffSeconds % 60
-                                Text(
-                                    text = "⏱️ Auto-off in %d:%02d".format(m, s),
-                                    style = Ty.Small.copy(color = Pal.Amber, fontWeight = FontWeight.SemiBold)
-                                )
-                            } else if (isQuickShareActive) {
-                                Text("Active (auto-off in 15 min)", style = Ty.Small.copy(color = Pal.Mint))
+                            if (isQuickShareActive) {
+                                Text("Active", style = Ty.Small.copy(color = Pal.Mint))
                             } else {
                                 Text("Turned Off", style = Ty.Small.copy(color = Pal.Dim))
                             }

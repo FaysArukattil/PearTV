@@ -162,6 +162,14 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeMute
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.ui.unit.Constraints
 import kotlin.math.roundToInt
 import com.leantv.app.account.TvProfile
@@ -271,38 +279,12 @@ fun HomeScreen(vm: LauncherViewModel) {
     }
 
     // Back: close the top-most popup/page first. With nothing open we are on Home, the last stop,
-    // so Back is consumed there (the launcher never exits). One handler, so priority can't get mixed up.
-    // When FileManager or StorageManager is open, each manages its own multi-level back navigation.
+    // so Back is safely consumed (the launcher never exits or finishes).
     BackHandler(enabled = !s.showFileManager && !s.showStorageManager) {
-        when {
-            s.nativeQuickShareState.incomingTransfer != null -> {
-                val t = s.nativeQuickShareState.incomingTransfer
-                if (t?.phase == TransferPhase.WAITING_CONSENT) {
-                    vm.rejectNativeTransfer()
-                } else {
-                    vm.dismissIncomingTransfer()
-                }
-            }
-            s.showScreensaver -> vm.closeScreensaver()
-            s.showTvPlayer -> vm.closeTvPlayer()
-            s.showScreensaverSettings -> vm.closeScreensaverSettings()
-            s.showCleanTvScreen -> vm.closeCleanTvScreen()
-            s.showStorageManager -> vm.closeStorageManager()
-            s.showFileManager -> vm.closeFileManager()
-            s.showPersonalization -> vm.closePersonalization()
-            s.showQuickShare -> vm.closeQuickShareControl()
-            s.showNativeQuickShare -> vm.closeNativeQuickShare()
-            s.showInputsDialog -> vm.closeInputs()
-            s.showProfileDialog -> vm.closeProfile()
-            s.showCleanTvWizard -> vm.dismissCleanTvWizard()
-            s.debloatSuccessSummary != null -> vm.dismissDebloatSummary()
-            s.showMonitorPanel -> vm.closeSystemMonitor()
-            s.uninstallConfirmApp != null -> vm.dismissUninstallConfirm()
-            s.actionMenuApp != null -> vm.dismissActionMenu()
-            s.showDefaultPrompt -> vm.dismissDefaultPrompt(dontAskAgain = false)
-            s.showQuickShareHub -> vm.closeQuickShareHub()
-            showTools -> showTools = false
-            else -> Unit // Home is the root
+        if (showTools) {
+            showTools = false
+        } else {
+            vm.handleBackPress()
         }
     }
 
@@ -465,10 +447,15 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
                 val hasDock = dock.isNotEmpty()
 
-                // Time-based, interruptible scroll: holding the D-pad glides instead of restarting a spring per row.
+                // Time-based, interruptible scroll: holding the D-pad glides smoothly into place.
+                // Rows always fit properly without cutting into the top row's app name or artwork.
                 LaunchedEffect(hasDock) {
                     snapshotFlow { focusedGridRowState.intValue }.collectLatest { row ->
-                        val target = if (row >= 0) (if (hasDock) row + 2 else row) else 0
+                        val target = when {
+                            row <= 0 -> 0 // Dock and Row 0 both keep Dock visible at the top
+                            hasDock -> row + 1 // Row 1 keeps Row 0 at top; Row 2 keeps Row 1 at top
+                            else -> row
+                        }
                         smoothScrollToItem(listState, target)
                     }
                 }
@@ -547,9 +534,9 @@ fun HomeScreen(vm: LauncherViewModel) {
                         } else {
                             LazyColumn(
                                 state = listState,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().clipToBounds(),
                                 contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
@@ -877,10 +864,116 @@ fun HomeScreen(vm: LauncherViewModel) {
                     }
                 )
             }
+
+            // ─── Custom Apple TV / Google TV Volume HUD ───
+            CustomVolumeHud(
+                visible = s.showVolumeBar,
+                level = s.volumeLevel,
+                max = s.volumeMax,
+                isMuted = s.volumeIsMuted
+            )
         }
     }
 
 
+
+/**
+ * Apple TV / tvOS style vertical frosted glass volume HUD.
+ * Renders on the right edge of the screen and glides out smoothly on volume changes.
+ */
+@Composable
+private fun CustomVolumeHud(
+    visible: Boolean,
+    level: Int,
+    max: Int,
+    isMuted: Boolean,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(160)) + slideInHorizontally(tween(220, easing = AppleMotion.EaseOut)) { it / 2 },
+        exit = fadeOut(tween(260)) + slideOutHorizontally(tween(220, easing = AppleMotion.EaseIn)) { it / 2 },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(end = 40.dp),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            val safeMax = max.coerceAtLeast(1)
+            val progress = if (isMuted) 0f else (level.toFloat() / safeMax.toFloat()).coerceIn(0f, 1f)
+            val animatedProgress by animateFloatAsState(
+                targetValue = progress,
+                animationSpec = tween(140, easing = AppleMotion.EaseOut),
+                label = "volProgress"
+            )
+            val pillShape = RoundedCornerShape(26.dp)
+
+            Box(
+                modifier = Modifier
+                    .width(52.dp)
+                    .height(200.dp)
+                    .clip(pillShape)
+                    .background(Color(0xCC16181F))
+                    .border(1.5.dp, Color(0x38FFFFFF), pillShape)
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val icon = when {
+                        isMuted || level == 0 -> Icons.AutoMirrored.Rounded.VolumeOff
+                        progress < 0.34f -> Icons.AutoMirrored.Rounded.VolumeMute
+                        progress < 0.67f -> Icons.AutoMirrored.Rounded.VolumeDown
+                        else -> Icons.AutoMirrored.Rounded.VolumeUp
+                    }
+                    val iconTint = if (isMuted || level == 0) Color(0xFFFF5252) else Color.White
+
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = "Volume",
+                        tint = iconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .width(12.dp)
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x33FFFFFF)),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(animatedProgress)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.White, Color(0xFFE0E0E0))
+                                    )
+                                )
+                        )
+                    }
+
+                    Text(
+                        text = if (isMuted) "MUTE" else "$level",
+                        style = Ty.Small.copy(
+                            color = if (isMuted) Color(0xFFFF5252) else Color(0xDEFFFFFF),
+                            fontSize = if (isMuted) 10.sp else 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
 
 /** Big app name above the grid. Reads the focused name itself, so only this small scope recomposes on focus moves. */
 @Composable
@@ -910,14 +1003,18 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
     }
 }
 
-/** Scrolls so [index] sits at the top, with a fixed-duration ease that can be interrupted at any moment. */
+private val TvGlideEasing = CubicBezierEasing(0.20f, 0.0f, 0.0f, 1.0f)
+
+/** Scrolls so [index] sits at the top, with a silky smooth glide that can be interrupted at any moment. */
 private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
     val info = state.layoutInfo
     val item = info.visibleItemsInfo.firstOrNull { it.index == index }
     if (item != null) {
-        val delta = (item.offset - info.beforeContentPadding).toFloat()
-        // Standard ease (gentle start, soft stop). The old curve jumped most of the distance in the first frames.
-        if (delta != 0f) state.animateScrollBy(delta, tween(260, easing = AppleMotion.EaseOut))
+        val targetOffset = info.beforeContentPadding
+        val delta = (item.offset - targetOffset).toFloat()
+        if (kotlin.math.abs(delta) > 1f) {
+            state.animateScrollBy(delta, tween(320, easing = TvGlideEasing))
+        }
     } else {
         state.animateScrollToItem(index, 0)
     }
@@ -1217,7 +1314,11 @@ private fun TvPill(
             )
             .onFocusChanged {
                 if (it.isFocused && !focused) {
-                    TvSound.playMove(view)
+                    if (collapsible) {
+                        TvSound.playTopOptionMove(view)
+                    } else {
+                        TvSound.playMove(view)
+                    }
                     onPillFocus()
                 }
                 if (it.isFocused != focused) onFocusChange(it.isFocused)
