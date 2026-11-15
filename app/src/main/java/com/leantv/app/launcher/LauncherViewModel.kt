@@ -679,54 +679,92 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 }.awaitAll()
             }
             splashReady = true
+            // Warm the rest of the artwork one-by-one in the background so scrolling never shows tiles popping in.
+            launch(Dispatchers.IO) {
+                // Launch intents first (cheap), so pressing OK never waits on the package manager.
+                for (app in apps.take(60)) {
+                    if (!launchIntentCache.containsKey(app.packageName)) {
+                        resolveLaunchIntent(app.packageName)?.let { launchIntentCache[app.packageName] = it }
+                    }
+                }
+                for (app in apps.drop(12).take(48)) {
+                    IconCache.loadVisuals(ctx, app.packageName)
+                    kotlinx.coroutines.yield()
+                }
+            }
         }
     }
 
-    fun launch(app: InstalledAppInfo, options: android.app.ActivityOptions? = null) {
-        // Record launch count and timestamp
-        journal.recordAppLaunch(app.packageName)
-        loadApps(silent = true)
+    // ---------- Fast launch ----------
+    // Launch intents are resolved ahead of time (when a tile gets focus, and in the background after start-up),
+    // so pressing OK never waits on the package manager.
+    private val launchIntentCache = java.util.concurrent.ConcurrentHashMap<String, Intent>()
+    private val resolvingLaunch: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
+    private fun resolveLaunchIntent(pkg: String): Intent? {
         val pm = ctx.packageManager
-        var intent = pm.getLeanbackLaunchIntentForPackage(app.packageName)
-            ?: pm.getLaunchIntentForPackage(app.packageName)
-
+        var intent = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
         if (intent == null) {
             try {
-                val mainIntent = Intent(Intent.ACTION_MAIN).setPackage(app.packageName)
+                val mainIntent = Intent(Intent.ACTION_MAIN).setPackage(pkg)
                 val resolves = pm.queryIntentActivities(mainIntent, 0)
                 val act = resolves.firstOrNull()?.activityInfo
                     ?: runCatching {
-                        pm.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_ACTIVITIES).activities?.firstOrNull { it.exported }
+                        pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_ACTIVITIES).activities?.firstOrNull { it.exported }
                     }.getOrNull()
                 if (act != null) {
                     intent = Intent(Intent.ACTION_MAIN).apply {
-                        component = android.content.ComponentName(app.packageName, act.name)
+                        component = android.content.ComponentName(pkg, act.name)
                     }
                 }
             } catch (_: Exception) {}
         }
+        return intent
+    }
 
-        if (intent != null) {
+    /** Called when a tile gets focus: resolves its launch intent off the main thread. */
+    fun prewarmLaunch(pkg: String) {
+        if (launchIntentCache.containsKey(pkg) || !resolvingLaunch.add(pkg)) return
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Standard clean launcher task flags. Avoid FLAG_ACTIVITY_TASK_ON_HOME as it corrupts
-                // OEM Android TV task hierarchies and causes default home launcher reset dialogs.
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                )
-                intent.putExtra("leantv_launched", true)
-                // When we have tile bounds, the caller passes makeScaleUpAnimation options
-                // for a native zoom-in. Without bounds, use an instant cut (no animation)
-                // so the app's own splash screen appears immediately without a competing fade.
-                val launchOptions = options?.toBundle()
-                    ?: android.app.ActivityOptions.makeCustomAnimation(ctx, 0, 0).toBundle()
-                ctx.startActivity(intent, launchOptions)
-            } catch (e: Exception) {
-                toast("Couldn't open app: ${e.message}")
+                resolveLaunchIntent(pkg)?.let { launchIntentCache[pkg] = it }
+            } finally {
+                resolvingLaunch.remove(pkg)
             }
-        } else {
+        }
+    }
+
+    fun launch(app: InstalledAppInfo, options: android.app.ActivityOptions? = null) {
+        // 1) Start the app FIRST. Nothing else may run on the main thread before startActivity.
+        val base = launchIntentCache[app.packageName] ?: resolveLaunchIntent(app.packageName)
+        if (base == null) {
             toast("No launchable TV activity found for ${app.appName}")
+            return
+        }
+        try {
+            val intent = Intent(base)
+            // Standard clean launcher task flags. Avoid FLAG_ACTIVITY_TASK_ON_HOME as it corrupts
+            // OEM Android TV task hierarchies and causes default home launcher reset dialogs.
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            intent.putExtra("leantv_launched", true)
+            // With tile bounds the caller passes makeScaleUpAnimation (native zoom from the tile).
+            // Without bounds, use an instant cut so the app's own splash appears immediately.
+            val launchOptions = options?.toBundle()
+                ?: android.app.ActivityOptions.makeCustomAnimation(ctx, 0, 0).toBundle()
+            ctx.startActivity(intent, launchOptions)
+            launchIntentCache.putIfAbsent(app.packageName, base)
+        } catch (e: Exception) {
+            launchIntentCache.remove(app.packageName)
+            toast("Couldn't open app: ${e.message}")
+            return
+        }
+
+        // 2) Bookkeeping AFTER the app is starting, and never while it is starting: the disk write goes to IO and the
+        //    list refresh (re-sort by recency) waits until the app is up and Home is hidden.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { journal.recordAppLaunch(app.packageName) }
+            delay(2500)
+            loadApps(silent = true)
         }
     }
 

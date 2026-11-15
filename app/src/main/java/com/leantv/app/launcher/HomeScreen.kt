@@ -158,6 +158,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.ui.unit.Constraints
+import kotlin.math.roundToInt
 import com.leantv.app.account.TvProfile
 import com.leantv.app.data.AppVisuals
 import com.leantv.app.data.IconCache
@@ -198,22 +204,20 @@ fun HomeScreen(vm: LauncherViewModel) {
     var isReturningFromApp by remember { mutableStateOf(false) }
     var returningAppPackage by remember { mutableStateOf<String?>(null) }
 
-    val homeDepthScale by animateFloatAsState(
-        targetValue = if (isAppLaunching) 0.95f else if (isReturningFromApp) 0.96f else 1.0f,
-        animationSpec = tween(
-            durationMillis = if (isAppLaunching) 220 else AppleMotion.DurAppClose,
-            easing = AppleMotion.AppleCloseEasing
-        ),
-        label = "homeDepthScale"
-    )
-    val homeDepthScrim by animateFloatAsState(
-        targetValue = if (isAppLaunching) 0.25f else if (isReturningFromApp) 0.18f else 0.0f,
-        animationSpec = tween(
-            durationMillis = if (isAppLaunching) 200 else AppleMotion.DurAppClose,
-            easing = AppleMotion.AppleCloseEasing
-        ),
-        label = "homeDepthScrim"
-    )
+    // Home layer zoom. It NEVER scales below 1 (that exposed dark edges around the screen) and has no dark scrim.
+    //  • launching: Home eases slightly larger while the app zooms in over it
+    //  • returning: Home starts a touch larger and settles to 1, like landing back on the iOS Home Screen
+    val homeScale = remember { Animatable(1f) }
+    LaunchedEffect(isAppLaunching, isReturningFromApp) {
+        when {
+            isAppLaunching -> Unit // no full-screen animation while the app is starting: every frame counts
+            isReturningFromApp -> {
+                homeScale.snapTo(1.06f)
+                homeScale.animateTo(1f, tween(420, easing = AppleMotion.LaunchZoomEasing))
+            }
+            else -> homeScale.animateTo(1f, tween(200, easing = AppleMotion.EaseOut))
+        }
+    }
 
     LifecycleResumeEffect(Unit) {
         if (isAppLaunched) {
@@ -427,6 +431,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                     // scroll effect). Moving focus therefore never recomposes the whole grid.
                     val focusedAppState = remember { mutableStateOf<InstalledAppInfo?>(null) }
                     val focusedGridRowState = remember { mutableIntStateOf(-1) }
+                    // Name of the focused top-bar pill (null when a tile has focus). Read only by HeroTitle.
+                    val topBarLabel = remember { mutableStateOf<String?>(null) }
                     val listState = rememberLazyListState()
 
                     CleanTvBackdrop(
@@ -439,18 +445,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        scaleX = homeDepthScale
-                        scaleY = homeDepthScale
+                        scaleX = homeScale.value
+                        scaleY = homeScale.value
                     }
             ) {
-                if (homeDepthScrim > 0.01f) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = homeDepthScrim))
-                            .focusProperties { canFocus = false }
-                    )
-                }
                 // Window width in the scaled TV-canvas dp (replaces BoxWithConstraints: no sub-composition in layout).
                 val maxWidth = (LocalContext.current.resources.displayMetrics.widthPixels / LocalDensity.current.density).dp
                 val cols = 4
@@ -512,13 +510,21 @@ fun HomeScreen(vm: LauncherViewModel) {
                         onOpenCleanTv = vm::requestCleanTv,
                         onToggleSort = { vm.toggleAppSortMode() },
                         onOpenTools = { showTools = true },
-                        onOpenSettings = vm::openSystemSettings
+                        onOpenSettings = vm::openSystemSettings,
+                        onTopFocus = { label, hasFocus ->
+                            if (hasFocus) topBarLabel.value = label
+                            else if (topBarLabel.value == label) topBarLabel.value = null
+                        }
                     )
 
                     Spacer(Modifier.height(14.dp))
 
                     HeroTitle(
-                        nameProvider = { (focusedAppState.value ?: dock.firstOrNull() ?: s.allApps.firstOrNull())?.appName ?: "" },
+                        nameProvider = {
+                            topBarLabel.value
+                                ?: (focusedAppState.value ?: dock.firstOrNull() ?: s.allApps.firstOrNull())?.appName
+                                ?: ""
+                        },
                         isLoading = s.isLoading,
                         modifier = Modifier.padding(start = 6.dp).height(72.dp)
                     )
@@ -546,7 +552,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                             ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
-                                item(key = "dock_bar") {
+                                item(key = "dock_bar", contentType = "dock") {
                                     val bandShape = RoundedCornerShape(radius + bandPad)
                                     Box(
                                         Modifier
@@ -593,6 +599,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                             onFocus = {
                                                 focusedAppState.value = it
                                                 focusedGridRowState.intValue = -1
+                                                vm.prewarmLaunch(it.packageName)
                                             },
                                             onClick = launchApp,
                                             onLongClick = { vm.showActionMenu(it) },
@@ -615,7 +622,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         modifier = Modifier.padding(start = bandPad + 6.dp, top = 6.dp, bottom = 4.dp)
                                     )
                                 }
-                                itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }) { rowIndex, rowApps ->
+                                itemsIndexed(gridRows, key = { _, row -> "g_" + row.first().packageName }, contentType = { _, _ -> "row" }) { rowIndex, rowApps ->
                                     AppRow(
                                         apps = rowApps, tileW = tileW, tileH = tileH, radius = radius, gap = gap,
                                         focusScale = 1.08f, showNames = true,
@@ -644,6 +651,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                         onFocus = {
                                             focusedAppState.value = it
                                             focusedGridRowState.intValue = rowIndex
+                                            vm.prewarmLaunch(it.packageName)
                                         },
                                         onClick = launchApp,
                                         onLongClick = { vm.showActionMenu(it) },
@@ -880,24 +888,22 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
     if (isLoading && name.isEmpty()) {
         HeroSkeleton(modifier)
     } else {
-        AnimatedContent(
-            targetState = name,
-            transitionSpec = {
-                (fadeIn(tween(200, easing = AppleMotion.Decelerate)) +
-                 slideInVertically(tween(200, easing = AppleMotion.Decelerate)) { (it * 0.3f).toInt() })
-                    .togetherWith(
-                        fadeOut(tween(120, easing = AppleMotion.EaseIn)) +
-                        slideOutVertically(tween(120, easing = AppleMotion.EaseIn)) { -(it * 0.3f).toInt() }
-                    ).using(SizeTransform(clip = false) { _, _ -> tween(0) })
-            },
-            modifier = modifier,
-            label = "heroName"
-        ) { n ->
+        // One Text whose fade/glide restarts on every change. Much cheaper than AnimatedContent (no second text
+        // layout, no overlapping texts) and it stays fluid when the D-pad is held down.
+        val reveal = remember(name) { Animatable(0.3f) }
+        LaunchedEffect(reveal) {
+            reveal.animateTo(1f, tween(180, easing = AppleMotion.LaunchZoomEasing))
+        }
+        Box(modifier, contentAlignment = Alignment.TopStart) {
             Text(
-                text = n,
+                text = name,
                 style = Ty.Display.copy(fontSize = 58.sp, lineHeight = 68.sp, letterSpacing = (-1.3).sp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer {
+                    alpha = reveal.value
+                    translationX = (1f - reveal.value) * 20f
+                }
             )
         }
     }
@@ -909,7 +915,7 @@ private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
     val item = info.visibleItemsInfo.firstOrNull { it.index == index }
     if (item != null) {
         val delta = (item.offset - info.beforeContentPadding).toFloat()
-        if (delta != 0f) state.animateScrollBy(delta, tween(260, easing = FastOutSlowInEasing))
+        if (delta != 0f) state.animateScrollBy(delta, tween(300, easing = AppleMotion.LaunchZoomEasing))
     } else {
         state.animateScrollToItem(index, 0)
     }
@@ -945,7 +951,8 @@ private fun SectionTitle(title: String, startPad: Dp) {
 
 /**
  * Header like the reference launcher: small greeting, a thin light clock with AM/PM and date,
- * and glass pills on the right. Everything else lives behind the Tools button.
+ * and glass pills on the right. Pills are ICON-ONLY; the name slides out when a pill gets focus
+ * (and the same name is shown in the big hero title above the grid).
  */
 @Composable
 private fun CleanTvTopBar(
@@ -967,6 +974,7 @@ private fun CleanTvTopBar(
     onToggleSort: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenSettings: () -> Unit,
+    onTopFocus: (label: String, hasFocus: Boolean) -> Unit = { _, _ -> },
 ) {
     val parts = timeText.trim().split(" ")
     val clock = parts.firstOrNull().orEmpty()
@@ -1054,75 +1062,97 @@ private fun CleanTvTopBar(
                         maxLines = 1,
                     )
                 }
-                // Signed-in Google account (from the TV's system settings). One tap -> native add / switch account.
+                // Signed-in Google account: icon only, email slides out on focus.
                 TvPill(
                     label = accountLabel,
                     icon = Icons.Rounded.AccountCircle,
                     contentDescription = "Google account",
                     onClick = onOpenAccount,
                     maxLabelWidth = 280.dp,
+                    collapsible = true,
+                    onFocusChange = { onTopFocus(accountLabel, it) },
                 )
             }
         }
 
-        // ─── Row 2: Top Action Pills & Settings Row ───
+        // ─── Row 2: Icon-only action pills ───
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Real Quick Share icon pill
+            val qsLabel = if (isQuickShareActive) "Quick Share · On" else "Quick Share"
             TvPill(
-                label = if (isQuickShareActive) "Quick Share ●" else null,
+                label = qsLabel,
                 iconRes = R.drawable.ic_quick_share,
                 contentDescription = "Quick Share",
                 modifier = pillFocusModifier(0),
                 onClick = onOpenQuickShare,
+                collapsible = true,
+                showDot = isQuickShareActive,
+                onFocusChange = { onTopFocus(qsLabel, it) },
             )
             TvPill(
                 label = "Clean TV",
                 icon = Icons.Rounded.AutoAwesome,
                 modifier = pillFocusModifier(1),
                 onClick = onOpenCleanTv,
+                collapsible = true,
+                onFocusChange = { onTopFocus("Clean TV", it) },
             )
             TvPill(
                 label = "Inputs",
                 icon = Icons.AutoMirrored.Rounded.Input,
                 modifier = pillFocusModifier(2),
                 onClick = onOpenInputs,
+                collapsible = true,
+                onFocusChange = { onTopFocus("Inputs", it) },
             )
+            val sortLabel = if (sortMode == AppSortMode.RECENCY) "Sort: Recent" else "Sort: A–Z"
             TvPill(
-                label = if (sortMode == AppSortMode.RECENCY) "Recent" else "A-Z",
+                label = sortLabel,
                 icon = if (sortMode == AppSortMode.RECENCY) Icons.Rounded.Schedule else Icons.AutoMirrored.Rounded.Sort,
-                isSelected = true,
                 modifier = pillFocusModifier(3),
                 onClick = onToggleSort,
+                collapsible = true,
+                onFocusChange = { onTopFocus(sortLabel, it) },
             )
+            val netText = networkLabel.ifBlank { "Wi-Fi" }
             TvPill(
-                label = networkLabel.ifBlank { "Wi-Fi" },
+                label = netText,
                 icon = netIcon,
                 modifier = pillFocusModifier(4),
                 onClick = onOpenNetwork,
-                maxLabelWidth = 140.dp,
+                maxLabelWidth = 200.dp,
+                collapsible = true,
+                onFocusChange = { onTopFocus(netText, it) },
             )
             TvPill(
-                label = null,
+                label = "Tools",
                 icon = Icons.Rounded.Widgets,
                 modifier = pillFocusModifier(5),
                 onClick = onOpenTools,
                 contentDescription = "Tools",
+                collapsible = true,
+                onFocusChange = { onTopFocus("Tools", it) },
             )
             TvPill(
                 label = "Settings",
                 icon = Icons.Rounded.Settings,
                 modifier = pillFocusModifier(6),
                 onClick = onOpenSettings,
+                collapsible = true,
+                onFocusChange = { onTopFocus("Settings", it) },
             )
         }
     }
 }
 
-/** Glass pill: Apple TV soft elevation, hairline border, subtle audio feedback. */
+/**
+ * Glass pill. With [collapsible] = true it rests as a round icon button and the label slides out
+ * to the right while focused (width is animated in the layout phase: no recomposition per frame).
+ * With collapsible = false (Tools menu rows) it behaves as before.
+ */
 @Composable
 private fun TvPill(
     label: String?,
@@ -1136,19 +1166,28 @@ private fun TvPill(
     fill: Boolean = false,
     contentDescription: String? = null,
     isSelected: Boolean = false,
+    collapsible: Boolean = false,
+    showDot: Boolean = false,
+    onFocusChange: (Boolean) -> Unit = {},
     onPillFocus: () -> Unit = {},
 ) {
     val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.07f else 1f,
-        animationSpec = AppleMotion.SpringSnappy,
-        label = "pillScale"
+    val pillFocus by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 520f),
+        label = "pillFocus"
     )
     val fg by animateColorAsState(
         targetValue = if (focused) Color.Black else if (isSelected) Color.White else Color(0xEBFFFFFF),
         animationSpec = AppleMotion.microTween(),
         label = "pillFg"
+    )
+    // 0 = icon only, 1 = icon + label. Read only inside layout/graphicsLayer lambdas below.
+    val expand = animateFloatAsState(
+        targetValue = if (!collapsible || focused) 1f else 0f,
+        animationSpec = tween(340, easing = AppleMotion.LaunchZoomEasing),
+        label = "pillExpand"
     )
     val shape = RoundedCornerShape(50)
     val bg = when {
@@ -1156,17 +1195,16 @@ private fun TvPill(
         isSelected -> Brush.verticalGradient(listOf(Color(0x4DFFFFFF), Color(0x24FFFFFF)))
         else -> Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x14FFFFFF)))
     }
+    val iconSize = 26.dp
+    val sidePad = (height - iconSize) / 2   // centres the icon when collapsed
     Row(
         modifier
             .height(height)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val sc = 1f + 0.05f * pillFocus
+                scaleX = sc
+                scaleY = sc
             }
-            .shadow(
-                elevation = if (focused) 16.dp else 0.dp, shape = shape, clip = false,
-                ambientColor = Color(0x66000000), spotColor = Color(0x99000000)
-            )
             .clip(shape)
             .background(bg)
             .border(
@@ -1179,38 +1217,70 @@ private fun TvPill(
                     TvSound.playMove(view)
                     onPillFocus()
                 }
+                if (it.isFocused != focused) onFocusChange(it.isFocused)
                 focused = it.isFocused
             }
             .clickable {
                 TvSound.playClick(view)
                 onClick()
             }
-            .then(if (label == null) Modifier.width(height) else Modifier.padding(start = 21.dp, end = 27.dp)),
+            .then(
+                if (collapsible) {
+                    // Report an animated width between "icon only" and "icon + label".
+                    Modifier.layout { measurable, c ->
+                        val p = measurable.measure(
+                            Constraints(minWidth = 0, maxWidth = Constraints.Infinity, minHeight = c.minHeight, maxHeight = c.maxHeight)
+                        )
+                        val iconW = height.roundToPx()
+                        val w = (iconW + (p.width - iconW).coerceAtLeast(0) * expand.value).roundToInt()
+                        layout(w, p.height) { p.place(0, 0) }
+                    }.padding(start = sidePad, end = if (label != null) 24.dp else sidePad)
+                } else if (label == null) Modifier.width(height)
+                else Modifier.padding(start = 21.dp, end = 27.dp)
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (fill) Arrangement.Start else Arrangement.Center,
+        horizontalArrangement = if (fill || collapsible) Arrangement.Start else Arrangement.Center,
     ) {
-        if (iconRes != null) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = contentDescription ?: label,
-                tint = fg,
-                modifier = Modifier.size(26.dp)
-            )
-        } else if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription ?: label,
-                tint = fg,
-                modifier = Modifier.size(26.dp)
-            )
+        Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
+            if (iconRes != null) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = contentDescription ?: label,
+                    tint = fg,
+                    modifier = Modifier.size(iconSize)
+                )
+            } else if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription ?: label,
+                    tint = fg,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+            if (showDot) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF30D158))
+                )
+            }
         }
         if (label != null) {
             Text(
                 text = label,
                 style = Ty.Button.copy(fontSize = textSize, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium, color = fg),
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 10.dp).widthIn(max = maxLabelWidth)
+                modifier = Modifier
+                    .padding(start = 10.dp)
+                    .widthIn(max = maxLabelWidth)
+                    .graphicsLayer {
+                        // Fades in slightly after the pill starts growing, so text never looks clipped.
+                        if (collapsible) alpha = ((expand.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    }
             )
         }
     }
@@ -1351,7 +1421,7 @@ private fun CleanTvAppTile(
     var focused by remember { mutableStateOf(false) }
     var isPressed by remember { mutableStateOf(false) }
     var isLaunching by remember { mutableStateOf(false) }
-    var tileBounds by remember { mutableStateOf<Rect?>(null) }
+    val coordsHolder = remember { arrayOfNulls<LayoutCoordinates>(1) }
     var longPressJob by remember { mutableStateOf<Job?>(null) }
     var isLongPressHandled by remember { mutableStateOf(false) }
 
@@ -1359,12 +1429,12 @@ private fun CleanTvAppTile(
     val landingScale = remember { Animatable(1f) }
     LaunchedEffect(isReturning) {
         if (isReturning) {
-            landingScale.snapTo(1.10f)
+            landingScale.snapTo(1.04f)
             landingScale.animateTo(
                 targetValue = 1f,
                 animationSpec = spring(
-                    dampingRatio = 0.75f,
-                    stiffness = 240f
+                    dampingRatio = 1f,
+                    stiffness = 260f
                 )
             )
         }
@@ -1376,8 +1446,8 @@ private fun CleanTvAppTile(
         label = "tilePressScale"
     )
     val launchPopScale by animateFloatAsState(
-        targetValue = if (isLaunching) 1.15f else 1f,
-        animationSpec = tween(280, easing = AppleMotion.EaseOut),
+        targetValue = if (isLaunching) 1.05f else 1f,
+        animationSpec = tween(180, easing = AppleMotion.EaseOut),
         label = "tileLaunchPop"
     )
     val launchSheen by animateFloatAsState(
@@ -1385,30 +1455,11 @@ private fun CleanTvAppTile(
         animationSpec = tween(240, easing = AppleMotion.EaseOut),
         label = "tileLaunchSheen"
     )
-    val scale by animateFloatAsState(
-        targetValue = if (focused) focusScale else 1f,
-        animationSpec = AppleMotion.SpringSnappy,
-        label = "tileScale"
-    )
-    val ringAlpha by animateFloatAsState(
+    // ONE progress value (0..1) drives scale, ring, shadow and name: 1 animation per tile instead of 6.
+    val focusProgress by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
-        animationSpec = AppleMotion.microTween(),
-        label = "tileRing"
-    )
-    val nameAlpha by animateFloatAsState(
-        targetValue = if (focused) 1f else 0f,
-        animationSpec = tween(180, easing = AppleMotion.Decelerate),
-        label = "tileName"
-    )
-    val nameOffsetY by animateFloatAsState(
-        targetValue = if (focused) 0f else 8f,
-        animationSpec = tween(200, easing = AppleMotion.Decelerate),
-        label = "tileNameY"
-    )
-    val shadowElevPx by animateFloatAsState(
-        targetValue = if (focused) 32f else 0f,
-        animationSpec = AppleMotion.SpringGentle,
-        label = "tileShadow"
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 700f),
+        label = "tileFocus"
     )
     val shape = RoundedCornerShape(radius)
 
@@ -1418,21 +1469,12 @@ private fun CleanTvAppTile(
         Box(
             modifier
                 .size(tileW, tileH)
-                .onGloballyPositioned { coords ->
-                    if (coords.isAttached) {
-                        val pos = coords.positionInWindow()
-                        val sz = coords.size
-                        tileBounds = Rect(pos.x, pos.y, pos.x + sz.width, pos.y + sz.height)
-                    }
-                }
+                .onGloballyPositioned { coordsHolder[0] = it } // plain array: no state write on every scroll frame
                 .graphicsLayer {
-                    scaleX = scale * pressScale * launchPopScale * landingScale.value
-                    scaleY = scale * pressScale * launchPopScale * landingScale.value
-                    shadowElevation = if (isLaunching) 48f else shadowElevPx
-                    this.shape = shape
+                    val sc = (1f + (focusScale - 1f) * focusProgress) * pressScale * launchPopScale * landingScale.value
+                    scaleX = sc
+                    scaleY = sc
                     clip = false
-                    ambientShadowColor = Color(0x80000000)
-                    spotShadowColor = Color(0xCC000000)
                 }
                 .clip(shape)
                 // Focus ring + soft highlight drawn in the draw phase: animating them never recomposes the tile.
@@ -1449,7 +1491,7 @@ private fun CleanTvAppTile(
                             )
                         )
                     }
-                    val a = ringAlpha
+                    val a = focusProgress.coerceIn(0f, 1f)
                     if (a > 0.01f) {
                         val sw = 2.5.dp.toPx()
                         drawRect(
@@ -1513,7 +1555,7 @@ private fun CleanTvAppTile(
                             if (!wasLong) {
                                 TvSound.playAppOpen(view)
                                 isLaunching = true
-                                onClick(tileBounds)
+                                onClick(boundsOf(coordsHolder[0]))
                             }
                             true
                         }
@@ -1632,8 +1674,8 @@ private fun CleanTvAppTile(
                     .padding(top = 10.dp)
                     .height(28.dp)
                     .graphicsLayer {
-                        alpha = nameAlpha
-                        translationY = nameOffsetY
+                        alpha = focusProgress.coerceIn(0f, 1f)
+                        translationY = (1f - focusProgress) * 8f
                     }
             )
         } else {
@@ -1648,11 +1690,51 @@ private fun CleanTvAppTile(
  * Renders the chosen theme background (Pitch Black, Aurora, Deep Space, Sunset, Apple Dark Glass)
  * with an ambient radial blur matching the focused app's dominant color.
  */
+/**
+ * Soft round glow, pre-rendered ONCE as a tiny alpha mask. Drawing a stretched 128x72 texture tinted with the
+ * app colour is far cheaper per frame than a full-screen radial-gradient shader, so focus changes stay smooth.
+ */
+private val GlowMask: androidx.compose.ui.graphics.ImageBitmap by lazy {
+    val w = 128
+    val h = 72
+    val px = IntArray(w * h)
+    val cx = w * 0.32f
+    val cy = h * 0.42f
+    val r = w * 0.62f
+    for (y in 0 until h) for (x in 0 until w) {
+        val dx = x + 0.5f - cx
+        val dy = y + 0.5f - cy
+        val t = kotlin.math.sqrt(dx * dx + dy * dy) / r
+        val a = when {
+            t <= 0.45f -> 0.36f + (0.15f - 0.36f) * (t / 0.45f)
+            t <= 1f -> 0.15f * (1f - (t - 0.45f) / 0.55f)
+            else -> 0f
+        }
+        px[y * w + x] = ((a * 255f).toInt().coerceIn(0, 255) shl 24) or 0x00FFFFFF
+    }
+    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    bmp.setPixels(px, 0, w, 0, 0, w, h)
+    bmp.asImageBitmap()
+}
+
 @Composable
 private fun CleanTvBackdrop(
     themeId: String,
     focusedAppProvider: () -> InstalledAppInfo?,
     content: @Composable () -> Unit
+) {
+    // The focus-dependent glow lives in its OWN composable, as a sibling behind the content.
+    // Moving focus recomposes only that tiny layer, never the dock, grid or top bar.
+    Box(Modifier.fillMaxSize()) {
+        AmbientBackdropLayer(themeId, focusedAppProvider)
+        content()
+    }
+}
+
+@Composable
+private fun AmbientBackdropLayer(
+    themeId: String,
+    focusedAppProvider: () -> InstalledAppInfo?,
 ) {
     val theme = WALLPAPER_THEMES.find { it.id == themeId } ?: WALLPAPER_THEMES.first()
     val ctx = LocalContext.current
@@ -1674,42 +1756,43 @@ private fun CleanTvBackdrop(
     }
     val animatedAmbient = animateColorAsState(
         targetValue = ambientColor,
-        animationSpec = tween(320),
+        animationSpec = tween(260, easing = AppleMotion.EaseOut),
         label = "ambientGlow"
     )
-
     Box(Modifier.fillMaxSize()) {
-        // The wallpaper is its own layer: when the ambient glow fades, only this layer is redrawn,
-        // never the tiles on top of it.
+        // Layer 1: the wallpaper gradient. Static, so it is recorded once and never redrawn while the glow fades.
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { }
                 .drawWithCache {
                     val themeBrush = Brush.verticalGradient(
                         colors = theme.gradientColors,
                         startY = 0f,
                         endY = size.height
                     )
-                    val center = Offset(size.width * 0.32f, size.height * 0.42f)
-                    val radius = size.width * 0.62f
-                    onDrawBehind {
-                        drawRect(brush = themeBrush)
-                        val c = animatedAmbient.value
-                        drawRect(
-                            brush = Brush.radialGradient(
-                                0f to c.copy(alpha = 0.36f),
-                                0.45f to c.copy(alpha = 0.15f),
-                                1f to Color.Transparent,
-                                center = center,
-                                radius = radius
-                            )
-                        )
-                    }
+                    onDrawBehind { drawRect(brush = themeBrush) }
                 }
         )
-        content()
+        // Layer 2: only the tinted glow texture is redrawn while the colour animates.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawImage(
+                        image = GlowMask,
+                        dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(animatedAmbient.value),
+                        filterQuality = androidx.compose.ui.graphics.FilterQuality.Low
+                    )
+                }
+        )
     }
+}
+
+private fun boundsOf(c: LayoutCoordinates?): Rect? {
+    if (c == null || !c.isAttached) return null
+    val pos = c.positionInWindow()
+    return Rect(pos.x, pos.y, pos.x + c.size.width, pos.y + c.size.height)
 }
 
 private fun extractFallbackHue(app: InstalledAppInfo?): Color {
