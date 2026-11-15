@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -142,45 +143,51 @@ fun ScreensaverSettingsDialog(
                 }
             }
 
-            // ─── Local Video Info Box ───
-            if (currentMode == ScreensaverSource.LOCAL_VIDEO) {
-                val LOCAL_DIR = "/sdcard/Movies/Screensaver"
-                val videoCount = remember {
-                    val dir = java.io.File(LOCAL_DIR)
-                    if (dir.exists() && dir.isDirectory) {
-                        dir.listFiles { f ->
-                            val n = f.name.lowercase()
-                            n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".mkv") || n.endsWith(".m4v")
-                        }?.size ?: 0
-                    } else 0
-                }
+            // ─── Aerial Smart Cache Info Box ───
+            if (currentMode == ScreensaverSource.AERIAL) {
+                val context = LocalContext.current
+                var cachedCount by remember { mutableIntStateOf(AerialVideoCache.getCachedCount(context)) }
+                var cacheBytes by remember { mutableLongStateOf(AerialVideoCache.getTotalCacheSizeBytes(context)) }
+                val cacheMb = cacheBytes / (1024 * 1024)
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .background(Color(0x1A64B5F6))
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFF64B5F6), modifier = Modifier.size(26.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            "Copy videos to your TV at:",
+                            "Smart Video Cache",
                             style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         )
                         Text(
-                            LOCAL_DIR,
-                            style = Ty.Small.copy(color = Color(0xFF64B5F6), fontSize = 14.sp)
+                            if (cachedCount > 0)
+                                "$cachedCount aerial video${if (cachedCount > 1) "s" else ""} cached locally ($cacheMb MB) — loops offline with 0 KB internet!"
+                            else
+                                "Streams initial videos and saves them to TV storage. Once saved, it loops offline with 0 KB internet.",
+                            style = Ty.Small.copy(color = if (cachedCount > 0) Color(0xFF81C784) else Color(0x99FFFFFF), fontSize = 13.sp)
                         )
-                        Text(
-                            if (videoCount == 0) "No videos found yet — add .mp4 / .mov / .mkv files to that folder"
-                            else "$videoCount video${if (videoCount == 1) "" else "s"} found — ready to play!",
-                            style = Ty.Small.copy(
-                                color = if (videoCount == 0) Color(0xFFFF9800) else Color(0xFF81C784),
-                                fontSize = 14.sp
+                    }
+                    if (cachedCount > 0) {
+                        Focusable(
+                            onClick = {
+                                AerialVideoCache.clearCache(context)
+                                cachedCount = AerialVideoCache.getCachedCount(context)
+                                cacheBytes = AerialVideoCache.getTotalCacheSizeBytes(context)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            idle = Color(0x22FFFFFF)
+                        ) {
+                            Text(
+                                "Clear",
+                                style = Ty.Small.copy(color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
-                        )
+                        }
                     }
                 }
             }

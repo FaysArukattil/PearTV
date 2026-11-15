@@ -208,7 +208,6 @@ import java.util.Locale
 fun HomeScreen(vm: LauncherViewModel) {
     val s by vm.state.collectAsState()
     val view = LocalView.current
-    var showTools by remember { mutableStateOf(false) }
 
     // ─── App Launch / Close Spatial Transition State ───
     // • Open: tactile press & pop with ascending chime + native makeScaleUpAnimation from tile bounds
@@ -243,7 +242,6 @@ fun HomeScreen(vm: LauncherViewModel) {
 
     // Home key pressed on the remote: close menus, and if returning from an app, trigger return transition
     LaunchedEffect(s.homeResetTick) {
-        showTools = false
         if (isAppLaunched) {
             isReturningFromApp = true
             TvSound.playAppClose(view)
@@ -287,11 +285,7 @@ fun HomeScreen(vm: LauncherViewModel) {
     // Back: close the top-most popup/page first. With nothing open we are on Home, the last stop,
     // so Back is safely consumed (the launcher never exits or finishes).
     BackHandler(enabled = !s.showFileManager && !s.showStorageManager) {
-        if (showTools) {
-            showTools = false
-        } else {
-            vm.handleBackPress()
-        }
+        vm.handleBackPress()
     }
 
 
@@ -300,7 +294,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
             s.showCleanTvScreen || s.showFileManager || s.showStorageManager || s.showScreensaver || s.showScreensaverSettings ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
-            s.uninstallConfirmApp != null || s.showDefaultPrompt || showTools
+            s.uninstallConfirmApp != null || s.showDefaultPrompt
     val focusManager = LocalFocusManager.current
     var wasModalOpen by remember { mutableStateOf(false) }
     LaunchedEffect(modalOpen) {
@@ -472,15 +466,15 @@ fun HomeScreen(vm: LauncherViewModel) {
                 LaunchedEffect(hasDock) {
                     snapshotFlow { focusedGridRowState.intValue }.collectLatest { r ->
                         val target = when {
-                            r <= 0 -> 0 // Dock and Row 0 both keep Dock visible at the top (offset 0)
-                            hasDock -> 2 + (r - 1) // Row 1 keeps Row 0 at top; Row 2 keeps Row 1 at top
-                            else -> 1 + (r - 1)
+                            r <= -1 -> 0 // Dock focused: dock at top
+                            hasDock -> 1 + r // Row 0 -> target = 1 (header at top, Row 0 & 1 visible without clipping!); Row 1 -> target = 2; Row 2 -> target = 3
+                            else -> r
                         }
                         smoothScrollToItem(listState, target)
                     }
                 }
 
-                val topBarPillRequesters = remember { List(7) { FocusRequester() } }
+                val topBarPillRequesters = remember { List(9) { FocusRequester() } }
                 val dockColRequesters = remember { List(cols) { FocusRequester() } }
                 val gridRow0ColRequesters = remember { List(cols) { FocusRequester() } }
 
@@ -517,7 +511,9 @@ fun HomeScreen(vm: LauncherViewModel) {
                         onOpenNetwork = vm::openNetworkSettings,
                         onOpenCleanTv = vm::requestCleanTv,
                         onToggleSort = { vm.toggleAppSortMode() },
-                        onOpenTools = { showTools = true },
+                        onOpenStorage = vm::openStorageManager,
+                        onOpenFiles = vm::openFileManager,
+                        onOpenScreensaver = vm::openScreensaverSettings,
                         onOpenSettings = vm::openSystemSettings,
                         onTopFocus = { label, hasFocus ->
                             if (hasFocus) topBarLabel.value = label
@@ -558,7 +554,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                     modifier = Modifier
                                         .fillMaxSize()
                                         .clipToBounds(),
-                                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                                    contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
@@ -578,7 +574,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                             focusScale = 1.05f, showNames = false,
                                             returningPkg = returningAppPackage,
                                             tileModifier = { index, _ ->
-                                                val topIdx = (index * 7 / dock.size.coerceAtLeast(1)).coerceIn(0, 6)
+                                                val topIdx = (index * 9 / dock.size.coerceAtLeast(1)).coerceIn(0, 8)
                                                 val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
                                                 Modifier
                                                     .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
@@ -675,20 +671,6 @@ fun HomeScreen(vm: LauncherViewModel) {
                 }
             }
         }
-
-            if (showTools) {
-                ToolsMenuDialog(
-                    accountName = s.tvProfile.displayName,
-                    isQuickShareActive = s.isQuickShareActive,
-                    onQuickShare = { showTools = false; vm.openQuickShareControl() },
-                    onStorage = { showTools = false; vm.openStorageManager() },
-                    onFiles = { showTools = false; vm.openFileManager() },
-                    onAccount = { showTools = false; vm.openAccountsNative() },
-                    onSyncAccounts = { showTools = false; vm.syncAccountsToApps(userInitiated = true) },
-                    onScreensaver = { showTools = false; vm.openScreensaverSettings() },
-                    onDismiss = { showTools = false },
-                )
-            }
 
             // CleanYourTV 1-Click Wizard Dialog
             if (s.showCleanTvWizard) {
@@ -1086,7 +1068,9 @@ private fun CleanTvTopBar(
     onOpenNetwork: () -> Unit,
     onOpenCleanTv: () -> Unit,
     onToggleSort: () -> Unit,
-    onOpenTools: () -> Unit,
+    onOpenStorage: () -> Unit,
+    onOpenFiles: () -> Unit,
+    onOpenScreensaver: () -> Unit,
     onOpenSettings: () -> Unit,
     onTopFocus: (label: String, hasFocus: Boolean) -> Unit = { _, _ -> },
 ) {
@@ -1097,7 +1081,7 @@ private fun CleanTvTopBar(
 
     fun pillFocusModifier(index: Int): Modifier {
         if (pillRequesters.size <= index) return Modifier
-        val targetCol = if (dockSize > 0) (index * dockSize / 7).coerceIn(0, dockSize - 1) else 0
+        val targetCol = if (dockSize > 0) (index * dockSize / 9).coerceIn(0, dockSize - 1) else 0
         return Modifier
             .focusRequester(pillRequesters[index])
             .focusProperties {
@@ -1242,19 +1226,38 @@ private fun CleanTvTopBar(
                 onFocusChange = { onTopFocus(netText, it) },
             )
             TvPill(
-                label = "Tools",
-                icon = Icons.Rounded.Widgets,
+                label = "Storage",
+                icon = Icons.Rounded.Storage,
                 modifier = pillFocusModifier(5),
-                onClick = onOpenTools,
-                contentDescription = "Tools",
+                onClick = onOpenStorage,
+                contentDescription = "Storage",
                 collapsible = true,
-                onFocusChange = { onTopFocus("Tools", it) },
+                onFocusChange = { onTopFocus("Storage", it) },
+            )
+            TvPill(
+                label = "Files",
+                icon = Icons.Rounded.Folder,
+                modifier = pillFocusModifier(6),
+                onClick = onOpenFiles,
+                contentDescription = "Files",
+                collapsible = true,
+                onFocusChange = { onTopFocus("Files", it) },
+            )
+            TvPill(
+                label = "Screensaver",
+                icon = Icons.Rounded.Tv,
+                modifier = pillFocusModifier(7),
+                onClick = onOpenScreensaver,
+                contentDescription = "Screensaver",
+                collapsible = true,
+                onFocusChange = { onTopFocus("Screensaver", it) },
             )
             TvPill(
                 label = "Settings",
                 icon = Icons.Rounded.Settings,
-                modifier = pillFocusModifier(6),
+                modifier = pillFocusModifier(8),
                 onClick = onOpenSettings,
+                contentDescription = "Settings",
                 collapsible = true,
                 onFocusChange = { onTopFocus("Settings", it) },
             )
@@ -1401,69 +1404,6 @@ private fun TvPill(
                         if (collapsible) alpha = ((expand.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
                     }
             )
-        }
-    }
-}
-
-/** Everything that used to crowd the top bar, in one tidy menu. */
-@Composable
-private fun ToolsMenuDialog(
-    accountName: String,
-    isQuickShareActive: Boolean = false,
-    onQuickShare: () -> Unit,
-    onStorage: () -> Unit,
-    onFiles: () -> Unit,
-    onAccount: () -> Unit,
-    onSyncAccounts: () -> Unit,
-    onScreensaver: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val autoFocus = rememberAutoFocus()
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut),
-        label = "toolsScrim"
-    )
-    val panelScale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.92f,
-        animationSpec = AppleMotion.SpringStandard,
-        label = "toolsScale"
-    )
-    val panelAlpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
-        label = "toolsAlpha"
-    )
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xE6000000).copy(alpha = 0.9f * scrimAlpha))
-            .modalTrap(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            Modifier
-                .width(560.dp)
-                .graphicsLayer {
-                    scaleX = panelScale
-                    scaleY = panelScale
-                    alpha = panelAlpha
-                }
-                .clip(RoundedCornerShape(36.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF17171B))))
-                .padding(horizontal = 36.dp, vertical = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("Tools", style = Ty.Title.copy(fontSize = 38.sp), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
-            val qsLabel = if (isQuickShareActive) "Quick Share (Active ●)" else "Quick Share (Off)"
-            TvPill(qsLabel, Icons.Rounded.Bolt, onQuickShare, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill("Storage", Icons.Rounded.Storage, onStorage, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill("Files", Icons.Rounded.Folder, onFiles, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill("Screensaver Settings", Icons.Rounded.Tv, onScreensaver, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
-            TvPill(accountName.ifBlank { "Account" }, Icons.Rounded.Person, onAccount, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true, maxLabelWidth = 380.dp)
-            TvPill("Sync account to apps", Icons.Rounded.Sync, onSyncAccounts, Modifier.fillMaxWidth(), height = 54.dp, textSize = 20.sp, fill = true)
         }
     }
 }

@@ -55,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -123,8 +124,7 @@ val APPLE_AERIAL_PRESETS = listOf(
 )
 
 enum class ScreensaverSource(val id: String, val title: String, val desc: String) {
-    LOCAL_VIDEO("local_video", "Local Videos (No Internet)", "Play videos saved to /sdcard/Movies/Screensaver/ — no data usage"),
-    AERIAL("aerial", "Apple Aerial Streaming", "Stream Apple TV 1080p aerials from Apple CDN — requires internet"),
+    AERIAL("aerial", "Apple Aerial Videos", "Cinematic Apple TV aerial landscapes with auto-cache loop (zero data after download)"),
     SLIDESHOW("slideshow", "Custom Photos Slideshow", "Cycle smoothly through photos in a chosen folder"),
     SINGLE_IMAGE("image", "Single Custom Image", "Display a chosen custom wallpaper with Apple TV motion")
 }
@@ -192,9 +192,6 @@ fun AppleTvScreensaver(
             }
     ) {
         when (mode) {
-            ScreensaverSource.LOCAL_VIDEO -> {
-                LocalVideoPlayer(onEmpty = { AppleAerialVideoPlayer() })
-            }
             ScreensaverSource.AERIAL -> {
                 AppleAerialVideoPlayer()
             }
@@ -357,15 +354,103 @@ private class TextureVideoPlayer(context: Context) {
 }
 
 /**
- * Continuous Seamless Apple Aerial Video Player.
+ * Intelligent Local Video Disk Cache for Apple Aerial Streams.
+ * - Stores downloaded video assets in local app storage (/sdcard/Android/data/.../files/aerial_cache)
+ * - Automatically checks if a video is already cached before requesting network stream.
+ * - Once cached, MediaPlayer plays directly from local storage with ZERO bytes used over internet.
+ * - In the screensaver loop, it preferentially loops among cached videos, completely eliminating network usage!
+ */
+object AerialVideoCache {
+    private const val CACHE_DIR_NAME = "aerial_cache"
+    const val MIN_VALID_SIZE = 10_000_000L // 10MB minimum to be considered a complete valid video
+
+    fun getCacheDir(context: Context): File {
+        val dir = context.getExternalFilesDir(CACHE_DIR_NAME) ?: File(context.cacheDir, CACHE_DIR_NAME)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
+    fun getCacheFile(context: Context, url: String): File {
+        val filename = url.substringAfterLast('/')
+        return File(getCacheDir(context), filename)
+    }
+
+    fun isCached(context: Context, url: String): Boolean {
+        val file = getCacheFile(context, url)
+        return file.exists() && file.length() >= MIN_VALID_SIZE
+    }
+
+    fun getPlayableSource(context: Context, url: String): String {
+        val file = getCacheFile(context, url)
+        return if (file.exists() && file.length() >= MIN_VALID_SIZE) {
+            file.absolutePath
+        } else {
+            url
+        }
+    }
+
+    fun getCachedCount(context: Context): Int {
+        val dir = getCacheDir(context)
+        return dir.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
+    }
+
+    fun getTotalCacheSizeBytes(context: Context): Long {
+        val dir = getCacheDir(context)
+        return dir.listFiles { f -> f.isFile }?.sumOf { it.length() } ?: 0L
+    }
+
+    fun clearCache(context: Context) {
+        val dir = getCacheDir(context)
+        dir.listFiles()?.forEach { runCatching { it.delete() } }
+    }
+
+    suspend fun downloadToCache(context: Context, url: String) = withContext(Dispatchers.IO) {
+        val target = getCacheFile(context, url)
+        if (target.exists() && target.length() >= MIN_VALID_SIZE) return@withContext
+        val temp = File(target.parentFile, "${target.name}.download")
+        runCatching {
+            val u = java.net.URL(url)
+            val conn = u.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.instanceFollowRedirects = true
+            conn.connect()
+            if (conn.responseCode == java.net.HttpURLConnection.HTTP_OK) {
+                conn.inputStream.use { input ->
+                    temp.outputStream().use { output ->
+                        val buf = ByteArray(64 * 1024)
+                        var read: Int
+                        while (input.read(buf).also { read = it } != -1) {
+                            output.write(buf, 0, read)
+                        }
+                        output.flush()
+                    }
+                }
+                if (temp.length() >= MIN_VALID_SIZE) {
+                    temp.renameTo(target)
+                } else {
+                    temp.delete()
+                }
+            } else {
+                temp.delete()
+            }
+        }.onFailure {
+            runCatching { temp.delete() }
+        }
+    }
+}
+
+/**
+ * Continuous Seamless Apple Aerial Video Player with Local Caching & Loop.
  * - Uses two alternating hardware TextureViews (Player 0 and Player 1).
  * - Preloads the next video in the background while the current video continues playing.
- * - Crossfades between videos over 1200ms with ZERO black frames and zero interruptions.
- * - Animates the location text pill dynamically and smoothly.
+ * - Crossfades between videos over 1500ms with ZERO black frames and zero interruptions.
+ * - Automatically caches downloaded videos locally and loops them to stop eating data!
  */
 @Composable
 private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val player0 = remember { TextureVideoPlayer(ctx) }
     val player1 = remember { TextureVideoPlayer(ctx) }
@@ -381,7 +466,14 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
     var isFirstVideoReady by remember { mutableStateOf(false) }
     var showLocationText by remember { mutableStateOf(false) }
 
-    var currentPresetIndex by remember { mutableIntStateOf(Random.nextInt(APPLE_AERIAL_PRESETS.size)) }
+    var currentPresetIndex by remember {
+        val cachedIndices = APPLE_AERIAL_PRESETS.indices.filter { idx ->
+            AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[idx].url)
+        }
+        mutableIntStateOf(
+            cachedIndices.randomOrNull() ?: Random.nextInt(APPLE_AERIAL_PRESETS.size)
+        )
+    }
     val currentPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
 
     // Crossfade alpha states
@@ -415,37 +507,60 @@ private fun AppleAerialVideoPlayer(onReady: () -> Unit = {}) {
         label = "locationSlideY"
     )
 
-    // Preload & Crossfade orchestration loop
+    // Preload, Caching & Crossfade orchestration loop
     LaunchedEffect(Unit) {
         // Step 1: Start initial video on Player 0
         val initialPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
-        player0.prepare(initialPreset.url) {
+        val initialSource = AerialVideoCache.getPlayableSource(ctx, initialPreset.url)
+        val initialIsCached = AerialVideoCache.isCached(ctx, initialPreset.url)
+
+        player0.prepare(initialSource) {
             player0.start()
             isFirstVideoReady = true
             onReady()
         }
 
+        if (!initialIsCached) {
+            scope.launch { AerialVideoCache.downloadToCache(ctx, initialPreset.url) }
+        }
+
         while (true) {
-            // Play active video for 22 seconds
-            delay(22000L)
+            // Cinematic 40 seconds per scene
+            delay(40000L)
 
             // Step 2: Preload next video in background on idle player
-            val idlePlayer = if (activeSlot == 0) player1 else player0
-            val targetNextIndex = (currentPresetIndex + 1) % APPLE_AERIAL_PRESETS.size
-            val nextPreset = APPLE_AERIAL_PRESETS[targetNextIndex]
+            // If we have cached videos, preferentially loop among them to preserve bandwidth!
+            val cachedIndices = APPLE_AERIAL_PRESETS.indices.filter { idx ->
+                AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[idx].url)
+            }
+            val targetNextIndex = if (cachedIndices.size >= 2) {
+                val pool = cachedIndices.filter { it != currentPresetIndex }
+                pool.randomOrNull() ?: ((currentPresetIndex + 1) % APPLE_AERIAL_PRESETS.size)
+            } else {
+                (currentPresetIndex + 1) % APPLE_AERIAL_PRESETS.size
+            }
 
+            val nextPreset = APPLE_AERIAL_PRESETS[targetNextIndex]
+            val nextSource = AerialVideoCache.getPlayableSource(ctx, nextPreset.url)
+            val nextIsCached = AerialVideoCache.isCached(ctx, nextPreset.url)
+
+            val idlePlayer = if (activeSlot == 0) player1 else player0
             val readySignal = CompletableDeferred<Boolean>()
-            idlePlayer.prepare(nextPreset.url) {
+            idlePlayer.prepare(nextSource) {
                 readySignal.complete(true)
             }
 
-            // Wait up to 10s for background buffering to finish
+            // Wait up to 10s for buffering or local loading to finish
             val loaded = withTimeoutOrNull(10000L) { readySignal.await() } ?: false
             if (loaded) {
                 // Step 3: Start idle player & initiate butter-smooth crossfade
                 idlePlayer.start()
                 currentPresetIndex = targetNextIndex
                 activeSlot = if (activeSlot == 0) 1 else 0
+
+                if (!nextIsCached) {
+                    scope.launch { AerialVideoCache.downloadToCache(ctx, nextPreset.url) }
+                }
 
                 // Allow 1.5s for crossfade animation to complete before stopping previous player
                 delay(1500L)
@@ -613,187 +728,6 @@ private fun SingleImageBackdrop(
         KenBurnsImage(bitmap = bmp)
     } else {
         onEmpty()
-    }
-}
-
-/**
- * Local Video Player — plays .mp4/.mov/.mkv files from /sdcard/Movies/Screensaver/
- * Zero internet usage. Falls back to onEmpty() when folder is empty.
- */
-@Composable
-private fun LocalVideoPlayer(onEmpty: @Composable () -> Unit) {
-    val ctx = LocalContext.current
-    val LOCAL_DIR = "/sdcard/Movies/Screensaver"
-
-    val videoFiles = remember {
-        val dir = File(LOCAL_DIR)
-        if (dir.exists() && dir.isDirectory) {
-            dir.listFiles { f ->
-                val n = f.name.lowercase(Locale.ROOT)
-                n.endsWith(".mp4") || n.endsWith(".mov") || n.endsWith(".mkv") || n.endsWith(".m4v")
-            }?.toList()?.shuffled() ?: emptyList()
-        } else emptyList()
-    }
-
-    if (videoFiles.isEmpty()) {
-        // Show setup instructions if no videos found
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0A0A10)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(48.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.FolderOpen,
-                    contentDescription = null,
-                    tint = Color(0xFF64B5F6),
-                    modifier = Modifier.size(72.dp)
-                )
-                Text(
-                    "No local videos found",
-                    style = Ty.Title.copy(color = Color.White, fontSize = 32.sp),
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    "Copy .mp4, .mov, or .mkv video files to:\n$LOCAL_DIR",
-                    style = Ty.Body.copy(color = Color(0xAAFFFFFF), fontSize = 20.sp),
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    "Then come back to Screensaver Settings and select Local Videos again.",
-                    style = Ty.Small.copy(color = Color(0x88FFFFFF), fontSize = 16.sp),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-        return
-    }
-
-    val player0 = remember { TextureVideoPlayer(ctx) }
-    val player1 = remember { TextureVideoPlayer(ctx) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            player0.releaseAll()
-            player1.releaseAll()
-        }
-    }
-
-    var activeSlot by remember { mutableIntStateOf(0) }
-    var isFirstVideoReady by remember { mutableStateOf(false) }
-    var currentIndex by remember { mutableIntStateOf(0) }
-    var currentFileName by remember { mutableStateOf(videoFiles.firstOrNull()?.nameWithoutExtension ?: "") }
-
-    val alpha0 by animateFloatAsState(
-        targetValue = if (activeSlot == 0 && isFirstVideoReady) 1f else 0f,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing),
-        label = "localAlpha0"
-    )
-    val alpha1 by animateFloatAsState(
-        targetValue = if (activeSlot == 1) 1f else 0f,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing),
-        label = "localAlpha1"
-    )
-
-    // Show location label for local video name
-    var showLabel by remember { mutableStateOf(false) }
-    LaunchedEffect(isFirstVideoReady) {
-        if (isFirstVideoReady) { delay(500L); showLabel = true }
-    }
-    val labelAlpha by animateFloatAsState(
-        targetValue = if (showLabel) 1f else 0f,
-        animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "labelAlpha"
-    )
-
-    LaunchedEffect(Unit) {
-        // Start first video
-        val firstFile = videoFiles[currentIndex]
-        currentFileName = firstFile.nameWithoutExtension
-        player0.prepare(firstFile.absolutePath) {
-            player0.start()
-            isFirstVideoReady = true
-        }
-
-        while (true) {
-            delay(28000L) // 28 seconds per clip (longer for local — no buffering needed)
-
-            val idlePlayer = if (activeSlot == 0) player1 else player0
-            val nextIndex = (currentIndex + 1) % videoFiles.size
-            val nextFile = videoFiles[nextIndex]
-
-            val readySignal = CompletableDeferred<Boolean>()
-            idlePlayer.prepare(nextFile.absolutePath) {
-                readySignal.complete(true)
-            }
-
-            val loaded = withTimeoutOrNull(8000L) { readySignal.await() } ?: false
-            if (loaded) {
-                idlePlayer.start()
-                currentIndex = nextIndex
-                currentFileName = nextFile.nameWithoutExtension
-                activeSlot = if (activeSlot == 0) 1 else 0
-                delay(1500L)
-                val prevPlayer = if (activeSlot == 0) player1 else player0
-                prevPlayer.releasePlayer()
-            }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        AndroidView(
-            factory = { player0.textureView },
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = alpha0 }
-        )
-        AndroidView(
-            factory = { player1.textureView },
-            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = alpha1 }
-        )
-
-        // Bottom-left: show video filename as location label
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 64.dp, bottom = 48.dp)
-                .graphicsLayer { alpha = labelAlpha }
-        ) {
-            Column(horizontalAlignment = Alignment.Start) {
-                Text(
-                    text = currentFileName,
-                    style = Ty.Display.copy(
-                        fontSize = 36.sp,
-                        lineHeight = 40.sp,
-                        fontWeight = FontWeight.Light,
-                        letterSpacing = (-0.5f).sp,
-                        color = Color.White.copy(alpha = 0.90f),
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.75f),
-                            offset = Offset(0f, 2f),
-                            blurRadius = 14f
-                        )
-                    )
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Local Video",
-                    style = Ty.Small.copy(
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Normal,
-                        letterSpacing = 1.sp
-                    )
-                )
-            }
-        }
     }
 }
 
