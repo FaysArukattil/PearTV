@@ -55,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -556,6 +557,8 @@ object AerialVideoCache {
                         val buf = ByteArray(256 * 1024)
                         var read: Int
                         while (input.read(buf).also { read = it } != -1) {
+                            // Lets the user cancel a running download (throws if the job was cancelled).
+                            ensureActive()
                             output.write(buf, 0, read)
                             downloaded += read
 

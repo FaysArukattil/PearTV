@@ -113,7 +113,24 @@ class HomeActivity : ComponentActivity() {
         }
     }
 
+    /** Keys whose press woke the screensaver: their repeats / key-up are swallowed too. */
+    private val swallowedKeys = HashSet<Int>()
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // ── Screensaver gate ────────────────────────────────────────────────────────────────
+        // While the screensaver is up (or a key that woke it is still held) NOTHING may reach the
+        // Home screen underneath. First fresh press wakes the TV; everything else is swallowed.
+        if (vm.isScreensaverShowing()) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                if (vm.wakeScreensaver()) swallowedKeys.add(event.keyCode)
+            }
+            return true
+        }
+        if (swallowedKeys.isNotEmpty() && swallowedKeys.contains(event.keyCode)) {
+            if (event.action == android.view.KeyEvent.ACTION_UP) swallowedKeys.remove(event.keyCode)
+            return true
+        }
+
         if (event.action == android.view.KeyEvent.ACTION_DOWN) {
             vm.resetIdleTimer()
         }
@@ -140,6 +157,25 @@ class HomeActivity : ComponentActivity() {
             return true // Suppress ugly system volume dialog and show our custom smooth Apple TV volume HUD!
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (vm.isScreensaverShowing()) {
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) vm.wakeScreensaver()
+            return true
+        }
+        vm.resetIdleTimer()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchGenericMotionEvent(ev: android.view.MotionEvent): Boolean {
+        // Air-mouse / pointer remotes count as activity too.
+        if (vm.isScreensaverShowing()) {
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_BUTTON_PRESS) vm.wakeScreensaver()
+            return true
+        }
+        vm.resetIdleTimer()
+        return super.dispatchGenericMotionEvent(ev)
     }
 
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
