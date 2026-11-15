@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Environment
 import android.view.KeyEvent
 import android.view.Surface
@@ -12,6 +13,7 @@ import android.view.TextureView
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -23,23 +25,16 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.Tv
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
@@ -48,21 +43,20 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.random.Random
 
 /**
  * Curated list of verified 1080p Apple TV Aerial video streams from Apple CDN (a1.phobos.apple.com).
@@ -133,13 +127,11 @@ enum class ScreensaverSource(val id: String, val title: String, val desc: String
 /**
  * Apple TV–style screensaver for Android TV.
  *
- * Features:
- * - Dual-player background preloading & butter-smooth 1200ms crossfading between scenes.
- * - Instant atmospheric backdrop with zero black-screen lag on launch or transitions.
- * - Dynamically animated Apple TV location pill in bottom-left corner.
- * - Large Apple TV clock & date in bottom-right corner.
- * - Input debounce guard so remote clicks won't immediately dismiss upon launching.
- * - Wake TV on any remote button press.
+ * - ONE video decoder at a time (cheap TV chips crash with two 1080p decoders running together).
+ * - A black cover fades over the video: video that can't load simply stays black, then fades in by
+ *   itself the moment a scene is really on screen. Same path for streamed and downloaded scenes.
+ * - The location text only shows (and changes) together with the scene that is actually visible.
+ * - Any failure (network, bad file, decoder) is contained: black screen + retry, never a crash.
  */
 @Composable
 fun AppleTvScreensaver(
@@ -212,7 +204,7 @@ fun AppleTvScreensaver(
             }
         }
 
-        // ─── Apple TV Bottom Right: Clock & Date (Default timer, always visible) ─
+        // ─── Apple TV Bottom Right: Clock & Date ───
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -267,43 +259,46 @@ fun AppleTvScreensaver(
     }
 }
 
-/**
- * Encapsulates an alpha-friendly hardware TextureView backed by Android MediaPlayer.
- * Unlike SurfaceView/VideoView, TextureView respects Compose alpha blending and never
- * punches black holes through the screen during buffering.
- */
-private class TextureVideoPlayer(context: Context) {
-    var mediaPlayer: MediaPlayer? = null
-    var surface: Surface? = null
-    var isSurfaceAvailable = false
-    var pendingUrl: String? = null
-    var onPreparedCallback: (() -> Unit)? = null
 
-    val textureView = TextureView(context).apply {
+private const val AERIAL_USER_AGENT =
+    "AppleCoreMedia/1.0.0.18J386 (Apple TV; U; CPU OS 14_0 like Mac OS X; en_us)"
+private const val SCENE_MS = 40_000L          // how long each scene plays
+private const val FADE_MS = 800               // black cover fade (in and out)
+private const val LOCAL_TIMEOUT_MS = 8_000L   // downloaded file must start fast
+private const val STREAM_TIMEOUT_MS = 15_000L // network stream gets longer
+private const val STALL_LIMIT_MS = 12_000L    // no playback progress for this long = failed
+
+/**
+ * Owns exactly ONE TextureView and ONE MediaPlayer at a time.
+ * Every callback is detached before release and every call is guarded, so a bad stream, a bad file,
+ * a lost surface or a decoder failure can never throw out of here — [play] just returns false.
+ */
+private class AerialPlayerHost(context: Context) {
+    private var mp: MediaPlayer? = null
+    private var surface: Surface? = null
+    private var surfaceSignal = CompletableDeferred<Unit>()
+    private var failSignal = CompletableDeferred<Unit>()
+
+    val textureView: TextureView = TextureView(context).apply {
         layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) {
+                runCatching { surface?.release() }
                 surface = Surface(st)
-                isSurfaceAvailable = true
-                mediaPlayer?.setSurface(surface)
-                pendingUrl?.let { url ->
-                    val cb = onPreparedCallback
-                    pendingUrl = null
-                    onPreparedCallback = null
-                    prepare(url, cb)
-                }
+                if (!surfaceSignal.isCompleted) surfaceSignal.complete(Unit)
             }
 
             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
 
             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                isSurfaceAvailable = false
-                mediaPlayer?.setSurface(null)
-                surface?.release()
+                this@AerialPlayerHost.release()
+                runCatching { surface?.release() }
                 surface = null
+                surfaceSignal = CompletableDeferred()
+                failSignal.complete(Unit) // a scene that lost its surface is over: let the loop recover
                 return true
             }
 
@@ -311,71 +306,380 @@ private class TextureVideoPlayer(context: Context) {
         }
     }
 
-    fun prepare(url: String, onPrepared: (() -> Unit)? = null) {
-        if (!isSurfaceAvailable) {
-            pendingUrl = url
-            onPreparedCallback = onPrepared
-            return
-        }
-        releasePlayer()
+    /**
+     * Prepares [source] and starts it. Returns true only once it is really playing
+     * (prepared + started + first frame rendered), false on ANY problem.
+     */
+    suspend fun play(context: Context, source: String, isUrl: Boolean, timeoutMs: Long): Boolean {
+        release()
+        if (withTimeoutOrNull(3_000L) { surfaceSignal.await() } == null) return false
+        val s = surface ?: return false
+
+        val prepared = CompletableDeferred<Boolean>()
+        val rendered = CompletableDeferred<Unit>()
+        val fail = CompletableDeferred<Unit>()
+        failSignal = fail
+
+        val player = MediaPlayer()
+        mp = player
         try {
-            val mp = MediaPlayer()
-            mediaPlayer = mp
-            mp.setSurface(surface)
-            mp.setDataSource(url)
-            mp.isLooping = true
-            mp.setVolume(0f, 0f) // Aerial videos are silent
-            mp.setOnPreparedListener {
-                onPrepared?.invoke()
+            player.setSurface(s)
+            player.setVolume(0f, 0f) // Aerial videos are silent
+            player.isLooping = true
+            if (isUrl) {
+                player.setDataSource(
+                    context.applicationContext,
+                    Uri.parse(source),
+                    mapOf("User-Agent" to AERIAL_USER_AGENT)
+                )
+            } else {
+                player.setDataSource(source)
             }
-            mp.setOnErrorListener { _, _, _ ->
-                true
+            player.setOnPreparedListener { p ->
+                prepared.complete(runCatching { p.start() }.isSuccess)
             }
-            mp.prepareAsync()
-        } catch (_: Exception) {
-            releasePlayer()
+            player.setOnInfoListener { _, what, _ ->
+                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) rendered.complete(Unit)
+                false
+            }
+            player.setOnErrorListener { _, _, _ ->
+                prepared.complete(false)
+                fail.complete(Unit)
+                true // handled: never let MediaPlayer escalate an error
+            }
+            player.prepareAsync()
+        } catch (_: Throwable) {
+            release()
+            return false
+        }
+
+        val ok = withTimeoutOrNull(timeoutMs) { prepared.await() } == true
+        if (!ok) {
+            release()
+            return false
+        }
+        // Wait (briefly) for the first real frame so the fade-in never reveals an empty texture.
+        withTimeoutOrNull(2_000L) { rendered.await() }
+        if (fail.isCompleted) {
+            release()
+            return false
+        }
+        return true
+    }
+
+    /** Suspends while the current scene plays; returns on timeout, error, lost surface or stalled playback. */
+    suspend fun holdScene(sceneMs: Long) {
+        val fail = failSignal
+        var elapsed = 0L
+        var lastPos = -1
+        var stalledMs = 0L
+        while (elapsed < sceneMs && !fail.isCompleted) {
+            delay(1_000L)
+            elapsed += 1_000L
+            val pos = runCatching { mp?.currentPosition }.getOrNull() ?: -1
+            if (pos >= 0 && pos != lastPos) {
+                lastPos = pos
+                stalledMs = 0L
+            } else {
+                stalledMs += 1_000L
+            }
+            if (stalledMs >= STALL_LIMIT_MS) break
         }
     }
 
-    fun start() {
-        runCatching { mediaPlayer?.start() }
-    }
-
-    fun releasePlayer() {
+    fun release() {
+        val p = mp ?: return
+        mp = null
         runCatching {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
+            p.setOnPreparedListener(null)
+            p.setOnInfoListener(null)
+            p.setOnErrorListener(null)
         }
-        mediaPlayer = null
+        runCatching { p.reset() }   // valid in every state (stop() throws while still preparing)
+        runCatching { p.release() }
     }
 
     fun releaseAll() {
-        releasePlayer()
-        surface?.release()
+        release()
+        runCatching { surface?.release() }
         surface = null
     }
 }
 
+/** Presets this run may play. Downloaded-only never touches the network. */
+private fun aerialCandidates(
+    context: Context,
+    selected: Set<String>,
+    downloadedOnly: Boolean
+): List<AppleAerialVideo> {
+    val base = APPLE_AERIAL_PRESETS.filter { selected.isEmpty() || it.url in selected }
+        .ifEmpty { APPLE_AERIAL_PRESETS }
+    return if (downloadedOnly) base.filter { AerialVideoCache.isCached(context, it.url) } else base
+}
+
+/**
+ * Seamless Apple Aerial player.
+ *
+ *  fade to black → load next scene (local file = near-instant, stream = whenever it is ready)
+ *  → first frame renders → fade in, location text changes with it.
+ *
+ * Can't load? The screen simply stays black (clock still shows), the next scene is tried after a short
+ * back-off, and the moment one loads it fades in on its own.
+ */
+@Composable
+private fun AppleAerialVideoPlayer(
+    selectedUrl: String? = null,
+    autoCache: Boolean = true
+) {
+    val ctx = LocalContext.current
+    val appCtx = remember { ctx.applicationContext }
+    val host = remember { AerialPlayerHost(ctx) }
+
+    DisposableEffect(host) {
+        onDispose { host.releaseAll() }
+    }
+
+    val selectedSet = remember(selectedUrl) {
+        selectedUrl?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+    }
+
+    var shownPreset by remember { mutableStateOf<AppleAerialVideo?>(null) }
+    var videoVisible by remember { mutableStateOf(false) }
+
+    // Black cover over the (always opaque) TextureView: no alpha on the video surface itself.
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (videoVisible) 0f else 1f,
+        animationSpec = tween(FADE_MS, easing = FastOutSlowInEasing),
+        label = "coverAlpha"
+    )
+    val textAlpha by animateFloatAsState(
+        targetValue = if (videoVisible) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "locationAlpha"
+    )
+    val textSlideY by animateFloatAsState(
+        targetValue = if (videoVisible) 0f else 28f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "locationSlideY"
+    )
+
+    LaunchedEffect(selectedSet, autoCache) {
+        // Give a closing settings popup a moment to free its preview decoder.
+        delay(350L)
+
+        val brokenLocal = HashSet<String>()   // downloaded files that would not play this session
+        val skipUrls = HashSet<String>()      // scenes that failed since the last success
+        var lastUrl: String? = null
+        var failures = 0
+
+        while (isActive) {
+            // Fade the current scene out BEFORE touching the player.
+            if (videoVisible) {
+                videoVisible = false
+                delay(FADE_MS + 50L)
+            }
+
+            val candidates = withContext(Dispatchers.IO) { aerialCandidates(appCtx, selectedSet, autoCache) }
+            if (candidates.isEmpty()) {
+                // Downloaded-only with nothing downloaded yet: stay black, re-check later.
+                host.release()
+                delay(5_000L)
+                continue
+            }
+
+            var pool = candidates.filter { it.url != lastUrl && it.url !in skipUrls }
+            if (pool.isEmpty()) pool = candidates.filter { it.url !in skipUrls }
+            if (pool.isEmpty()) {
+                skipUrls.clear()
+                pool = candidates
+            }
+            val preset = pool.random()
+
+            // Prefer the saved copy (instant, zero data); fall back to the stream when allowed.
+            val localPath = withContext(Dispatchers.IO) {
+                val f = AerialVideoCache.getCacheFile(appCtx, preset.url)
+                if (f.exists() && f.length() >= AerialVideoCache.MIN_VALID_SIZE) f.absolutePath else null
+            }
+            var ok = false
+            if (localPath != null && preset.url !in brokenLocal) {
+                ok = host.play(appCtx, localPath, isUrl = false, timeoutMs = LOCAL_TIMEOUT_MS)
+                if (!ok) brokenLocal += preset.url
+            }
+            if (!ok && !autoCache) {
+                ok = host.play(appCtx, preset.url, isUrl = true, timeoutMs = STREAM_TIMEOUT_MS)
+            }
+
+            if (ok) {
+                failures = 0
+                skipUrls.clear()
+                lastUrl = preset.url
+                shownPreset = preset      // text swaps while still hidden…
+                videoVisible = true       // …then fades/slides in together with the video
+                host.holdScene(if (candidates.size <= 1) Long.MAX_VALUE / 4 else SCENE_MS)
+            } else {
+                failures++
+                skipUrls += preset.url
+                host.release()
+                // Stay on black; back off 3s, 6s, 12s … capped at 30s, then try another scene.
+                val backoff = (3_000L shl (failures - 1).coerceAtMost(4)).coerceAtMost(30_000L)
+                delay(backoff)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        AndroidView(
+            factory = {
+                host.textureView.also { tv -> (tv.parent as? ViewGroup)?.removeView(tv) }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Black cover (drawn, not composed per frame)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind { drawRect(Color.Black, alpha = coverAlpha) }
+        )
+
+        // ─── Bottom-left location: changes with every scene, only visible with the video ───
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 64.dp, bottom = 48.dp)
+                .graphicsLayer {
+                    alpha = textAlpha
+                    translationY = textSlideY
+                }
+        ) {
+            AnimatedContent(
+                targetState = shownPreset,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(650, delayMillis = 150)) +
+                        slideInVertically(animationSpec = tween(650, delayMillis = 150)) { it / 3 })
+                        .togetherWith(
+                            fadeOut(animationSpec = tween(450)) +
+                                slideOutVertically(animationSpec = tween(450)) { -it / 3 }
+                        )
+                },
+                label = "locationTransition"
+            ) { preset ->
+                if (preset != null) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = preset.location,
+                            style = Ty.Display.copy(
+                                fontSize = 52.sp,
+                                lineHeight = 56.sp,
+                                fontWeight = FontWeight.Light,
+                                letterSpacing = (-1).sp,
+                                color = Color.White.copy(alpha = 0.95f),
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.75f),
+                                    offset = Offset(0f, 2f),
+                                    blurRadius = 14f
+                                )
+                            )
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = preset.subtext,
+                            style = Ty.Small.copy(
+                                color = Color.White.copy(alpha = 0.80f),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Normal,
+                                letterSpacing = 1.sp,
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.70f),
+                                    offset = Offset(0f, 2f),
+                                    blurRadius = 8f
+                                )
+                            )
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(1.dp))
+                }
+            }
+        }
+    }
+}
+
+
 /**
  * Intelligent Local Video Disk Cache for Apple Aerial Streams.
- * - Stores downloaded video assets in local app storage (/sdcard/Android/data/.../files/aerial_cache)
+ * - Stores downloaded video assets in public storage (/sdcard/Movies/LeanTVScreensaver)
+ *   so Android OS does NOT add the file sizes to LeanTV's "App Size / User Data" in TV Settings.
  * - Automatically checks if a video is already cached before requesting network stream.
  * - Once cached, MediaPlayer plays directly from local storage with ZERO bytes used over internet.
  * - In the screensaver loop, it preferentially loops among cached videos, completely eliminating network usage!
  */
 object AerialVideoCache {
-    private const val CACHE_DIR_NAME = "aerial_cache"
+    private const val PUBLIC_DIR_NAME = "LeanTVScreensaver"
+    private const val LEGACY_CACHE_DIR_NAME = "aerial_cache"
     const val MIN_VALID_SIZE = 10_000_000L // 10MB minimum to be considered a complete valid video
 
     fun getCacheDir(context: Context): File {
-        val dir = context.getExternalFilesDir(CACHE_DIR_NAME) ?: File(context.cacheDir, CACHE_DIR_NAME)
-        if (!dir.exists()) dir.mkdirs()
-        return dir
+        val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+        val dir = File(moviesDir, PUBLIC_DIR_NAME)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return if (dir.exists() && dir.canWrite()) {
+            dir
+        } else {
+            // Fallback to app external files dir only if public storage cannot be created
+            context.getExternalFilesDir(LEGACY_CACHE_DIR_NAME) ?: File(context.cacheDir, LEGACY_CACHE_DIR_NAME).also { it.mkdirs() }
+        }
+    }
+
+    private fun getLegacyCacheDir(context: Context): File? {
+        return context.getExternalFilesDir(LEGACY_CACHE_DIR_NAME)
     }
 
     fun getCacheFile(context: Context, url: String): File {
         val filename = url.substringAfterLast('/')
-        return File(getCacheDir(context), filename)
+        val publicDir = getCacheDir(context)
+        val publicFile = File(publicDir, filename)
+        if (publicFile.exists() && publicFile.length() >= MIN_VALID_SIZE) {
+            return publicFile
+        }
+
+        // Return legacy file if present (migration to public storage happens in background)
+        val legacyDir = getLegacyCacheDir(context)
+        if (legacyDir != null && legacyDir.exists()) {
+            val legacyFile = File(legacyDir, filename)
+            if (legacyFile.exists() && legacyFile.length() >= MIN_VALID_SIZE) {
+                return legacyFile
+            }
+        }
+
+        return publicFile
+    }
+
+    suspend fun migrateLegacyCacheIfNeeded(context: Context) = withContext(Dispatchers.IO) {
+        val legacyDir = getLegacyCacheDir(context) ?: return@withContext
+        if (!legacyDir.exists()) return@withContext
+        val publicDir = getCacheDir(context)
+        legacyDir.listFiles()?.forEach { file ->
+            runCatching {
+                if (file.isFile) {
+                    if (file.name.endsWith(".mov") && file.length() >= MIN_VALID_SIZE) {
+                        val target = File(publicDir, file.name)
+                        if (!file.renameTo(target)) {
+                            file.copyTo(target, overwrite = true)
+                            file.delete()
+                        }
+                    } else {
+                        file.delete()
+                    }
+                }
+            }
+        }
     }
 
     fun isCached(context: Context, url: String): Boolean {
@@ -394,23 +698,42 @@ object AerialVideoCache {
 
     fun getCachedCount(context: Context): Int {
         val dir = getCacheDir(context)
-        return dir.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
+        val publicCount = dir.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
+        if (publicCount > 0) return publicCount
+        val legacyDir = getLegacyCacheDir(context)
+        return legacyDir?.listFiles { f -> f.isFile && f.length() >= MIN_VALID_SIZE }?.size ?: 0
     }
 
     fun getTotalCacheSizeBytes(context: Context): Long {
         val dir = getCacheDir(context)
-        return dir.listFiles { f -> f.isFile }?.sumOf { it.length() } ?: 0L
+        var total = dir.listFiles { f -> f.isFile && !f.name.endsWith(".download") }?.sumOf { it.length() } ?: 0L
+        val legacyDir = getLegacyCacheDir(context)
+        if (legacyDir != null && legacyDir.exists()) {
+            total += legacyDir.listFiles { f -> f.isFile && !f.name.endsWith(".download") }?.sumOf { it.length() } ?: 0L
+        }
+        return total
     }
 
     fun clearCache(context: Context) {
         val dir = getCacheDir(context)
         dir.listFiles()?.forEach { runCatching { it.delete() } }
+        val legacyDir = getLegacyCacheDir(context)
+        legacyDir?.listFiles()?.forEach { runCatching { it.delete() } }
     }
 
     /** Delete only the cached file for a single URL. Returns true if deleted. */
     fun deleteFromCache(context: Context, url: String): Boolean {
-        val file = getCacheFile(context, url)
-        return file.exists() && file.delete()
+        val filename = url.substringAfterLast('/')
+        val file = File(getCacheDir(context), filename)
+        var deleted = file.exists() && file.delete()
+        val legacyDir = getLegacyCacheDir(context)
+        if (legacyDir != null && legacyDir.exists()) {
+            val legacyFile = File(legacyDir, filename)
+            if (legacyFile.exists() && legacyFile.delete()) {
+                deleted = true
+            }
+        }
+        return deleted
     }
 
     /** File size of a cached video in MB, or 0 if not cached. */
@@ -487,6 +810,8 @@ object AerialVideoCache {
                         val buf = ByteArray(256 * 1024)
                         var read: Int
                         while (input.read(buf).also { read = it } != -1) {
+                            // Lets the user cancel a running download (throws if the job was cancelled).
+                            ensureActive()
                             output.write(buf, 0, read)
                             downloaded += read
 
@@ -519,275 +844,93 @@ object AerialVideoCache {
     }
 }
 
-/**
- * Continuous Seamless Apple Aerial Video Player with Local Caching & Loop.
- * - Uses two alternating hardware TextureViews (Player 0 and Player 1).
- * - Preloads the next video in the background while the current video continues playing.
- * - Crossfades between videos over 1500ms with ZERO black frames and zero interruptions.
- * - Automatically caches downloaded videos locally and loops them to stop eating data!
- */
-@Composable
-private fun AppleAerialVideoPlayer(
-    selectedUrl: String? = null,
-    autoCache: Boolean = true,
-    onReady: () -> Unit = {}
-) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+// ─────────────────────────────────────────────────────────────────────────────
+// Photo modes
+// ─────────────────────────────────────────────────────────────────────────────
 
-    val player0 = remember { TextureVideoPlayer(ctx) }
-    val player1 = remember { TextureVideoPlayer(ctx) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            player0.releaseAll()
-            player1.releaseAll()
+/** Decodes a photo near screen size (never full 12MP+ originals, which blow the TV's heap). */
+private fun decodeScreenSized(path: String, maxW: Int = 1920, maxH: Int = 1080): Bitmap? {
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= maxW && bounds.outHeight / (sample * 2) >= maxH) {
+            sample *= 2
         }
-    }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        BitmapFactory.decodeFile(path, opts)
+    }.getOrNull() // also swallows OutOfMemoryError
+}
 
-    var activeSlot by remember { mutableIntStateOf(0) }
-    var isFirstVideoReady by remember { mutableStateOf(false) }
-    var showLocationText by remember { mutableStateOf(false) }
-
-    val selectedUrlSet = remember(selectedUrl) {
-        selectedUrl?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
-    }
-
-    // Active pool of indices to cycle through
-    val activeIndices by remember(selectedUrl, autoCache) {
-        derivedStateOf {
-            when {
-                selectedUrlSet.isNotEmpty() -> {
-                    val matching = APPLE_AERIAL_PRESETS.indices.filter { APPLE_AERIAL_PRESETS[it].url in selectedUrlSet }
-                    if (matching.isNotEmpty()) matching else APPLE_AERIAL_PRESETS.indices.toList()
-                }
-                autoCache -> {
-                    // Downloaded Only mode: loop among cached videos
-                    val cached = APPLE_AERIAL_PRESETS.indices.filter { AerialVideoCache.isCached(ctx, APPLE_AERIAL_PRESETS[it].url) }
-                    if (cached.isNotEmpty()) cached else APPLE_AERIAL_PRESETS.indices.toList()
-                }
-                else -> {
-                    // Stream All mode: all presets, pure streaming, 0 disk storage
-                    APPLE_AERIAL_PRESETS.indices.toList()
-                }
-            }
-        }
-    }
-
-    var currentPresetIndex by remember(activeIndices) {
-        mutableIntStateOf(activeIndices.randomOrNull() ?: 0)
-    }
-    val currentPreset = APPLE_AERIAL_PRESETS[currentPresetIndex]
-
-    // Crossfade alpha states
-    val alpha0 by animateFloatAsState(
-        targetValue = if (activeSlot == 0 && isFirstVideoReady) 1f else 0f,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing),
-        label = "alphaPlayer0"
-    )
-    val alpha1 by animateFloatAsState(
-        targetValue = if (activeSlot == 1) 1f else 0f,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing),
-        label = "alphaPlayer1"
-    )
-
-    // Animate location text into place AFTER video is loaded initially
-    LaunchedEffect(isFirstVideoReady) {
-        if (isFirstVideoReady) {
-            delay(500L)
-            showLocationText = true
-        }
-    }
-
-    val locationAlpha by animateFloatAsState(
-        targetValue = if (showLocationText) 1f else 0f,
-        animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "locationAlpha"
-    )
-    val locationSlideY by animateFloatAsState(
-        targetValue = if (showLocationText) 0f else 28f,
-        animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "locationSlideY"
-    )
-
-    // Preload, Caching & Crossfade orchestration loop (NEVER auto-downloads in background)
-    LaunchedEffect(activeIndices) {
-        // Step 1: Start initial video on Player 0
-        val initialPreset = APPLE_AERIAL_PRESETS.getOrNull(currentPresetIndex) ?: APPLE_AERIAL_PRESETS[0]
-        val initialSource = AerialVideoCache.getPlayableSource(ctx, initialPreset.url)
-
-        player0.prepare(initialSource) {
-            player0.start()
-            isFirstVideoReady = true
-            onReady()
-        }
-
-        while (true) {
-            // Cinematic 40 seconds per scene
-            delay(40000L)
-
-            // Step 2: Choose next video from active pool
-            val pool = activeIndices.filter { it != currentPresetIndex }
-            val targetNextIndex = if (pool.isNotEmpty()) {
-                pool.random()
-            } else {
-                currentPresetIndex
-            }
-
-            val nextPreset = APPLE_AERIAL_PRESETS[targetNextIndex]
-            val nextSource = AerialVideoCache.getPlayableSource(ctx, nextPreset.url)
-
-            val idlePlayer = if (activeSlot == 0) player1 else player0
-            val readySignal = CompletableDeferred<Boolean>()
-            idlePlayer.prepare(nextSource) {
-                readySignal.complete(true)
-            }
-
-            // Wait up to 10s for buffering or local loading to finish
-            val loaded = withTimeoutOrNull(10000L) { readySignal.await() } ?: false
-            if (loaded) {
-                // Step 3: Start idle player & initiate butter-smooth crossfade
-                idlePlayer.start()
-                currentPresetIndex = targetNextIndex
-                activeSlot = if (activeSlot == 0) 1 else 0
-
-                // Allow 1.5s for crossfade animation to complete before stopping previous player
-                delay(1500L)
-                val previousPlayer = if (activeSlot == 0) player1 else player0
-                previousPlayer.releasePlayer()
-            }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        // ─── Player Slot 0 (TextureView with alpha blending) ───
-        AndroidView(
-            factory = { player0.textureView },
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = alpha0 }
-        )
-
-        // ─── Player Slot 1 (TextureView with alpha blending) ───
-        AndroidView(
-            factory = { player1.textureView },
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = alpha1 }
-        )
-
-        // ─── Apple TV Bottom-Left Location (Symmetric to Clock, No Background) ───
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 64.dp, bottom = 48.dp)
-                .graphicsLayer {
-                    alpha = locationAlpha
-                    translationY = locationSlideY
-                }
-        ) {
-            AnimatedContent(
-                targetState = currentPreset,
-                transitionSpec = {
-                    (fadeIn(animationSpec = tween(650, delayMillis = 150)) +
-                        slideInVertically(animationSpec = tween(650, delayMillis = 150)) { it / 3 })
-                        .togetherWith(
-                            fadeOut(animationSpec = tween(450)) +
-                                slideOutVertically(animationSpec = tween(450)) { -it / 3 }
-                        )
-                },
-                label = "locationTransition"
-            ) { preset ->
-                Column(horizontalAlignment = Alignment.Start) {
-                    Text(
-                        text = preset.location,
-                        style = Ty.Display.copy(
-                            fontSize = 52.sp,
-                            lineHeight = 56.sp,
-                            fontWeight = FontWeight.Light,
-                            letterSpacing = (-1).sp,
-                            color = Color.White.copy(alpha = 0.95f),
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.75f),
-                                offset = Offset(0f, 2f),
-                                blurRadius = 14f
-                            )
-                        )
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = preset.subtext,
-                        style = Ty.Small.copy(
-                            color = Color.White.copy(alpha = 0.80f),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Normal,
-                            letterSpacing = 1.sp,
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.70f),
-                                offset = Offset(0f, 2f),
-                                blurRadius = 8f
-                            )
-                        )
-                    )
-                }
-            }
-        }
-    }
+private fun listImages(folderPath: String?): List<File> {
+    if (folderPath.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val dir = File(folderPath)
+        if (!dir.exists() || !dir.isDirectory) return@runCatching emptyList<File>()
+        dir.listFiles { f ->
+            val name = f.name.lowercase(Locale.ROOT)
+            f.isFile && (name.endsWith(".jpg") || name.endsWith(".jpeg") ||
+                name.endsWith(".png") || name.endsWith(".webp"))
+        }?.sortedBy { it.name.lowercase(Locale.ROOT) } ?: emptyList()
+    }.getOrDefault(emptyList())
 }
 
 /**
- * Custom Photos Slideshow with smooth crossfade and continuous Ken Burns motion.
+ * Custom Photos Slideshow: black while the first photo loads (no video flash), 1.2s crossfade between
+ * photos, Ken Burns motion. Falls back to the aerial videos only if nothing in the folder can be shown.
  */
 @Composable
 private fun CustomPhotoSlideshow(
     folderPath: String?,
-    onReady: () -> Unit = {},
     onEmpty: @Composable () -> Unit
 ) {
-    val imageFiles = remember(folderPath) {
-        if (folderPath.isNullOrBlank()) emptyList()
-        else {
-            val dir = File(folderPath)
-            if (dir.exists() && dir.isDirectory) {
-                dir.listFiles { f ->
-                    val name = f.name.lowercase(Locale.ROOT)
-                    name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp")
-                }?.toList() ?: emptyList()
-            } else emptyList()
-        }
+    var files by remember(folderPath) { mutableStateOf<List<File>?>(null) }
+    LaunchedEffect(folderPath) {
+        files = withContext(Dispatchers.IO) { listImages(folderPath) }
     }
 
-    if (imageFiles.isEmpty()) {
+    val list = files
+    if (list == null) {
+        Box(Modifier.fillMaxSize().background(Color.Black))
+    } else if (list.isEmpty()) {
         onEmpty()
-        return
-    }
-
-    var currentIndex by remember { mutableIntStateOf(0) }
-    var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
-
-    LaunchedEffect(currentIndex, imageFiles) {
-        val file = imageFiles[currentIndex]
-        val bmp = withContext(Dispatchers.IO) {
-            runCatching {
-                val opts = BitmapFactory.Options().apply { inSampleSize = 1 }
-                BitmapFactory.decodeFile(file.absolutePath, opts)
-            }.getOrNull()
-        }
-        currentBitmap = bmp
-        if (bmp != null) onReady()
-        delay(10000L) // 10s per slide
-        currentIndex = (currentIndex + 1) % imageFiles.size
-    }
-
-    val bmp = currentBitmap
-    if (bmp != null) {
-        KenBurnsImage(bitmap = bmp)
     } else {
-        onEmpty()
+        var bitmap by remember(list) { mutableStateOf<Bitmap?>(null) }
+        var allFailed by remember(list) { mutableStateOf(false) }
+
+        LaunchedEffect(list) {
+            var index = 0
+            var failures = 0
+            while (isActive) {
+                val bmp = withContext(Dispatchers.IO) { decodeScreenSized(list[index].absolutePath) }
+                if (bmp != null) {
+                    failures = 0
+                    bitmap = bmp
+                    delay(10_000L) // 10s per slide
+                } else {
+                    failures++
+                    if (failures >= list.size) {
+                        allFailed = true
+                        return@LaunchedEffect
+                    }
+                }
+                index = (index + 1) % list.size
+            }
+        }
+
+        if (allFailed) {
+            onEmpty()
+        } else {
+            Crossfade(
+                targetState = bitmap,
+                animationSpec = tween(1200),
+                label = "slideshowCrossfade"
+            ) { bmp ->
+                if (bmp != null) KenBurnsImage(bitmap = bmp)
+                else Box(Modifier.fillMaxSize().background(Color.Black))
+            }
+        }
     }
 }
 
@@ -797,26 +940,22 @@ private fun CustomPhotoSlideshow(
 @Composable
 private fun SingleImageBackdrop(
     filePath: String?,
-    onReady: () -> Unit = {},
     onEmpty: @Composable () -> Unit
 ) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var bitmap by remember(filePath) { mutableStateOf<Bitmap?>(null) }
+    var finished by remember(filePath) { mutableStateOf(false) }
 
     LaunchedEffect(filePath) {
-        if (!filePath.isNullOrBlank()) {
-            val bmp = withContext(Dispatchers.IO) {
-                runCatching { BitmapFactory.decodeFile(filePath) }.getOrNull()
-            }
-            bitmap = bmp
-            if (bmp != null) onReady()
-        }
+        bitmap = if (filePath.isNullOrBlank()) null
+        else withContext(Dispatchers.IO) { decodeScreenSized(filePath) }
+        finished = true
     }
 
     val bmp = bitmap
-    if (bmp != null) {
-        KenBurnsImage(bitmap = bmp)
-    } else {
-        onEmpty()
+    when {
+        bmp != null -> KenBurnsImage(bitmap = bmp)
+        finished -> onEmpty()
+        else -> Box(Modifier.fillMaxSize().background(Color.Black))
     }
 }
 

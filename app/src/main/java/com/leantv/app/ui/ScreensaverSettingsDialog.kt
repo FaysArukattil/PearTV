@@ -10,6 +10,8 @@ import android.view.KeyEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -36,10 +38,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -49,32 +53,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Playback Mode Enum
-// ─────────────────────────────────────────────────────────────────────────────
-enum class AerialPlayMode(val label: String, val subtitle: String) {
-    STREAM_ALL("Stream All", "Stream 27 scenes · 0 MB TV storage"),
-    DOWNLOADED("Downloaded Scenes", "Save & loop offline · TV storage")
-}
-
-private val locationGradients = mapOf(
-    "Dubai"         to listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)),
-    "Greenland"     to listOf(Color(0xFF0D2137), Color(0xFF1A3A4A), Color(0xFF0D5C63)),
-    "Hong Kong"     to listOf(Color(0xFF1A0533), Color(0xFF2D1B69), Color(0xFF11998E)),
-    "Los Angeles"   to listOf(Color(0xFF2D1B1B), Color(0xFF4A1942), Color(0xFF8B2FC9)),
-    "Hawaii"        to listOf(Color(0xFF0D3B2E), Color(0xFF1A5276), Color(0xFF0E6655)),
-    "London"        to listOf(Color(0xFF1C1C2E), Color(0xFF2C3E50), Color(0xFF4A5568)),
-    "New York City" to listOf(Color(0xFF1A1A1A), Color(0xFF2D2D44), Color(0xFF4A4A6A)),
-    "San Francisco" to listOf(Color(0xFF1A2744), Color(0xFF1E3A5F), Color(0xFF2874A6)),
-    "China"         to listOf(Color(0xFF2D1B00), Color(0xFF5D2E00), Color(0xFF8B4513)),
-    "Liwa"          to listOf(Color(0xFF2D1B00), Color(0xFF6B3A1F), Color(0xFFD4A017)),
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Persistent & Asset Thumbnail Store
@@ -82,7 +70,7 @@ private val locationGradients = mapOf(
 object AerialThumbnailStore {
     fun load(context: Context, url: String): Bitmap? {
         val name = url.substringAfterLast('/').substringBeforeLast('.') + ".jpg"
-        // 1. Try bundled high-resolution asset first (0 network, instant <1ms)
+        // 1. Bundled high-resolution asset first (0 network, instant <1ms)
         try {
             context.assets.open("aerial_thumbs/$name").use { input ->
                 val bmp = BitmapFactory.decodeStream(input)
@@ -90,7 +78,7 @@ object AerialThumbnailStore {
             }
         } catch (_: Exception) {}
 
-        // 2. Try disk cache
+        // 2. Disk cache
         try {
             val dir = File(context.cacheDir, "aerial_thumbs")
             val f = File(dir, name)
@@ -117,6 +105,48 @@ object AerialThumbnailStore {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Process-wide download manager: downloads keep running if the popup is closed,
+// show their progress again when it is re-opened, and can be cancelled with OK.
+// ─────────────────────────────────────────────────────────────────────────────
+private object AerialDownloads {
+    val progress = mutableStateMapOf<String, AerialVideoCache.DownloadProgress>()
+    val finishTick = mutableIntStateOf(0)
+    private val jobs = HashMap<String, Job>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    fun start(context: Context, url: String) {
+        if (jobs[url]?.isActive == true) return
+        val appCtx = context.applicationContext
+        progress[url] = AerialVideoCache.DownloadProgress()
+        jobs[url] = scope.launch {
+            try {
+                AerialVideoCache.downloadToCache(appCtx, url) { prog -> progress[url] = prog }
+            } catch (e: CancellationException) {
+                // Cancelled by the user: throw away the partial file so no storage is wasted.
+                runCatching {
+                    val target = AerialVideoCache.getCacheFile(appCtx, url)
+                    File(target.parentFile, "${target.name}.download").delete()
+                }
+                throw e
+            } finally {
+                progress.remove(url)
+                jobs.remove(url)
+                finishTick.intValue++
+            }
+        }
+    }
+
+    fun cancel(url: String) {
+        jobs[url]?.cancel()
+    }
+}
+
+/** Focus target + remembers "the last left-list item you were on" so Left from the grid returns there. */
+private fun Modifier.leftItem(req: FocusRequester, onFocused: (FocusRequester) -> Unit): Modifier =
+    this.focusRequester(req).onFocusChanged { if (it.isFocused) onFocused(req) }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Screensaver Settings Dialog Orchestrator
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalComposeUiApi::class)
@@ -136,61 +166,46 @@ fun ScreensaverSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val autoFocus = rememberAutoFocus()
-
-    // Focus bridges for TV remote
-    val firstGridItemFocusRequester = remember { FocusRequester() }
-    val modePillFocusRequester = remember { FocusRequester() }
-    val previewNowFocusRequester = remember { FocusRequester() }
 
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
+
     val scrimAlpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut), label = "scrim"
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.EaseOut),
+        label = "scrim"
     )
     val panelScale by animateFloatAsState(
         targetValue = if (visible) 1f else 0.93f,
-        animationSpec = AppleMotion.SpringStandard, label = "scale"
+        animationSpec = AppleMotion.SpringStandard,
+        label = "scale"
     )
     val panelAlpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate), label = "alpha"
+        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
+        label = "alpha"
     )
 
-    // Set of URLs selected by user (can be 0, 1, or multiple)
-    val selectedUrlSet = remember(selectedUrl) {
-        selectedUrl?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
-    }
-
-    var playMode by remember {
-        mutableStateOf(
-            if (!autoCache && selectedUrl == null) AerialPlayMode.STREAM_ALL else AerialPlayMode.DOWNLOADED
-        )
-    }
-
-    val downloadProgressMap = remember { mutableStateMapOf<String, AerialVideoCache.DownloadProgress>() }
+    val downloadProgressMap = AerialDownloads.progress
     var cacheVersion by remember { mutableIntStateOf(0) }
     fun refreshCache() { cacheVersion++ }
 
-    val cachedUrls by remember(cacheVersion) {
-        derivedStateOf {
-            APPLE_AERIAL_PRESETS.filter { AerialVideoCache.isCached(context, it.url) }.map { it.url }.toSet()
-        }
-    }
-
-    val totalCacheMb by remember(cacheVersion) {
-        derivedStateOf {
-            AerialVideoCache.getTotalCacheSizeBytes(context) / (1024 * 1024)
-        }
-    }
+    var cachedUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var totalCacheMb by remember { mutableLongStateOf(0L) }
 
     val thumbnails = remember { mutableStateMapOf<String, Bitmap?>() }
 
-    // Pre-load all thumbnails completely offline: bundled assets first, then disk cache, then local video file
-    LaunchedEffect(cacheVersion) {
+    // Pre-load thumbnails & cache status in background (0 disk I/O on UI thread)
+    LaunchedEffect(cacheVersion, AerialDownloads.finishTick.intValue) {
         withContext(Dispatchers.IO) {
+            AerialVideoCache.migrateLegacyCacheIfNeeded(context)
+            val cached = APPLE_AERIAL_PRESETS.filter { AerialVideoCache.isCached(context, it.url) }.map { it.url }.toSet()
+            val total = AerialVideoCache.getTotalCacheSizeBytes(context) / (1024 * 1024)
+            withContext(Dispatchers.Main) {
+                cachedUrls = cached
+                totalCacheMb = total
+            }
+
             APPLE_AERIAL_PRESETS.forEach { video ->
                 if (video.url !in thumbnails) {
                     val diskBmp = AerialThumbnailStore.load(context, video.url)
@@ -217,21 +232,69 @@ fun ScreensaverSettingsDialog(
     }
 
     // Modal popup states
-    var videoForAction by remember { mutableStateOf<AppleAerialVideo?>(null) }
+    var videoToDelete by remember { mutableStateOf<AppleAerialVideo?>(null) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    val hasSubDialog = videoToDelete != null || confirmDeleteAll
+
+    // ── Remote-control focus map ───────────────────────────────────────────────────────────
+    //   LEFT column (settings, one vertical list)   ⇄   RIGHT (scene grid)
+    //   • Up / Down  : move through the left list, or through the grid rows
+    //   • Right      : from any left item, jump into the grid (back to the last scene you were on)
+    //   • Left       : from the grid's first column, jump back to the left list (last item you were on)
+    //   • OK         : select / download / delete        • Back : close
+    val streamReq = remember { FocusRequester() }
+    val downloadedReq = remember { FocusRequester() }
+    val chipReqs = remember { List(7) { FocusRequester() } }
+    val previewReq = remember { FocusRequester() }
+    val clearAllReq = remember { FocusRequester() }
+    val doneReq = remember { FocusRequester() }
+    val gridZoneReq = remember { FocusRequester() }
+    var lastLeftReq by remember { mutableStateOf<FocusRequester?>(null) }
+    var returnToGrid by remember { mutableStateOf(false) }
+    var openedOnce by remember { mutableStateOf(false) }
+
+    val timerValues = listOf(1, 2, 3, 5, 10, 15, 0)
+    val selTimerIdx = timerValues.indexOf(idleMinutes).coerceAtLeast(0)
+    val hasDownloads = cachedUrls.isNotEmpty()
+
+    // Dedicated BackHandler so Back button ALWAYS works cleanly
+    BackHandler(enabled = true) {
+        if (videoToDelete != null) {
+            videoToDelete = null
+        } else if (confirmDeleteAll) {
+            confirmDeleteAll = false
+        } else {
+            onDismiss()
+        }
+    }
+
+    // Focus is pulled into this popup when it opens, and handed back to where the user was
+    // whenever a delete-confirmation sub-popup closes.
+    LaunchedEffect(hasSubDialog) {
+        if (hasSubDialog) return@LaunchedEffect
+        delay(100)
+        val target = when {
+            !openedOnce  -> if (autoCache) downloadedReq else streamReq   // the currently applied source
+            returnToGrid -> gridZoneReq
+            else         -> lastLeftReq ?: streamReq
+        }
+        // The remembered item may have disappeared (e.g. "Clear All" after deleting everything).
+        runCatching { target.requestFocus() }.onFailure { runCatching { previewReq.requestFocus() } }
+        openedOnce = true
+    }
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xCC000000).copy(alpha = 0.95f * scrimAlpha))
             .modalTrap()
+            .background(Color(0xCC000000).copy(alpha = 0.95f * scrimAlpha))
             .onPreviewKeyEvent { ev ->
                 if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
                     (ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
                      ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE)
                 ) {
-                    if (videoForAction != null) {
-                        videoForAction = null
+                    if (videoToDelete != null) {
+                        videoToDelete = null
                         true
                     } else if (confirmDeleteAll) {
                         confirmDeleteAll = false
@@ -244,234 +307,210 @@ fun ScreensaverSettingsDialog(
             },
         contentAlignment = Alignment.Center
     ) {
-        Column(
+        Row(
             Modifier
-                .width(1020.dp)
-                .fillMaxHeight(0.92f)
+                .width(1160.dp)
+                .fillMaxHeight(0.94f)
                 .graphicsLayer { scaleX = panelScale; scaleY = panelScale; alpha = panelAlpha }
-                .clip(RoundedCornerShape(28.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF24242A), Color(0xFF16161C))))
-                .border(1.dp, Color(0x18FFFFFF), RoundedCornerShape(28.dp))
-                .padding(horizontal = 32.dp, vertical = 20.dp)
-                .focusProperties { exit = { FocusRequester.Cancel } }
-                .focusGroup()
-                .focusRestorer(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF23232A), Color(0xFF15151B))))
+                .border(1.dp, Color(0x20FFFFFF), RoundedCornerShape(26.dp))
+                .padding(26.dp),
+            horizontalArrangement = Arrangement.spacedBy(26.dp)
         ) {
-            // Header
-            Row(
+            // ───────────────────────── LEFT: settings list ─────────────────────────
+            // Every item has an explicit focus target and explicit Up/Down/Left/Right neighbours,
+            // so the remote never depends on guesswork.
+            Column(
                 Modifier
-                    .fillMaxWidth()
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                            ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                            true // Never leak upwards
-                        } else false
-                    },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .width(340.dp)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column {
-                    Text(
-                        "Apple Aerial Screensaver",
-                        style = Ty.Title.copy(color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                    )
-                    Text(
-                        if (playMode == AerialPlayMode.STREAM_ALL) {
-                            "Streaming live from Apple CDN · 0 MB TV storage used"
-                        } else {
-                            "${cachedUrls.size} of ${APPLE_AERIAL_PRESETS.size} downloaded (${totalCacheMb} MB on TV)"
-                        },
-                        style = Ty.Dim.copy(fontSize = 13.sp)
-                    )
-                }
-
-                if (cachedUrls.isNotEmpty() && playMode == AerialPlayMode.DOWNLOADED) {
-                    Focusable(
-                        onClick = { confirmDeleteAll = true },
-                        shape = RoundedCornerShape(10.dp),
-                        idle = Color(0x1FFF453A),
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Rounded.DeleteSweep, null, tint = Color(0xFFFF453A), modifier = Modifier.size(16.dp))
-                            Text(
-                                "Delete All (${totalCacheMb} MB)",
-                                style = Ty.Small.copy(color = Color(0xFFFF453A), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Mode Selector Pills (Stream All vs Downloaded Scenes)
-            AerialModePills(
-                currentPlayMode = playMode,
-                autoFocus = autoFocus,
-                modeFocusRequester = modePillFocusRequester,
-                onMoveDownToGrid = { runCatching { firstGridItemFocusRequester.requestFocus() } },
-                onMoveDownToBottom = { runCatching { previewNowFocusRequester.requestFocus() } },
-                onSelectMode = { mode ->
-                    playMode = mode
-                    when (mode) {
-                        AerialPlayMode.STREAM_ALL -> {
-                            onToggleAutoCache(false)
-                            onSelectVideoUrl(null)
-                        }
-                        AerialPlayMode.DOWNLOADED -> {
-                            onToggleAutoCache(true)
-                        }
-                    }
-                }
-            )
-
-            // Section Hint
-            val gridHint = when (playMode) {
-                AerialPlayMode.STREAM_ALL -> "ONLINE STREAMING · DIRECT FROM APPLE CDN · 0 MB STORAGE USED"
-                AerialPlayMode.DOWNLOADED -> when {
-                    selectedUrlSet.size == 1 -> "1 SCENE SET AS SOLE SCREENSAVER · CLICK TO CHANGE"
-                    selectedUrlSet.size > 1  -> "${selectedUrlSet.size} SCENES SELECTED IN PLAYLIST · CLICK TO CHANGE"
-                    cachedUrls.isNotEmpty()   -> "ALL ${cachedUrls.size} SAVED SCENES LOOPING · CLICK FOR OPTIONS"
-                    else                     -> "NO SCENES SAVED YET · CLICK ANY SCENE TO DOWNLOAD TO TV"
-                }
-            }
-            Text(
-                gridHint,
-                style = Ty.Small.copy(color = Color(0x44FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-            )
-
-            // Center Content: Stream All info banner OR Downloaded grid
-            if (playMode == AerialPlayMode.STREAM_ALL) {
-                StreamAllInfoCard(
-                    modifier = Modifier.fillMaxWidth().weight(1f)
+                Text(
+                    "Screensaver",
+                    style = Ty.Title.copy(color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 )
-            } else {
-                AerialGrid(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                Text(
+                    "Apple Aerial cinematic footage",
+                    style = Ty.Dim.copy(fontSize = 12.sp, color = Color(0x99FFFFFF))
+                )
+                Spacer(Modifier.height(2.dp))
+
+                SettingsLabel("SOURCE")
+                SettingChoiceRow(
+                    title = "Stream All",
+                    subtitle = "Plays online. Saved scenes play offline.",
+                    selected = !autoCache,
+                    icon = Icons.Rounded.WifiTethering,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusProperties {
+                            up = FocusRequester.Cancel
+                            down = downloadedReq
+                            left = FocusRequester.Cancel
+                            right = gridZoneReq
+                        }
+                        .leftItem(streamReq) { lastLeftReq = it },
+                    onClick = {
+                        onToggleAutoCache(false)
+                        onSelectVideoUrl(null)
+                    }
+                )
+                SettingChoiceRow(
+                    title = "Downloaded Only",
+                    subtitle = if (hasDownloads) "${cachedUrls.size} saved scenes, $totalCacheMb MB. 100% offline."
+                               else "Nothing saved yet. Pick scenes on the right.",
+                    selected = autoCache,
+                    icon = Icons.Rounded.CloudDownload,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusProperties {
+                            up = streamReq
+                            down = chipReqs[selTimerIdx % 4]
+                            left = FocusRequester.Cancel
+                            right = gridZoneReq
+                        }
+                        .leftItem(downloadedReq) { lastLeftReq = it },
+                    onClick = {
+                        onToggleAutoCache(true)
+                        onSelectVideoUrl(null)
+                    }
+                )
+
+                Spacer(Modifier.height(2.dp))
+                SettingsLabel(
+                    "IDLE TIMER",
+                    if (idleMinutes > 0) "Starts after $idleMinutes min" else "Disabled"
+                )
+                IdleTimerChips(
+                    idleMinutes = idleMinutes,
+                    onSelect = onSelectIdleMinutes,
+                    requesters = chipReqs,
+                    upTarget = downloadedReq,
+                    downTarget = previewReq,
+                    rightTarget = gridZoneReq,
+                    onFocused = { lastLeftReq = it }
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                SettingsButton(
+                    label = "Preview Screensaver",
+                    icon = Icons.Rounded.PlayArrow,
+                    idle = Color(0xFF0A84FF),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusProperties {
+                            up = chipReqs[if (selTimerIdx >= 4) selTimerIdx else 4]
+                            down = if (hasDownloads) clearAllReq else doneReq
+                            left = FocusRequester.Cancel
+                            right = gridZoneReq
+                        }
+                        .leftItem(previewReq) { lastLeftReq = it },
+                    onClick = onStartScreensaverNow
+                )
+                if (hasDownloads) {
+                    SettingsButton(
+                        label = "Clear All Downloads ($totalCacheMb MB)",
+                        icon = Icons.Rounded.DeleteSweep,
+                        idle = Color(0x28FF3B30),
+                        contentColor = Color(0xFFFF5252),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusProperties {
+                                up = previewReq
+                                down = doneReq
+                                left = FocusRequester.Cancel
+                                right = gridZoneReq
+                            }
+                            .leftItem(clearAllReq) { lastLeftReq = it },
+                        onClick = {
+                            returnToGrid = false
+                            confirmDeleteAll = true
+                        }
+                    )
+                }
+                SettingsButton(
+                    label = "Done",
+                    icon = Icons.Rounded.Check,
+                    idle = Color(0x22FFFFFF),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusProperties {
+                            up = if (hasDownloads) clearAllReq else previewReq
+                            down = FocusRequester.Cancel
+                            left = FocusRequester.Cancel
+                            right = gridZoneReq
+                        }
+                        .leftItem(doneReq) { lastLeftReq = it },
+                    onClick = onDismiss
+                )
+            }
+
+            // ───────────────────────── RIGHT: scene grid ─────────────────────────
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "AERIAL SCENES",
+                        style = Ty.Small.copy(
+                            color = Color(0x99FFFFFF),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    )
+                    Text(
+                        "OK: download scene  •  OK on a saved scene: remove  •  Left: settings",
+                        style = Ty.Small.copy(color = Color(0x66FFFFFF), fontSize = 11.sp)
+                    )
+                }
+
+                DownloadedGridPanel(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .focusRequester(gridZoneReq),
+                    leftExit = { lastLeftReq ?: streamReq },
                     cachedUrls = cachedUrls,
-                    selectedUrlSet = selectedUrlSet,
                     thumbnails = thumbnails,
                     downloadProgressMap = downloadProgressMap,
-                    firstGridItemFocusRequester = firstGridItemFocusRequester,
-                    onMoveUpFromGrid = { runCatching { modePillFocusRequester.requestFocus() } },
                     onItemClick = { video, isCached ->
-                        if (isCached) {
-                            videoForAction = video
-                        } else if (video.url !in downloadProgressMap) {
-                            downloadProgressMap[video.url] = AerialVideoCache.DownloadProgress()
-                            scope.launch {
-                                AerialVideoCache.downloadToCache(context, video.url) { prog ->
-                                    downloadProgressMap[video.url] = prog
-                                }
-                                downloadProgressMap.remove(video.url)
-                                refreshCache()
-                            }
+                        returnToGrid = true
+                        when {
+                            // Downloading right now → OK cancels it
+                            video.url in downloadProgressMap -> AerialDownloads.cancel(video.url)
+                            // Saved → confirm removal
+                            isCached -> videoToDelete = video
+                            // Not saved → start downloading
+                            else -> AerialDownloads.start(context, video.url)
                         }
-                    },
-                    onFirstFrame = { url, bmp ->
-                        thumbnails[url] = bmp
-                        AerialThumbnailStore.save(context, url, bmp)
                     }
                 )
-            }
-
-            // Idle Timer
-            IdleTimerRow(
-                idleMinutes = idleMinutes,
-                onMoveUp = {
-                    if (playMode == AerialPlayMode.DOWNLOADED) {
-                        runCatching { firstGridItemFocusRequester.requestFocus() }
-                    } else {
-                        runCatching { modePillFocusRequester.requestFocus() }
-                    }
-                },
-                onSelectIdleMinutes = onSelectIdleMinutes
-            )
-
-            // Bottom Actions
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                            ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                            true // Never leak downwards out of the screensaver dialog!
-                        } else false
-                    },
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Focusable(
-                    onClick = onStartScreensaverNow,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(previewNowFocusRequester)
-                        .onPreviewKeyEvent { ev ->
-                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
-                                playMode == AerialPlayMode.STREAM_ALL) {
-                                runCatching { modePillFocusRequester.requestFocus() }
-                                true
-                            } else false
-                        },
-                    shape = RoundedCornerShape(14.dp),
-                    idle = Color(0xFF0A84FF).copy(alpha = 0.25f)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Preview Now", style = Ty.Button.copy(color = Color.White, fontSize = 14.sp))
-                    }
-                }
-                TvButton(text = "Done", onClick = onDismiss, primary = false, modifier = Modifier.width(130.dp))
             }
         }
 
-        // Popup: Cached Video Options (Single / Multi / Loop All / Delete)
-        if (videoForAction != null) {
-            val v = videoForAction!!
-            val isSole = selectedUrlSet.size == 1 && v.url in selectedUrlSet
-            val isSelected = v.url in selectedUrlSet
-
-            VideoActionDialog(
+        // Popup: Confirm Delete Single Scene (Delete & Cancel: Identical type & size)
+        if (videoToDelete != null) {
+            val v = videoToDelete!!
+            ConfirmDeleteSingleDialog(
                 video = v,
-                isSelected = isSelected,
-                isSole = isSole,
-                hasSelection = selectedUrlSet.isNotEmpty(),
-                onToggleSole = {
-                    if (isSole) {
-                        onSelectVideoUrl(null)
-                    } else {
-                        onSelectVideoUrl(v.url)
-                    }
-                    videoForAction = null
-                },
-                onToggleMultiSelect = {
-                    val newSet = if (isSelected) selectedUrlSet - v.url else selectedUrlSet + v.url
-                    onSelectVideoUrl(if (newSet.isEmpty()) null else newSet.joinToString(","))
-                    videoForAction = null
-                },
-                onLoopAll = {
-                    onSelectVideoUrl(null)
-                    videoForAction = null
-                },
-                onDelete = {
+                onConfirm = {
                     AerialVideoCache.deleteFromCache(context, v.url)
                     thumbnails.remove(v.url)
-                    if (v.url in selectedUrlSet) {
-                        val newSet = selectedUrlSet - v.url
-                        onSelectVideoUrl(if (newSet.isEmpty()) null else newSet.joinToString(","))
-                    }
                     refreshCache()
-                    videoForAction = null
+                    videoToDelete = null
                 },
-                onDismiss = { videoForAction = null }
+                onDismiss = { videoToDelete = null }
             )
         }
 
@@ -494,144 +533,294 @@ fun ScreensaverSettingsDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stream All Info Banner (When in pure streaming mode)
+// Remote-friendly building blocks for the left settings list
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun StreamAllInfoCard(
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
+private fun SettingsLabel(text: String, value: String? = null) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            modifier = Modifier
-                .width(620.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0x14FFFFFF))
-                .border(1.dp, Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
-                .padding(horizontal = 36.dp, vertical = 28.dp)
+        Text(
+            text,
+            style = Ty.Small.copy(color = Color(0x88FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        )
+        if (value != null) {
+            Text(
+                value,
+                style = Ty.Small.copy(color = Color(0xFF64B5F6), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingChoiceRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Focusable(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        idle = if (selected) Color(0x330A84FF) else Color(0x12FFFFFF),
+        idleOutline = selected,
+        scaleOnFocus = 1.02f
+    ) { focused ->
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF5E5CE6)))),
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (selected) Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF5E5CE6)))
+                        else Brush.linearGradient(listOf(Color(0x2AFFFFFF), Color(0x1AFFFFFF)))
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.WifiTethering, null, tint = Color.White, modifier = Modifier.size(36.dp))
-            }
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    "Streaming All 27 Scenes",
-                    style = Ty.Title.copy(color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                )
-                Text(
-                    "Screensaver streams Apple 1080p aerial footage live over internet with smooth 1.5s crossfading.",
-                    style = Ty.Body.copy(color = Color(0xBBFFFFFF), fontSize = 14.sp),
-                    textAlign = TextAlign.Center
+                Icon(
+                    icon, null,
+                    tint = if (selected || focused) Color.White else Color(0xBBFFFFFF),
+                    modifier = Modifier.size(20.dp)
                 )
             }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    title,
+                    style = Ty.Body.copy(color = Color.White, fontSize = 14.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold)
+                )
+                Text(
+                    subtitle,
+                    style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 11.sp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (selected) {
+                Icon(Icons.Rounded.CheckCircle, null, tint = Color(0xFF30D158), modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
 
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun IdleTimerChips(
+    idleMinutes: Int,
+    onSelect: (Int) -> Unit,
+    requesters: List<FocusRequester>,
+    upTarget: FocusRequester,
+    downTarget: FocusRequester,
+    rightTarget: FocusRequester,
+    onFocused: (FocusRequester) -> Unit
+) {
+    val options = listOf(
+        1 to "1 min", 2 to "2 min", 3 to "3 min", 5 to "5 min",
+        10 to "10 min", 15 to "15 min", 0 to "Never"
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.chunked(4).forEachIndexed { rowIdx, rowOptions ->
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0x1FFFFFFF))
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.Storage, null, tint = Color(0xFF30D158), modifier = Modifier.size(18.dp))
-                Text(
-                    "0 MB disk storage used · Background caching disabled",
-                    style = Ty.Small.copy(color = Color(0xFF30D158), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                )
+                rowOptions.forEachIndexed { i, (mins, label) ->
+                    val idx = rowIdx * 4 + i
+                    val sel = idleMinutes == mins
+                    val isRowEnd = i == rowOptions.size - 1
+                    Focusable(
+                        onClick = { onSelect(mins) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusProperties {
+                                up = if (rowIdx == 0) upTarget else requesters[idx - 4]
+                                down = if (rowIdx == 0) requesters[(4 + i).coerceAtMost(options.size - 1)] else downTarget
+                                left = if (i == 0) FocusRequester.Cancel else requesters[idx - 1]
+                                right = if (isRowEnd) rightTarget else requesters[idx + 1]
+                            }
+                            .leftItem(requesters[idx], onFocused),
+                        shape = RoundedCornerShape(10.dp),
+                        idle = Color.Transparent,
+                        scaleOnFocus = 1.05f
+                    ) { focused ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    when {
+                                        sel && focused -> Color(0xFF2997FF)
+                                        sel            -> Color(0xFF0A84FF)
+                                        focused        -> Color(0x38FFFFFF)
+                                        else           -> Color(0x18FFFFFF)
+                                    }
+                                )
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label,
+                                style = Ty.Body.copy(
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium
+                                ),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+                // Keep chip widths equal on the shorter last row.
+                repeat(4 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
             }
+        }
+    }
+}
 
+@Composable
+private fun SettingsButton(
+    label: String,
+    icon: ImageVector,
+    idle: Color,
+    modifier: Modifier = Modifier,
+    contentColor: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Focusable(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(13.dp),
+        idle = idle,
+        scaleOnFocus = 1.02f
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 11.dp, horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = contentColor, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                "To save specific scenes on TV for offline playback, switch to \"Downloaded Scenes\" above.",
-                style = Ty.Small.copy(color = Color(0x66FFFFFF), fontSize = 12.sp),
-                textAlign = TextAlign.Center
+                label,
+                style = Ty.Button.copy(color = contentColor, fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                maxLines = 1
             )
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mode Pills Component
+// Mode Option Card (TV First, Large, Clear State)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun AerialModePills(
-    currentPlayMode: AerialPlayMode,
-    autoFocus: FocusRequester,
-    modeFocusRequester: FocusRequester,
-    onMoveDownToGrid: () -> Unit,
-    onMoveDownToBottom: () -> Unit,
-    onSelectMode: (AerialPlayMode) -> Unit
+private fun ModeOptionCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    storageTag: String,
+    isApplied: Boolean,
+    icon: ImageVector,
+    appliedColor: Color,
+    onClick: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        AerialPlayMode.entries.forEachIndexed { idx, mode ->
-            val isActive = currentPlayMode == mode
-            Focusable(
-                onClick = { onSelectMode(mode) },
-                modifier = Modifier
-                    .weight(1f)
-                    .then(if (idx == 0) Modifier.focusRequester(autoFocus).focusRequester(modeFocusRequester) else Modifier)
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                            ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                            if (currentPlayMode == AerialPlayMode.STREAM_ALL) {
-                                onMoveDownToBottom()
-                            } else {
-                                onMoveDownToGrid()
-                            }
-                            true
-                        } else false
-                    },
-                shape = RoundedCornerShape(14.dp),
-                idle = if (isActive) Color(0x280A84FF) else Color(0x10FFFFFF),
-                idleOutline = isActive
+    Focusable(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        idle = if (isApplied) Color(0x220A84FF) else Color(0x12FFFFFF),
+        idleOutline = isApplied,
+        scaleOnFocus = 1.02f
+    ) { focused ->
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .border(
+                    width = if (focused) 2.dp else if (isApplied) 1.5.dp else 1.dp,
+                    color = if (focused) Color.White else if (isApplied) Color(0xFF0A84FF) else Color(0x18FFFFFF),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isApplied) Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF5E5CE6)))
+                            else Brush.linearGradient(listOf(Color(0x2AFFFFFF), Color(0x1AFFFFFF)))
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (isApplied || focused) Color.White else Color(0xBBFFFFFF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = when (mode) {
-                                AerialPlayMode.STREAM_ALL -> Icons.Rounded.WifiTethering
-                                AerialPlayMode.DOWNLOADED -> Icons.Rounded.CloudDownload
-                            },
-                            contentDescription = null,
-                            tint = if (isActive) Color(0xFF64B5F6) else Color(0x55FFFFFF),
-                            modifier = Modifier.size(16.dp)
-                        )
                         Text(
-                            mode.label,
+                            title,
                             style = Ty.Body.copy(
-                                color = if (isActive) Color.White else Color(0xBBFFFFFF),
-                                fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                                color = Color.White,
+                                fontWeight = if (isApplied) FontWeight.Bold else FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
                         )
-                        if (isActive) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(Icons.Rounded.CheckCircle, null, tint = Color(0xFF30D158), modifier = Modifier.size(14.dp))
+                        if (isApplied) {
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(appliedColor.copy(alpha = 0.2f))
+                                    .border(1.dp, appliedColor.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    "APPLIED ✓",
+                                    style = Ty.Small.copy(color = appliedColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                )
+                            }
+                        } else {
+                            Text(
+                                "Press to apply",
+                                style = Ty.Small.copy(color = Color(0x66FFFFFF), fontSize = 10.sp)
+                            )
                         }
                     }
+
                     Text(
-                        mode.subtitle,
-                        style = Ty.Small.copy(color = Color(0x55FFFFFF), fontSize = 11.sp),
-                        maxLines = 2
+                        subtitle,
+                        style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 11.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        storageTag,
+                        style = Ty.Small.copy(color = if (isApplied) Color(0xFF64B5F6) else Color(0x66FFFFFF), fontSize = 10.sp, fontWeight = FontWeight.Medium)
                     )
                 }
             }
@@ -640,41 +829,39 @@ private fun AerialModePills(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Grid Section
+// Downloaded Grid Panel
 // ─────────────────────────────────────────────────────────────────────────────
 private sealed class GridEntry {
     data class Header(val location: String) : GridEntry()
-    data class VideoItem(val video: AppleAerialVideo) : GridEntry()
+    data class VideoItem(val video: AppleAerialVideo, val col: Int) : GridEntry()
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun AerialGrid(
+private fun DownloadedGridPanel(
     modifier: Modifier,
+    leftExit: () -> FocusRequester,
     cachedUrls: Set<String>,
-    selectedUrlSet: Set<String>,
     thumbnails: SnapshotStateMap<String, Bitmap?>,
     downloadProgressMap: SnapshotStateMap<String, AerialVideoCache.DownloadProgress>,
-    firstGridItemFocusRequester: FocusRequester,
-    onMoveUpFromGrid: () -> Unit,
-    onItemClick: (AppleAerialVideo, Boolean) -> Unit,
-    onFirstFrame: (String, Bitmap) -> Unit
+    onItemClick: (AppleAerialVideo, Boolean) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = modifier.focusRestorer(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 4.dp)
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
     ) {
         val flatItems: List<GridEntry> = buildList {
             APPLE_AERIAL_PRESETS.groupBy { it.location }.forEach { (loc, videos) ->
                 add(GridEntry.Header(loc))
-                videos.forEach { add(GridEntry.VideoItem(it)) }
+                videos.forEachIndexed { idx, v ->
+                    add(GridEntry.VideoItem(v, col = idx % 3))
+                }
             }
         }
 
-        var videoCardIndex = 0
         flatItems.forEach { entry ->
             when (entry) {
                 is GridEntry.Header -> {
@@ -682,10 +869,10 @@ private fun AerialGrid(
                         Text(
                             entry.location.uppercase(),
                             style = Ty.Small.copy(
-                                color = Color(0x44FFFFFF),
+                                color = Color(0x77FFFFFF),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.5.sp
+                                letterSpacing = 1.2.sp
                             ),
                             modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
                         )
@@ -693,34 +880,20 @@ private fun AerialGrid(
                 }
                 is GridEntry.VideoItem -> {
                     val video = entry.video
-                    val currentCardIdx = videoCardIndex++
+                    val col = entry.col
                     item(key = video.url) {
                         val isCached         = video.url in cachedUrls
-                        val isSelected       = video.url in selectedUrlSet
                         val downloadProgress = downloadProgressMap[video.url]
                         val thumbnail        = thumbnails[video.url]
 
-                        val cardModifier = when {
-                            currentCardIdx == 0 -> Modifier.focusRequester(firstGridItemFocusRequester)
-                            else -> Modifier
-                        }.onPreviewKeyEvent { ev ->
-                            if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                                ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
-                                currentCardIdx < 3) {
-                                onMoveUpFromGrid()
-                                true
-                            } else false
-                        }
-
                         AerialThumbnailCard(
-                            modifier = cardModifier,
                             video = video,
+                            col = col,
+                            leftExit = leftExit,
                             thumbnail = thumbnail,
                             isCached = isCached,
-                            isSelected = isSelected,
                             downloadProgress = downloadProgress,
-                            onAction = { onItemClick(video, isCached) },
-                            onCapturedFrame = { bmp -> onFirstFrame(video.url, bmp) }
+                            onAction = { onItemClick(video, isCached) }
                         )
                     }
                 }
@@ -730,107 +903,106 @@ private fun AerialGrid(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Card: Live preview video on focus ONLY for downloaded videos; static image otherwise
+// Card: High-contrast Dark Pill Badge + Smooth Live Video Crossfade (No grey gap)
 // ─────────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AerialThumbnailCard(
-    modifier: Modifier = Modifier,
     video: AppleAerialVideo,
+    col: Int,
+    leftExit: () -> FocusRequester,
     thumbnail: Bitmap?,
     isCached: Boolean,
-    isSelected: Boolean,
     downloadProgress: AerialVideoCache.DownloadProgress?,
-    onAction: () -> Unit,
-    onCapturedFrame: (Bitmap) -> Unit
+    onAction: () -> Unit
 ) {
-    val gradColors = locationGradients[video.location]
-        ?: listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
-
     val borderColor = when {
         downloadProgress != null -> Color(0xFF0A84FF)
-        isSelected               -> Color(0xFF0A84FF)
         isCached                 -> Color(0xFF30D158).copy(alpha = 0.6f)
         else                     -> Color(0x18FFFFFF)
     }
 
     Focusable(
         onClick = onAction,
-        modifier = modifier,
+        modifier = Modifier.focusProperties {
+            if (col == 0) left = leftExit()
+            if (col == 2) right = FocusRequester.Cancel
+        },
         shape = RoundedCornerShape(14.dp),
         idle = Color.Transparent,
-        idleOutline = isSelected || isCached || downloadProgress != null,
+        idleOutline = isCached || downloadProgress != null,
+        scaleOnFocus = 1.04f
     ) { focused ->
+        var isVideoPlaying by remember { mutableStateOf(false) }
+
+        LaunchedEffect(focused) {
+            if (!focused) isVideoPlaying = false
+        }
+
+        val videoAlpha by animateFloatAsState(
+            targetValue = if (focused && isCached && isVideoPlaying) 1f else 0f,
+            animationSpec = tween(350, easing = LinearEasing),
+            label = "videoFadeIn"
+        )
+
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(14.dp))
                 .border(
-                    width = if (focused) 2.dp else if (isSelected || downloadProgress != null) 2.dp else if (isCached) 1.dp else 0.dp,
+                    width = if (focused) 2.dp else if (downloadProgress != null) 2.dp else if (isCached) 1.dp else 0.dp,
                     color = if (focused) Color.White else borderColor,
                     shape = RoundedCornerShape(14.dp)
                 )
         ) {
-            // Live Video stream preview ONLY when focused AND video is already downloaded locally
-            if (focused && isCached && downloadProgress == null) {
-                LiveCardVideoPreview(
-                    url = video.url,
-                    onFirstFrameCaptured = onCapturedFrame
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.45f to Color.Transparent,
-                                1f to Color(0xEE000000)
-                            )
-                        )
-                )
-            } else if (thumbnail != null) {
-                // High-resolution instant image from bundled asset / disk cache
+            // ─── Layer 1: High-res instant static thumbnail ALWAYS stays rendered underneath! ───
+            // ZERO grey color, ZERO blank screen while the video prepares!
+            if (thumbnail != null) {
                 Image(
                     bitmap = thumbnail.asImageBitmap(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+            } else {
+                Box(Modifier.fillMaxSize().background(Color(0xFF1E2028)))
+            }
+
+            // ─── Layer 2: Live Video Player crossfades in smoothly only after prepared ───
+            if (focused && isCached && downloadProgress == null) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.45f to Color.Transparent,
-                                1f to Color(0xDD000000)
-                            )
-                        )
-                )
-            } else {
-                // First-frame scenic gradient backdrop fallback
-                Box(Modifier.fillMaxSize().background(Brush.linearGradient(gradColors)))
-                Box(Modifier.fillMaxSize().background(Color(0x0AFFFFFF)))
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        video.location.take(2).uppercase(),
-                        style = Ty.Display.copy(
-                            color = Color.White.copy(alpha = 0.10f),
-                            fontSize = 48.sp,
-                            fontWeight = FontWeight.Black
-                        )
+                        .graphicsLayer { alpha = videoAlpha }
+                ) {
+                    LiveCardVideoPreview(
+                        url = video.url,
+                        onPrepared = { isVideoPlaying = true }
                     )
                 }
             }
 
-            // Top-right badge
-            Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+            // Gradient scrim for text contrast
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.45f to Color.Transparent,
+                            1f to Color(0xEE000000)
+                        )
+                    )
+            )
+
+            // Top-Right High-Contrast Badge (Deep Opaque Black Glass: 100% visible on any bright sky/cloud)
+            Box(Modifier.align(Alignment.TopEnd).padding(7.dp)) {
                 when {
-                    downloadProgress != null -> StatusChip("${downloadProgress.percent}%", Color(0xFF0A84FF))
+                    downloadProgress != null -> StatusChip("${downloadProgress.percent}%", Color(0xFF64B5F6), Icons.Rounded.Refresh)
                     focused && isCached      -> StatusChip("Live ▶", Color(0xFF30D158))
-                    isSelected               -> StatusChip("Active ✓", Color(0xFF0A84FF))
-                    isCached                 -> StatusChip("✓ Saved", Color(0xFF30D158))
-                    else                     -> StatusChip("${video.sizeMb} MB", Color(0x33FFFFFF))
+                    isCached                 -> StatusChip("Saved ✓", Color(0xFF30D158))
+                    else                     -> StatusChip("${video.sizeMb} MB", Color(0xFFE8E8E8), Icons.Rounded.Download)
                 }
             }
 
@@ -839,7 +1011,7 @@ private fun AerialThumbnailCard(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(Color(0xD9000000))
+                        .background(Color(0xE6000000))
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -886,12 +1058,20 @@ private fun AerialThumbnailCard(
 
                         Text(
                             "${String.format(Locale.US, "%.1f", downloadProgress.downloadedMb)} / ${video.sizeMb} MB",
-                            style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 11.sp)
+                            style = Ty.Small.copy(color = Color(0xCCFFFFFF), fontSize = 11.sp)
+                        )
+                        Text(
+                            if (focused) "Press OK to cancel" else "Downloading…",
+                            style = Ty.Small.copy(
+                                color = if (focused) Color(0xFFFF8A80) else Color(0x99FFFFFF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         )
                     }
                 }
             } else {
-                // Bottom overlay: title + size + options
+                // Bottom overlay: title + size / delete hint
                 Column(
                     Modifier
                         .align(Alignment.BottomStart)
@@ -909,15 +1089,12 @@ private fun AerialThumbnailCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        when {
-                            isCached -> {
-                                Icon(Icons.Rounded.MoreVert, null, tint = Color(0xCCFFFFFF), modifier = Modifier.size(12.dp))
-                                Text("${video.sizeMb} MB · Options", style = Ty.Small.copy(color = Color(0xCCFFFFFF), fontSize = 11.sp))
-                            }
-                            else -> {
-                                Icon(Icons.Rounded.Download, null, tint = Color(0x99FFFFFF), modifier = Modifier.size(11.dp))
-                                Text("${video.sizeMb} MB · Download", style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 11.sp))
-                            }
+                        if (isCached) {
+                            Icon(Icons.Rounded.DeleteOutline, null, tint = Color(0xFFFF8A80), modifier = Modifier.size(11.dp))
+                            Text("Click to delete", style = Ty.Small.copy(color = Color(0xFFFF8A80), fontSize = 11.sp, fontWeight = FontWeight.Medium))
+                        } else {
+                            Icon(Icons.Rounded.Download, null, tint = Color(0xCCFFFFFF), modifier = Modifier.size(11.dp))
+                            Text("Click to download", style = Ty.Small.copy(color = Color(0xCCFFFFFF), fontSize = 11.sp))
                         }
                     }
                 }
@@ -932,9 +1109,10 @@ private fun AerialThumbnailCard(
 @Composable
 private fun LiveCardVideoPreview(
     url: String,
-    onFirstFrameCaptured: (Bitmap) -> Unit
+    onPrepared: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val latestOnPrepared by rememberUpdatedState(onPrepared)
 
     AndroidView(
         factory = { ctx ->
@@ -945,41 +1123,53 @@ private fun LiveCardVideoPreview(
                 )
                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     var player: MediaPlayer? = null
+                    var surface: Surface? = null
+
+                    fun releaseAll() {
+                        player?.let { p ->
+                            runCatching {
+                                p.setOnPreparedListener(null)
+                                p.setOnErrorListener(null)
+                            }
+                            runCatching { p.reset() }
+                            runCatching { p.release() }
+                        }
+                        player = null
+                        runCatching { surface?.release() }
+                        surface = null
+                    }
 
                     override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                        releaseAll()
+                        if (!AerialVideoCache.isCached(context, url)) return // previews are local-only
                         try {
+                            val s = Surface(st)
+                            surface = s
                             val mp = MediaPlayer()
                             player = mp
-                            mp.setSurface(Surface(st))
-                            val playSource = AerialVideoCache.getPlayableSource(context, url)
-                            mp.setDataSource(playSource)
+                            mp.setSurface(s)
+                            mp.setDataSource(AerialVideoCache.getPlayableSource(context, url))
                             mp.isLooping = true
-                            mp.setVolume(0f, 0f) // Silent preview
-                            mp.setOnPreparedListener {
-                                mp.start()
-                            }
-                            mp.setOnInfoListener { _, what, _ ->
-                                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                                    postDelayed({
-                                        bitmap?.let { bmp -> onFirstFrameCaptured(bmp) }
-                                    }, 250)
-                                }
-                                true
-                            }
+                            mp.setVolume(0f, 0f)
                             mp.setOnErrorListener { _, _, _ -> true }
+                            mp.setOnPreparedListener { p ->
+                                runCatching {
+                                    p.start()
+                                    p.seekTo(1500)
+                                    latestOnPrepared()
+                                }
+                            }
                             mp.prepareAsync()
-                        } catch (_: Exception) {}
+                        } catch (_: Throwable) {
+                            releaseAll()
+                        }
                     }
 
                     override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
-
                     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                        player?.stop()
-                        player?.release()
-                        player = null
+                        releaseAll()
                         return true
                     }
-
                     override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
                 }
             }
@@ -989,50 +1179,103 @@ private fun LiveCardVideoPreview(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Idle Timer Row Component
+// Idle Timer Row (Clearly shows the currently selected timer & updates instantly)
 // ─────────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun IdleTimerRow(
     idleMinutes: Int,
-    onMoveUp: () -> Unit,
     onSelectIdleMinutes: (Int) -> Unit
 ) {
+    var activeMins by remember(idleMinutes) { mutableIntStateOf(idleMinutes) }
+
+    val timerOptions = listOf(
+        1 to "1 min",
+        2 to "2 min",
+        3 to "3 min",
+        5 to "5 min",
+        10 to "10 min",
+        15 to "15 min",
+        0 to "Never"
+    )
+
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            "IDLE TIMER",
-            style = Ty.Small.copy(color = Color(0x44FFFFFF), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp)
-        )
-        Spacer(Modifier.width(4.dp))
-        listOf(2 to "2 min", 5 to "5 min", 10 to "10 min", 15 to "15 min", 0 to "Off").forEach { (mins, label) ->
-            val sel = idleMinutes == mins
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(Icons.Rounded.Timer, null, tint = Color(0x99FFFFFF), modifier = Modifier.size(16.dp))
+            Text(
+                "IDLE TIMER",
+                style = Ty.Small.copy(color = Color(0x77FFFFFF), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp)
+            )
+            Text(
+                if (activeMins > 0) "($activeMins min)" else "(Disabled)",
+                style = Ty.Small.copy(color = Color(0xFF64B5F6), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        timerOptions.forEachIndexed { index, (mins, label) ->
+            val sel = activeMins == mins
+            val isFirst = index == 0
+            val isLast = index == timerOptions.size - 1
+
             Focusable(
-                onClick = { onSelectIdleMinutes(mins) },
-                modifier = Modifier
-                    .weight(1f)
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
-                            ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                            onMoveUp()
-                            true
-                        } else false
-                    },
+                onClick = {
+                    activeMins = mins
+                    onSelectIdleMinutes(mins)
+                },
+                modifier = Modifier.focusProperties {
+                    if (isFirst) left = FocusRequester.Cancel
+                    if (isLast) right = FocusRequester.Cancel
+                },
                 shape = RoundedCornerShape(10.dp),
-                idle = if (sel) Color(0x330A84FF) else Color(0x10FFFFFF),
-                idleOutline = sel
-            ) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        label,
-                        style = Ty.Body.copy(
-                            color = if (sel) Color(0xFF64B5F6) else Color.White,
-                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 13.sp
+                idle = Color.Transparent,
+                scaleOnFocus = 1.05f
+            ) { focused ->
+                // Ensure the background is ALWAYS visible and distinct:
+                // If selected: bright vivid blue (#0A84FF), slightly brighter on focus (#2997FF)
+                // If unselected: dark glass (#18FFFFFF), lighter on focus (#38FFFFFF)
+                val pillBackground = when {
+                    sel && focused -> Color(0xFF2997FF)
+                    sel            -> Color(0xFF0A84FF)
+                    focused        -> Color(0x38FFFFFF)
+                    else           -> Color(0x18FFFFFF)
+                }
+
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(pillBackground)
+                        .border(
+                            width = if (focused) 1.5.dp else if (sel) 1.dp else 0.dp,
+                            color = if (focused) Color.White else if (sel) Color(0x66FFFFFF) else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp)
                         )
-                    )
+                        .padding(horizontal = 11.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (sel) {
+                            Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                        }
+                        Text(
+                            label,
+                            style = Ty.Body.copy(
+                                color = Color.White,
+                                fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 12.sp
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -1040,191 +1283,136 @@ private fun IdleTimerRow(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Video Action Popup Dialog (Set as Solo / Toggle Multi-Select / Loop All / Delete)
+// Confirm Delete Single Scene Dialog (Delete & Cancel: Same type & size)
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun VideoActionDialog(
+private fun ConfirmDeleteSingleDialog(
     video: AppleAerialVideo,
-    isSelected: Boolean,
-    isSole: Boolean,
-    hasSelection: Boolean,
-    onToggleSole: () -> Unit,
-    onToggleMultiSelect: () -> Unit,
-    onLoopAll: () -> Unit,
-    onDelete: () -> Unit,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val dialogFocus = rememberAutoFocus()
+    val dialogFocus = remember { FocusRequester() }
+    val deleteBtnFocus = remember { FocusRequester() }
+    val cancelBtnFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(60)
+        deleteBtnFocus.requestFocus()
+    }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color(0xBF000000))
-            .modalTrap()
+            .modalTrap(autoFocus = false)
             .onPreviewKeyEvent { ev ->
                 if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
                     (ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
                      ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE)
-                ) {
-                    if (videoForAction != null) {
-                        videoForAction = null
-                        true
-                    } else if (confirmDeleteAll) {
-                        confirmDeleteAll = false
-                        true
-                    } else {
-                        onDismiss()
-                        true
-                    }
-                } else false
+                ) { onDismiss(); true } else false
             },
         contentAlignment = Alignment.Center
     ) {
         Column(
             Modifier
-                .width(460.dp)
-                .clip(RoundedCornerShape(24.dp))
+                .width(440.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(Brush.verticalGradient(listOf(Color(0xFF282830), Color(0xFF18181E))))
-                .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(24.dp))
+                .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(22.dp))
                 .padding(24.dp)
                 .focusGroup()
+                .focusProperties { exit = { FocusRequester.Cancel } }
                 .focusRestorer(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Icon(Icons.Rounded.Tv, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(36.dp))
+            Icon(Icons.Rounded.DeleteOutline, null, tint = Color(0xFFFF5252), modifier = Modifier.size(36.dp))
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    video.location,
+                    "Delete Scene?",
                     style = Ty.Title.copy(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    video.subtext,
+                    "${video.location} · ${video.subtext}",
                     style = Ty.Body.copy(color = Color(0xCCFFFFFF), fontSize = 14.sp),
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${video.sizeMb} MB · Saved on TV",
-                    style = Ty.Small.copy(color = Color(0xFF81C784), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    "This will free ${video.sizeMb} MB from your TV storage.",
+                    style = Ty.Small.copy(color = Color(0x88FFFFFF), fontSize = 12.sp)
                 )
             }
 
             Spacer(Modifier.height(2.dp))
 
-            // Action 1: Set as Sole Screensaver / Switch to Loop All
-            Focusable(
-                onClick = onToggleSole,
-                modifier = Modifier.fillMaxWidth().focusRequester(dialogFocus),
-                shape = RoundedCornerShape(14.dp),
-                idle = if (isSole) Color(0x280A84FF) else Color(0x18FFFFFF),
-                idleOutline = isSole
+            // Delete & Cancel buttons: EXACT SAME TYPE & SIZE
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        if (isSole) Icons.Rounded.Loop else Icons.Rounded.PlayCircle,
-                        null,
-                        tint = if (isSole) Color(0xFF64B5F6) else Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (isSole) "Switch to Loop All Saved" else "Set as Sole Screensaver",
-                        style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    )
-                }
-            }
-
-            // Action 2: Add to / Remove from Multi-Select Playlist
-            Focusable(
-                onClick = onToggleMultiSelect,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                idle = if (isSelected && !isSole) Color(0x280A84FF) else Color(0x18FFFFFF),
-                idleOutline = isSelected && !isSole
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.AddCircleOutline,
-                        null,
-                        tint = if (isSelected) Color(0xFF30D158) else Color(0xCCFFFFFF),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (isSelected) "Remove from Playlist" else "Add to Screensaver Playlist",
-                        style = Ty.Body.copy(color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    )
-                }
-            }
-
-            // Action 3: Loop All Saved Scenes (if currently filtered)
-            if (hasSelection) {
                 Focusable(
-                    onClick = onLoopAll,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    idle = Color(0x12FFFFFF)
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(deleteBtnFocus)
+                        .focusProperties {
+                            left = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                            down = FocusRequester.Cancel
+                            right = cancelBtnFocus
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    idle = Color(0xFFFF3B30),
+                    scaleOnFocus = 1.03f
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Rounded.PlaylistPlay, null, tint = Color(0xCCFFFFFF), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            "Loop All Saved Scenes",
-                            style = Ty.Body.copy(color = Color(0xEEFFFFFF), fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            "Delete",
+                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
+
+                Focusable(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(cancelBtnFocus)
+                        .focusProperties {
+                            right = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                            down = FocusRequester.Cancel
+                            left = deleteBtnFocus
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    idle = Color(0x22FFFFFF),
+                    scaleOnFocus = 1.03f
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Cancel",
+                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         )
                     }
                 }
             }
-
-            // Action 4: Delete from TV Storage
-            Focusable(
-                onClick = onDelete,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                idle = Color(0x28FF453A)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Rounded.Delete, null, tint = Color(0xFFFF453A), modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Delete from TV Storage",
-                        style = Ty.Body.copy(color = Color(0xFFFF453A), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    )
-                }
-            }
-
-            TvButton(
-                text = "Cancel",
-                onClick = onDismiss,
-                primary = false,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Confirm Delete All Dialog
+// Confirm Delete All Dialog (Delete All & Cancel: Same type & size)
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -1234,29 +1422,24 @@ private fun ConfirmDeleteAllDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val deleteDialogFocus = rememberAutoFocus()
+    val deleteBtnFocus = remember { FocusRequester() }
+    val cancelBtnFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(60)
+        deleteBtnFocus.requestFocus()
+    }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color(0xBF000000))
-            .modalTrap()
+            .modalTrap(autoFocus = false)
             .onPreviewKeyEvent { ev ->
                 if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
                     (ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
                      ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE)
-                ) {
-                    if (videoForAction != null) {
-                        videoForAction = null
-                        true
-                    } else if (confirmDeleteAll) {
-                        confirmDeleteAll = false
-                        true
-                    } else {
-                        onDismiss()
-                        true
-                    }
-                } else false
+                ) { onDismiss(); true } else false
             },
         contentAlignment = Alignment.Center
     ) {
@@ -1268,6 +1451,7 @@ private fun ConfirmDeleteAllDialog(
                 .border(1.dp, Color(0x28FFFFFF), RoundedCornerShape(24.dp))
                 .padding(26.dp)
                 .focusGroup()
+                .focusProperties { exit = { FocusRequester.Cancel } }
                 .focusRestorer(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -1282,38 +1466,97 @@ private fun ConfirmDeleteAllDialog(
                 style = Ty.Body.copy(color = Color(0xBBFFFFFF), fontSize = 14.sp),
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(2.dp))
+
+            // Delete & Cancel buttons: EXACT SAME TYPE & SIZE
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Focusable(
                     onClick = onConfirm,
-                    modifier = Modifier.weight(1f).focusRequester(deleteDialogFocus),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(deleteBtnFocus)
+                        .focusProperties {
+                            left = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                            down = FocusRequester.Cancel
+                            right = cancelBtnFocus
+                        },
                     shape = RoundedCornerShape(12.dp),
-                    idle = Color(0xFFFF453A)
+                    idle = Color(0xFFFF453A),
+                    scaleOnFocus = 1.03f
                 ) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                        Text("Delete All", style = Ty.Button.copy(color = Color.White, fontWeight = FontWeight.Bold))
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Delete All",
+                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        )
                     }
                 }
-                TvButton(text = "Cancel", onClick = onDismiss, primary = false, modifier = Modifier.weight(1f))
+
+                Focusable(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(cancelBtnFocus)
+                        .focusProperties {
+                            right = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                            down = FocusRequester.Cancel
+                            left = deleteBtnFocus
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    idle = Color(0x22FFFFFF),
+                    scaleOnFocus = 1.03f
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Cancel",
+                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pill Chip Badge
+// High-Contrast Dark Pill Badge (Solid near-black backdrop: 100% visible on ANY background)
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun StatusChip(text: String, bg: Color) {
+private fun StatusChip(
+    text: String,
+    textColor: Color = Color.White,
+    icon: ImageVector? = null
+) {
     Box(
         Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(bg.copy(alpha = 0.88f))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(Color(0xF0121216)) // 94% opaque dark glass background
+            .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(7.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp)
     ) {
-        Text(
-            text,
-            style = Ty.Small.copy(color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (icon != null) {
+                Icon(icon, null, tint = textColor, modifier = Modifier.size(11.dp))
+            }
+            Text(
+                text,
+                style = Ty.Small.copy(color = textColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            )
+        }
     }
 }

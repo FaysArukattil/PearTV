@@ -209,6 +209,10 @@ fun HomeScreen(vm: LauncherViewModel) {
     val s by vm.state.collectAsState()
     val view = LocalView.current
 
+    // Screensaver source settings: saved in Journal, held here so the UI updates instantly.
+    var screensaverAutoCache by remember { mutableStateOf(vm.journal.screensaverAutoCache) }
+    var screensaverSelectedUrl by remember { mutableStateOf(vm.journal.screensaverSelectedUrl) }
+
     // ─── App Launch / Close Spatial Transition State ───
     // • Open: tactile press & pop with ascending chime + native makeScaleUpAnimation from tile bounds
     // • Close: soothing return droplet chime + 100% GPU-accelerated Apple depth breathe-in and landing spring
@@ -371,8 +375,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 AppleTvScreensaver(
                                     mode = s.screensaverMode,
                                     customPath = s.screensaverCustomPath,
-                                    selectedUrl = s.screensaverSelectedUrl,
-                                    autoCache = s.screensaverAutoCache,
+                                    selectedUrl = screensaverSelectedUrl,
+                                    autoCache = screensaverAutoCache,
                                     onDismiss = vm::closeScreensaver
                                 )
                             }
@@ -709,12 +713,18 @@ fun HomeScreen(vm: LauncherViewModel) {
                     currentMode = s.screensaverMode,
                     customPath = s.screensaverCustomPath,
                     idleMinutes = s.screensaverIdleMinutes,
-                    autoCache = s.screensaverAutoCache,
-                    selectedUrl = s.screensaverSelectedUrl,
+                    autoCache = screensaverAutoCache,
+                    selectedUrl = screensaverSelectedUrl,
+                    onToggleAutoCache = { enabled ->
+                        vm.journal.screensaverAutoCache = enabled
+                        screensaverAutoCache = enabled
+                    },
+                    onSelectVideoUrl = { url ->
+                        vm.journal.screensaverSelectedUrl = url
+                        screensaverSelectedUrl = url
+                    },
                     onSelectMode = vm::setScreensaverMode,
                     onSelectIdleMinutes = vm::setScreensaverIdleMinutes,
-                    onToggleAutoCache = vm::setScreensaverAutoCache,
-                    onSelectVideoUrl = vm::setScreensaverSelectedUrl,
                     onPickPath = {
                         vm.closeScreensaverSettings()
                         vm.openFileManager(
