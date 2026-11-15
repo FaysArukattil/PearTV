@@ -81,12 +81,18 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Dp
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.shadow
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.geometry.Rect
@@ -197,7 +203,7 @@ import com.leantv.app.ui.WALLPAPER_THEMES
 import com.leantv.app.ui.rememberAutoFocus
 import kotlinx.coroutines.delay
 import java.util.Locale
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(vm: LauncherViewModel) {
     val s by vm.state.collectAsState()
@@ -450,26 +456,27 @@ fun HomeScreen(vm: LauncherViewModel) {
                 val gridRows = remember(gridApps) { gridApps.chunked(cols) }
                 val hasDock = dock.isNotEmpty()
 
-                // 2-row windowed glide: exactly 2 full rows are displayed in the viewport.
-                // Holding or pressing D-pad glides smoothly into place without cutting any row in its name area.
-                var topVisibleRow by remember { mutableIntStateOf(-1) }
+                // Suppress Compose's automatic partial-pixel bringIntoView scrolling so rows never get cut in half.
+                @OptIn(ExperimentalFoundationApi::class)
+                val noOpBringIntoViewSpec = remember {
+                    object : BringIntoViewSpec {
+                        override val scrollAnimationSpec: AnimationSpec<Float> = tween(0)
+                        override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+                    }
+                }
+
+                // Aligned row glide: Every scroll lands on item boundary (offset = 0) with smooth easing.
+                // When on Dock or Row 0: Dock + Title + Row 0 fit on screen together without any row cut off!
+                // When moving down to Row 1+: glides so Row (r - 1) is at the top and Row r is at bottom.
+                // Exactly complete rows are visible without ever slicing through any tile or name area.
                 LaunchedEffect(hasDock) {
                     snapshotFlow { focusedGridRowState.intValue }.collectLatest { r ->
-                        if (r == -1) {
-                            topVisibleRow = -1
-                            smoothScrollToItem(listState, 0)
-                        } else if (topVisibleRow == -1) {
-                            topVisibleRow = 0
-                            smoothScrollToItem(listState, if (hasDock) 2 else 1)
-                        } else if (r > topVisibleRow + 1) {
-                            topVisibleRow = r - 1
-                            val targetIndex = (if (hasDock) 2 else 1) + topVisibleRow
-                            smoothScrollToItem(listState, targetIndex)
-                        } else if (r < topVisibleRow) {
-                            topVisibleRow = r
-                            val targetIndex = (if (hasDock) 2 else 1) + topVisibleRow
-                            smoothScrollToItem(listState, targetIndex)
+                        val target = when {
+                            r <= 0 -> 0 // Dock and Row 0 both keep Dock visible at the top (offset 0)
+                            hasDock -> 2 + (r - 1) // Row 1 keeps Row 0 at top; Row 2 keeps Row 1 at top
+                            else -> 1 + (r - 1)
                         }
+                        smoothScrollToItem(listState, target)
                     }
                 }
 
@@ -545,12 +552,15 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 gap = gap, cols = cols, bandPad = bandPad
                             )
                         } else {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxWidth().height(gridViewportH).clipToBounds(),
-                                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(rowGap)
-                            ) {
+                            CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoViewSpec) {
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clipToBounds(),
+                                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
                             // ─── Pinned Glass Dock (Scrolls away smoothly when moving down into apps) ───
                             if (dock.isNotEmpty()) {
                                 item(key = "dock_bar", contentType = "dock") {
@@ -661,6 +671,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -1018,19 +1029,10 @@ private fun HeroTitle(nameProvider: () -> String, isLoading: Boolean, modifier: 
 
 private val TvGlideEasing = CubicBezierEasing(0.20f, 0.0f, 0.0f, 1.0f)
 
-/** Scrolls so [index] sits at the top, with a silky smooth glide that can be interrupted at any moment. */
+/** Scrolls so [index] sits at the top (offset = 0), with silky smooth glide and no partial-row cuts. */
 private suspend fun smoothScrollToItem(state: LazyListState, index: Int) {
-    val info = state.layoutInfo
-    val item = info.visibleItemsInfo.firstOrNull { it.index == index }
-    if (item != null) {
-        val targetOffset = info.beforeContentPadding
-        val delta = (item.offset - targetOffset).toFloat()
-        if (kotlin.math.abs(delta) > 1f) {
-            state.animateScrollBy(delta, tween(320, easing = TvGlideEasing))
-        }
-    } else {
-        state.animateScrollToItem(index, 0)
-    }
+    if (state.firstVisibleItemIndex == index && state.firstVisibleItemScrollOffset == 0) return
+    state.animateScrollToItem(index, 0)
 }
 
 @Composable
