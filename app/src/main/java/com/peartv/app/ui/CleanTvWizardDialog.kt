@@ -314,8 +314,9 @@ private class Feature(
     val sub: String,
     val c1: Color,
     val c2: Color,
-    val iconSize: Dp = 36.dp,
-    val isLightBg: Boolean = false
+    val iconSize: Dp = 38.dp,
+    val isLightBg: Boolean = false,
+    val fullIconRes: Int? = null
 )
 
 @Composable
@@ -326,9 +327,34 @@ private fun AppleAppIcon(
     isLightBg: Boolean,
     modifier: Modifier = Modifier,
     size: Dp = 54.dp,
-    iconSize: Dp = 36.dp
+    iconSize: Dp = 38.dp,
+    fullIconRes: Int? = null
 ) {
     val squircle = RoundedCornerShape(14.dp)
+    if (fullIconRes != null) {
+        val shadowColor = c1.copy(alpha = 0.55f)
+        Box(
+            modifier = modifier
+                .size(size)
+                .shadow(
+                    elevation = 8.dp,
+                    shape = squircle,
+                    ambientColor = shadowColor,
+                    spotColor = shadowColor
+                )
+                .clip(squircle)
+                .border(1.dp, Brush.verticalGradient(listOf(Color(0x66FFFFFF), Color(0x18FFFFFF))), squircle),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(fullIconRes),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
+    }
+
     val shadowColor = if (isLightBg) Color(0x35000000) else c1.copy(alpha = 0.55f)
     val borderColor = if (isLightBg) {
         Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0x2E000000)))
@@ -375,12 +401,12 @@ private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF5E5CE6), iconSize = 36.dp),
+            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
-            Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFAF52DE), Color(0xFF5856D6), iconSize = 36.dp),
-            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF246BFD), Color(0xFF165AE0), iconSize = 38.dp),
-            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1C20), Color(0xFF101012), iconSize = 38.dp),
+            Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF276BFD), Color(0xFF165AE0), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
+            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 38.dp, isLightBg = false),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -417,7 +443,8 @@ private fun FeatureCard(f: Feature) {
             c1 = f.c1,
             c2 = f.c2,
             isLightBg = f.isLightBg,
-            iconSize = f.iconSize
+            iconSize = f.iconSize,
+            fullIconRes = f.fullIconRes
         )
         Spacer(Modifier.height(10.dp))
         Text(f.title, style = Ty.Heading.copy(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)

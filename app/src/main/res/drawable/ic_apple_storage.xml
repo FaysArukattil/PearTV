@@ -1,18 +1,102 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="28dp"
-    android:height="28dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Storage Segment 1: Apps (Primary Solid) -->
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- Drive Soft Drop Shadow -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M13,2.6V11h8.4C20.95,6.7 17.7,3.45 13,2.6z"/>
-    <!-- Storage Segment 2: Media (Translucent) -->
+        android:fillColor="#2A000000"
+        android:pathData="M 27,26 L 73,26 C 79.1,26 84,30.9 84,37 L 84,67 C 84,73.1 79.1,78 73,78 L 27,78 C 20.9,78 16,73.1 16,67 L 16,37 C 16,30.9 20.9,26 27,26 Z" />
+
+    <!-- Drive Aluminum Enclosure -->
+    <path
+        android:pathData="M 27,23 L 73,23 C 79.1,23 84,27.9 84,34 L 84,64 C 84,70.1 79.1,75 73,75 L 27,75 C 20.9,75 16,70.1 16,64 L 16,34 C 16,27.9 20.9,23 27,23 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="16"
+                android:startY="23"
+                android:endX="84"
+                android:endY="75"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFFFFFFF" />
+                <item android:offset="0.35" android:color="#FFEAEAEF" />
+                <item android:offset="1.0" android:color="#FFD1D1D6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Enclosure Chamfer Border -->
+    <path
+        android:strokeColor="#FFA8A8B0"
+        android:strokeWidth="1"
+        android:pathData="M 27,23 L 73,23 C 79.1,23 84,27.9 84,34 L 84,64 C 84,70.1 79.1,75 73,75 L 27,75 C 20.9,75 16,70.1 16,64 L 16,34 C 16,27.9 20.9,23 27,23 Z" />
+
+    <!-- Top Bevel Specular Sheen -->
+    <path
+        android:strokeColor="#E6FFFFFF"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M 28,24.5 L 72,24.5" />
+
+    <!-- Recessed Storage Breakdown Well -->
+    <path
+        android:fillColor="#FFD6D6DD"
+        android:pathData="M 28.5,37 L 71.5,37 C 74.5,37 77,39.5 77,42.5 C 77,45.5 74.5,48 71.5,48 L 28.5,48 C 25.5,48 23,45.5 23,42.5 C 23,39.5 25.5,37 28.5,37 Z" />
+
+    <!-- 1. Apple Blue (Apps) -->
+    <path
+        android:fillColor="#FF007AFF"
+        android:pathData="M 28.5,37 L 41,37 L 41,48 L 28.5,48 C 25.5,48 23,45.5 23,42.5 C 23,39.5 25.5,37 28.5,37 Z" />
+
+    <!-- 2. Apple Red/Pink (Media) -->
+    <path
+        android:fillColor="#FFFF2D55"
+        android:pathData="M 42,37 L 53,37 L 53,48 L 42,48 Z" />
+
+    <!-- 3. Apple Amber (Photos) -->
+    <path
+        android:fillColor="#FFFF9500"
+        android:pathData="M 54,37 L 63,37 L 63,48 L 54,48 Z" />
+
+    <!-- 4. Apple Purple (System) -->
+    <path
+        android:fillColor="#FFAF52DE"
+        android:pathData="M 64,37 L 70,37 L 70,48 L 64,48 Z" />
+
+    <!-- 5. Apple Silver (Free / Available) -->
+    <path
+        android:fillColor="#FFE5E5EA"
+        android:pathData="M 71,37 L 71.5,37 C 74.5,37 77,39.5 77,42.5 C 77,45.5 74.5,48 71.5,48 L 71,48 Z" />
+
+    <!-- Status LED Glow Halo -->
+    <path
+        android:fillColor="#4D34C759"
+        android:pathData="M 28,60 m -4,0 a 4,4 0 1,1 8,0 a 4,4 0 1,1 -8,0" />
+
+    <!-- Status LED Core (Emerald) -->
+    <path
+        android:pathData="M 28,60 m -2.2,0 a 2.2,2.2 0 1,1 4.4,0 a 2.2,2.2 0 1,1 -4.4,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="26"
+                android:startY="58"
+                android:endX="30"
+                android:endY="62"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF4CD964" />
+                <item android:offset="1.0" android:color="#FF28CD41" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- LED Highlight Point -->
     <path
         android:fillColor="#CCFFFFFF"
-        android:pathData="M13,13v8.4c4.3,-0.45 7.55,-3.7 8.4,-8H13z"/>
-    <!-- Storage Segment 3: System & Cache (Glass Alpha) -->
+        android:pathData="M 27.3,59.3 m -0.7,0 a 0.7,0.7 0 1,1 1.4,0 a 0.7,0.7 0 1,1 -1.4,0" />
+
+    <!-- Drive Port / Speed Indicator Pill -->
     <path
-        android:fillColor="#80FFFFFF"
-        android:pathData="M11,2.6C6.3,3.1 2.6,7 2.6,12s3.7,8.9 8.4,9.4V2.6z"/>
+        android:fillColor="#FF9E9EA6"
+        android:pathData="M 63.5,58 L 75.5,58 C 76.3,58 77,58.7 77,59.5 C 77,60.3 76.3,61 75.5,61 L 63.5,61 C 62.7,61 62,60.3 62,59.5 C 62,58.7 62.7,58 63.5,58 Z" />
 </vector>
