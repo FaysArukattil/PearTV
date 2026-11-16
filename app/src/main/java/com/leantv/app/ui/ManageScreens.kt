@@ -109,7 +109,7 @@ fun RestoreScreen(s: UiState, vm: MainViewModel) {
         Spacer(Modifier.height(6.dp))
         Text(
             if (s.removed.isEmpty()) "Nothing has been removed. Your apps are as the manufacturer left them."
-            else "${s.removed.size} app${if (s.removed.size == 1) "" else "s"} changed by Lean TV. Bring any back here.",
+            else "${s.removed.size} app${if (s.removed.size == 1) "" else "s"} changed by Pear TV. Bring any back here.",
             style = Ty.Dim,
         )
         Spacer(Modifier.height(16.dp))

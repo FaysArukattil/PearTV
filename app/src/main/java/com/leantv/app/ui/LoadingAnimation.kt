@@ -41,8 +41,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+
 /*
- * Lean TV loading visuals.
+ * Pear TV loading visuals.
  *
  * Everything here animates ONLY in the draw phase (animated values are read inside draw lambdas),
  * so a running loader never triggers recomposition or layout -> no jitter, no dropped frames.
@@ -53,79 +57,59 @@ private val LogoInk = Color(0xFFEAF3F2)
 private val SkeletonBase = Color(0xFF1C1C1E)
 private val SkeletonHighlight = Color(0xFF34343A)
 
-/** The Lean TV logo as a spinner: a sweeping amber arc around a softly pulsing play mark. */
+/** The Pear TV logo as a spinner: a breathing, softly pulsing bitten pear logo. */
 @Composable
-fun LeanTvSpinner(modifier: Modifier = Modifier, diameter: Dp = 48.dp) {
-    val transition = rememberInfiniteTransition(label = "leanSpinner")
-    val rotation = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
-        label = "rotation",
-    )
-    val sweep = transition.animateFloat(
-        initialValue = 50f,
-        targetValue = 250f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "sweep",
-    )
-    val pulse = transition.animateFloat(
-        initialValue = 0.86f,
+fun PearTvSpinner(modifier: Modifier = Modifier, diameter: Dp = 48.dp) {
+    val transition = rememberInfiniteTransition(label = "pearSpinner")
+    val alpha = transition.animateFloat(
+        initialValue = 0.45f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(750, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse",
+        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "alpha",
+    )
+    val scale = transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.02f,
+        animationSpec = infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "scale",
     )
 
-    Canvas(modifier.size(diameter)) {
-        val dim = this.size.minDimension
-        val stroke = dim * 0.11f
-        val arcSize = Size(dim - stroke, dim - stroke)
-        val topLeft = Offset(stroke / 2f, stroke / 2f)
-        val ringRadius = arcSize.width / 2f
-
-        // faint track
-        drawCircle(
-            color = LogoAmber.copy(alpha = 0.16f),
-            radius = ringRadius,
-            center = Offset(dim / 2f, dim / 2f),
-            style = Stroke(width = stroke),
+    Box(
+        modifier = modifier
+            .size(diameter)
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+                this.alpha = alpha.value
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(com.leantv.app.R.drawable.ic_fg),
+            contentDescription = "Loading…",
+            modifier = Modifier.fillMaxSize(),
         )
-        // sweeping arc
-        drawArc(
-            color = LogoAmber,
-            startAngle = rotation.value,
-            sweepAngle = sweep.value,
-            useCenter = false,
-            topLeft = topLeft,
-            size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
-        // play mark (same proportions as the app icon)
-        val k = (ringRadius / 52f) * pulse.value
-        val cx = dim / 2f
-        val cy = dim / 2f
-        val play = Path().apply {
-            moveTo(cx - 12f * k, cy - 21f * k)
-            lineTo(cx - 12f * k, cy + 21f * k)
-            lineTo(cx + 24f * k, cy)
-            close()
-        }
-        drawPath(play, LogoInk)
     }
 }
 
+@Composable
+fun LeanTvSpinner(modifier: Modifier = Modifier, diameter: Dp = 48.dp) = PearTvSpinner(modifier, diameter)
+
 /** Spinner + label, centred. Use for any full-area "loading…" state. */
 @Composable
-fun LeanTvLoading(label: String, modifier: Modifier = Modifier) {
+fun PearTvLoading(label: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        LeanTvSpinner(diameter = 52.dp)
+        PearTvSpinner(diameter = 56.dp)
         Text(text = label, color = Color(0x99FFFFFF), fontSize = 18.sp)
     }
 }
+
+@Composable
+fun LeanTvLoading(label: String, modifier: Modifier = Modifier) = PearTvLoading(label, modifier)
 
 /** One shared 0..1 phase that every skeleton block sweeps with, so they shimmer in sync. */
 @Composable

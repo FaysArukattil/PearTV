@@ -31,9 +31,13 @@ import com.leantv.app.data.UiState
 import kotlinx.coroutines.delay
 
 @Composable
-fun LeanTvApp(vm: MainViewModel) {
+fun PearTvApp(vm: MainViewModel) {
     TvCanvas { AppContent(vm) }
 }
+
+@Deprecated("Use PearTvApp instead", ReplaceWith("PearTvApp(vm)"))
+@Composable
+fun LeanTvApp(vm: MainViewModel) = PearTvApp(vm)
 
 @Composable
 private fun AppContent(vm: MainViewModel) {
@@ -165,7 +169,7 @@ private fun Rail(s: UiState, vm: MainViewModel) {
             .background(Color(0x40000000))
             .padding(start = 28.dp, end = 16.dp, top = Safe.V, bottom = Safe.V),
     ) {
-        Text("Lean TV", style = Ty.Title.copy(color = Pal.Amber), modifier = Modifier.padding(start = 16.dp))
+        Text(androidx.compose.ui.res.stringResource(com.leantv.app.R.string.app_name), style = Ty.Title.copy(color = Pal.Amber), modifier = Modifier.padding(start = 16.dp))
         Spacer(Modifier.height(20.dp))
         val context = androidx.compose.ui.platform.LocalContext.current
         RailItem("Home screen", false, {

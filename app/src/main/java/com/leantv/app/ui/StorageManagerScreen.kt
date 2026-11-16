@@ -220,7 +220,7 @@ fun StorageManagerScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                LeanTvLoading("Analyzing TV storage...")
+                PearTvLoading("Analyzing TV storage...")
             }
         } else {
             when (selectedCategory) {

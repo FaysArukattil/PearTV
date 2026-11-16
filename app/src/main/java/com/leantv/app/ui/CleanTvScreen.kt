@@ -691,7 +691,7 @@ fun CleanTvScreen(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    LeanTvLoading("Analyzing TV applications and storage...")
+                    PearTvLoading("Analyzing TV applications and storage...")
                 }
             } else {
                 // ─────────────────────────────────────────────────────────────

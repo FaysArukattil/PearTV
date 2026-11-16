@@ -54,7 +54,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun Spinner(modifier: Modifier = Modifier) {
-    LeanTvSpinner(modifier = modifier, diameter = 44.dp)
+    PearTvSpinner(modifier = modifier, diameter = 44.dp)
 }
 
 // ---------------------------------------------------------------- Welcome
@@ -177,7 +177,7 @@ fun SetupScreen(s: UiState, vm: MainViewModel) {
             Text("Connect to your TV", style = Ty.Title)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Lean TV needs USB debugging switched on so it can manage apps for you. It takes about a minute.",
+                "Pear TV needs USB debugging switched on so it can manage apps for you. It takes about a minute.",
                 style = Ty.Dim,
             )
             Spacer(Modifier.height(22.dp))

@@ -331,7 +331,7 @@ fun StorageAppsView(
     // ======================================================================
     if (loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            LeanTvLoading("Sorting your apps...")
+            PearTvLoading("Sorting your apps...")
         }
         return
     }
