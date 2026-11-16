@@ -81,8 +81,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -237,30 +240,6 @@ private fun LogoHero(size: Dp = 140.dp) {
                 .background(Brush.radialGradient(listOf(Color(0x55FFB347), Color.Transparent)), CircleShape)
         )
         LogoMark(size)
-    }
-}
-
-@Composable
-private fun GradientIcon(icon: ImageVector, size: Int = 120) {
-    val t = rememberInfiniteTransition(label = "pulse")
-    val s by t.animateFloat(
-        1f, 1.16f,
-        infiniteRepeatable(tween(1900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulseScale"
-    )
-    Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size((size + 36).dp)
-                .graphicsLayer { scaleX = s; scaleY = s; alpha = 0.28f }
-                .clip(CircleShape).background(Color(0xFF0A84FF))
-        )
-        Box(
-            Modifier.size(size.dp).clip(CircleShape)
-                .background(Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF64D2FF)))),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size((size * 0.5f).dp))
-        }
     }
 }
 
@@ -468,6 +447,12 @@ private class PermSpec(
     val runtime: Array<String>? = null,
     val intents: (Context) -> List<Intent> = { emptyList() },
     val isAdb: Boolean = false,
+    val iconRes: Int? = null,
+    val fullIconRes: Int? = null,
+    val isLightBg: Boolean = false,
+    val iconBgColor: Color = Color(0xFF0A84FF),
+    val iconBgColor2: Color = Color(0xFF64D2FF),
+    val badgeTitle: String = "PRIVACY & ACCESS",
 )
 
 private fun usageAllowed(ctx: Context): Boolean = try {
@@ -492,14 +477,18 @@ private fun findActivity(ctx: Context): Activity? {
 
 private fun filesSpec() = PermSpec(
     icon = Icons.Rounded.Folder,
-    title = "Files & storage",
-    why = "LeanTV has a built-in file manager and storage cleaner. Both need access to your files.",
+    iconRes = R.drawable.ic_apple_files,
+    isLightBg = true,
+    badgeTitle = "PRIVACY & ACCESS",
+    title = "“Pear TV” Would Like to Access Files and Storage",
+    why = "This allows Pear TV to browse your files, organize media, clean residual app caches, and receive transfers via Quick Share. Your data remains strictly private on this TV.",
     bullets = listOf(
-        "File manager: browse, copy, move and delete files",
-        "Storage manager: find big files and junk, then clear them",
-        "Quick Share: save files received from your phone"
+        "File Manager • Browse, copy, move, and organize all local storage",
+        "Storage Cleaner • Safely identify and delete unnecessary residual junk",
+        "Quick Share • Receive photos, videos, and APKs sent from nearby devices",
+        "Strictly Private • No telemetry, uploads, or tracking of your files"
     ),
-    manualHint = "Turn the switch on for LeanTV, then press Back.",
+    manualHint = "Turn the switch on for Pear TV in All files access, then press Back.",
     granted = { ctx ->
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
         else allGranted(ctx, arrayOf("android.permission.WRITE_EXTERNAL_STORAGE"))
@@ -516,10 +505,17 @@ private fun filesSpec() = PermSpec(
 
 private fun usageSpec() = PermSpec(
     icon = Icons.Rounded.BarChart,
-    title = "Usage access",
-    why = "Lets LeanTV see how big each app really is and how often you use it.",
-    bullets = listOf("Accurate app and cache sizes", "Finds apps you never open", "Powers the storage charts"),
-    manualHint = "Find LeanTV in the list, turn it on, then press Back.",
+    iconRes = R.drawable.ic_apple_storage_brand,
+    isLightBg = true,
+    badgeTitle = "STORAGE ANALYTICS",
+    title = "“Pear TV” Would Like Usage Access",
+    why = "Allows Pear TV to inspect app storage footprints and identify rarely opened applications to help optimize TV performance.",
+    bullets = listOf(
+        "Accurate Sizing • Measure true application sizes and cache consumption",
+        "Unused Apps • Discover preinstalled apps you rarely launch",
+        "Storage Insights • Powers real-time visual storage breakdown charts"
+    ),
+    manualHint = "Select Pear TV in the list, toggle Permit usage access, then press Back.",
     granted = { usageAllowed(it) },
     intents = { listOf(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
 )
@@ -537,11 +533,19 @@ private fun nearbySpec(): PermSpec {
     }
     return PermSpec(
         icon = Icons.Rounded.Bluetooth,
-        title = "Nearby devices",
-        why = if (Build.VERSION.SDK_INT >= 31) "Quick Share uses Bluetooth and Wi-Fi to find phones on your network."
-              else "Android needs the location permission to scan for phones. Your location is never read or stored.",
-        bullets = listOf("TV shows up on phones on the same Wi-Fi", "Receive photos, videos and files", "Only active while Quick Share is on"),
-        manualHint = "Open Permissions in App Info and allow it for LeanTV.",
+        fullIconRes = R.drawable.ic_quick_share_official,
+        iconBgColor = Color(0xFF2870FD),
+        iconBgColor2 = Color(0xFF1456DA),
+        badgeTitle = "LOCAL NETWORK",
+        title = "“Pear TV” Would Like to Find Nearby Devices",
+        why = if (Build.VERSION.SDK_INT >= 31) "Enables Quick Share to discover and exchange files with phones on your local Wi-Fi and Bluetooth network."
+              else "Required by Android to discover nearby phones over Bluetooth. Your location is never tracked or stored.",
+        bullets = listOf(
+            "Instant Discovery • TV appears automatically on nearby phones",
+            "Wireless Transfer • Receive photos, videos, APKs, and documents",
+            "On-Demand • Only broadcasts while Quick Share is actively open"
+        ),
+        manualHint = "Open Permissions in App Info and allow Nearby devices for Pear TV.",
         granted = { allGranted(it, perms) },
         runtime = perms
     )
@@ -549,20 +553,95 @@ private fun nearbySpec(): PermSpec {
 
 private fun debugSpec() = PermSpec(
     icon = Icons.Rounded.Code,
-    title = "USB debugging (ADB)",
-    why = "Needed to delete system apps and bloat. Everything stays on this TV.",
+    iconBgColor = Color(0xFF2C2C2E),
+    iconBgColor2 = Color(0xFF1C1C1E),
+    badgeTitle = "DEVELOPER PRIVILEGES",
+    title = "USB Debugging Access (ADB)",
+    why = "Required for the one-tap TV cleaner to safely remove preinstalled bloatware and ad services. All operations run directly on this TV.",
     bullets = listOf(
-        "Delete or disable any app, even preinstalled ones",
-        "Run the one-tap TV cleaner",
-        "When asked “Allow USB debugging?”, tick Always allow"
+        "Remove Bloat • Safely disable or uninstall preinstalled factory apps",
+        "One-Tap Clean • Terminate background advertising and tracking processes",
+        "On-Screen Prompt • Check “Always allow from this computer” when prompted"
     ),
-    manualHint = "Turn on USB debugging (if hidden: About, tap Build 7 times), then come back.",
+    manualHint = "Enable USB debugging in Developer Options, then return to Pear TV.",
     granted = { ctx -> try { Settings.Global.getInt(ctx.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1 } catch (_: Exception) { false } },
     intents = {
         listOf(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS), Intent(Settings.ACTION_DEVICE_INFO_SETTINGS), Intent(Settings.ACTION_SETTINGS))
     },
     isAdb = true
 )
+
+@Composable
+private fun ApplePermissionHero(
+    spec: PermSpec,
+    size: Dp = 150.dp
+) {
+    val t = rememberInfiniteTransition(label = "heroPulse")
+    val s by t.animateFloat(
+        1f, 1.14f,
+        infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "heroScale"
+    )
+    val squircle = RoundedCornerShape(38.dp)
+    val glowColor = if (spec.isLightBg) Color(0x350084FF) else spec.iconBgColor.copy(alpha = 0.35f)
+
+    Box(contentAlignment = Alignment.Center) {
+        // Soft Apple ambient glow behind
+        Box(
+            Modifier
+                .size(size * 1.35f)
+                .graphicsLayer { scaleX = s; scaleY = s }
+                .background(Brush.radialGradient(listOf(glowColor, Color.Transparent)), CircleShape)
+        )
+
+        // Apple squircle container
+        Box(
+            modifier = Modifier
+                .size(size)
+                .shadow(
+                    elevation = 20.dp,
+                    shape = squircle,
+                    ambientColor = if (spec.isLightBg) Color(0x40000000) else spec.iconBgColor.copy(alpha = 0.5f),
+                    spotColor = if (spec.isLightBg) Color(0x40000000) else spec.iconBgColor.copy(alpha = 0.5f)
+                )
+                .clip(squircle)
+                .background(
+                    if (spec.fullIconRes != null) Brush.linearGradient(listOf(spec.iconBgColor, spec.iconBgColor2))
+                    else if (spec.isLightBg) Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFEFF1F4)))
+                    else Brush.linearGradient(listOf(spec.iconBgColor, spec.iconBgColor2))
+                )
+                .border(
+                    1.5.dp,
+                    if (spec.isLightBg) Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0x33000000)))
+                    else Brush.verticalGradient(listOf(Color(0x55FFFFFF), Color(0x18FFFFFF))),
+                    squircle
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (spec.fullIconRes != null) {
+                Image(
+                    painter = painterResource(spec.fullIconRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (spec.iconRes != null) {
+                Image(
+                    painter = painterResource(spec.iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(size * 0.62f)
+                )
+            } else {
+                Icon(
+                    spec.icon,
+                    contentDescription = null,
+                    tint = if (spec.isLightBg) Color(0xFF1D1D1F) else Color.White,
+                    modifier = Modifier.size(size * 0.52f)
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun PermissionPage(
@@ -614,7 +693,7 @@ private fun PermissionPage(
             val act = findActivity(ctx)
             val blocked = act != null && res.filter { !it.value }.keys.any { !act.shouldShowRequestPermissionRationale(it) }
             if (blocked) {
-                hint = "Android blocked the pop-up. Open Permissions and allow it for LeanTV."
+                hint = "Android blocked the pop-up. Open Permissions and allow it for Pear TV."
                 tryStart(ctx, listOf(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))))
             } else hint = "Not allowed yet. You can allow it any time in App Info."
         }
@@ -633,49 +712,96 @@ private fun PermissionPage(
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(64.dp), verticalAlignment = Alignment.CenterVertically) {
-        FadeUp(0) { GradientIcon(spec.icon, 150) }
+        FadeUp(0) { ApplePermissionHero(spec, 150.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FadeUp(60) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(50)).background(if (granted) Color(0x3330D158) else Color(0x3364D2FF))
-                        .padding(horizontal = 14.dp, vertical = 5.dp),
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (granted) Color(0x3330D158) else Color(0x280A84FF))
+                        .border(1.dp, if (granted) Color(0x5530D158) else Color(0x400A84FF), RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (granted) { Icon(Icons.Rounded.Check, null, tint = Color(0xFF30D158), modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
+                    if (granted) {
+                        Icon(Icons.Rounded.Check, null, tint = Color(0xFF30D158), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(
-                        if (granted) "ALLOWED" else "PERMISSION $index OF $total",
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp,
+                        if (granted) "ACCESS GRANTED" else "STEP $index OF $total  •  ${spec.badgeTitle}",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
                         color = if (granted) Color(0xFF30D158) else Color(0xFF64D2FF)
                     )
                 }
             }
-            FadeUp(120) { Text(spec.title, style = Ty.Title.copy(color = Color.White, fontSize = 44.sp)) }
-            FadeUp(180) { Text(spec.why, style = Ty.Dim.copy(fontSize = 21.sp, color = Color(0xCCFFFFFF))) }
-            Spacer(Modifier.height(2.dp))
+            FadeUp(120) {
+                Text(
+                    spec.title,
+                    style = Ty.Title.copy(
+                        color = Color.White,
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp
+                    )
+                )
+            }
+            FadeUp(180) {
+                Text(
+                    spec.why,
+                    style = Ty.Dim.copy(
+                        fontSize = 19.sp,
+                        color = Color(0xCCFFFFFF),
+                        lineHeight = 26.sp
+                    )
+                )
+            }
+            Spacer(Modifier.height(4.dp))
             spec.bullets.forEachIndexed { i, b ->
-                FadeUp(260 + i * 90) {
+                FadeUp(260 + i * 80) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(26.dp).clip(CircleShape).background(Color(0x3330D158)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Check, null, tint = Color(0xFF30D158), modifier = Modifier.size(16.dp))
+                        Box(
+                            Modifier.size(24.dp).clip(CircleShape).background(Color(0x2630D158)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.Check, null, tint = Color(0xFF30D158), modifier = Modifier.size(15.dp))
                         }
                         Spacer(Modifier.width(12.dp))
-                        Text(b, style = Ty.Small.copy(fontSize = 19.sp, color = Color(0xE6FFFFFF)))
+                        val parts = b.split(" • ", limit = 2)
+                        if (parts.size == 2) {
+                            Text(
+                                buildAnnotatedString {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White)) {
+                                        append(parts[0])
+                                    }
+                                    withStyle(SpanStyle(color = Color(0x80FFFFFF))) {
+                                        append("  •  ")
+                                    }
+                                    withStyle(SpanStyle(color = Color(0xCCFFFFFF))) {
+                                        append(parts[1])
+                                    }
+                                },
+                                style = Ty.Small.copy(fontSize = 17.5.sp)
+                            )
+                        } else {
+                            Text(b, style = Ty.Small.copy(fontSize = 17.5.sp, color = Color(0xEEFFFFFF)))
+                        }
                     }
                 }
             }
-            if (hint != null) Text(hint!!, style = Ty.Small.copy(fontSize = 17.sp, color = Color(0xFFFFD60A)))
+            if (hint != null) {
+                Text(hint!!, style = Ty.Small.copy(fontSize = 16.sp, color = Color(0xFFFFD60A), fontWeight = FontWeight.Medium))
+            }
             Spacer(Modifier.height(8.dp))
             FadeUp(560) {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BigButton(
-                        if (granted) "Continue" else if (authorizing) "Waiting…" else "Allow",
-                        { onContinue() },
-                        modifier = Modifier.width(300.dp).focusRequester(focus)
-                    )
-                    BigButton("Not now", onNext, primary = false, modifier = Modifier.width(200.dp))
-                }
+                BigButton(
+                    text = if (granted) "Continue" else if (authorizing) "Connecting…" else "Allow Access",
+                    onClick = { onContinue() },
+                    modifier = Modifier.width(320.dp).focusRequester(focus)
+                )
             }
-            Text("You can change this any time in Settings.", style = Ty.Small.copy(fontSize = 15.sp, color = Color(0x80FFFFFF)))
+            Text("You can manage permissions at any time in Settings > Apps > Pear TV.", style = Ty.Small.copy(fontSize = 14.sp, color = Color(0x80FFFFFF)))
         }
     }
 }
