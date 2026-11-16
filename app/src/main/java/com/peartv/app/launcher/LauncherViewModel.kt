@@ -545,7 +545,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             s.showNativeQuickShare -> { closeNativeQuickShare(); true }
             s.showInputsDialog -> { closeInputs(); true }
             s.showProfileDialog -> { closeProfile(); true }
-            s.showCleanTvWizard -> { dismissCleanTvWizard(); true }
+            s.showCleanTvWizard -> { /* Never dismiss into home screen without completing */ true }
             s.debloatSuccessSummary != null -> { dismissDebloatSummary(); true }
             s.showMonitorPanel -> { closeSystemMonitor(); true }
             s.uninstallConfirmApp != null -> { dismissUninstallConfirm(); true }

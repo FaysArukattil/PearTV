@@ -41,16 +41,16 @@ class HomeActivity : ComponentActivity() {
         splash.setKeepOnScreenCondition {
             !viewModel.splashReady && SystemClock.uptimeMillis() - startedAt < SPLASH_MAX_MS
         }
-        // Smooth hand-off: logo grows slightly while the splash fades into Home (no hard cut).
+        // Fast splash hand-off: rapid fade directly into Pear TV.
         splash.setOnExitAnimationListener { provider ->
             provider.iconView.animate()
-                .scaleX(1.15f).scaleY(1.15f).alpha(0f)
-                .setDuration(220L)
+                .scaleX(1.06f).scaleY(1.06f).alpha(0f)
+                .setDuration(90L)
                 .setInterpolator(AccelerateInterpolator())
                 .start()
             provider.view.animate()
                 .alpha(0f)
-                .setDuration(240L)
+                .setDuration(110L)
                 .setInterpolator(AccelerateInterpolator())
                 .withEndAction { provider.remove() }
                 .start()
@@ -148,15 +148,18 @@ class HomeActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val SPLASH_MAX_MS = 900L
+        const val SPLASH_MAX_MS = 200L
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page.
+        // The remote's Home key (or any HOME intent) always lands on plain Home: close every popup/page,
+        // unless the initial Get Started wizard is active.
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
-            vm.goHome()
+            if (!vm.state.value.showCleanTvWizard) {
+                vm.goHome()
+            }
         }
         handleIntent(intent)
     }
@@ -164,7 +167,9 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.onResume()
-        vm.goHome() // Always reset to clean Home state when resuming, making Back identical to Home!
+        if (!vm.state.value.showCleanTvWizard) {
+            vm.goHome()
+        }
     }
 
     override fun onPause() {

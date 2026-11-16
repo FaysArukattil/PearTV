@@ -61,17 +61,17 @@
         <aapt:attr name="android:animation">
             <set android:ordering="together">
                 <objectAnimator
-                    android:duration="450"
+                    android:duration="100"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleX"
-                    android:valueFrom="0.92"
+                    android:valueFrom="0.94"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="450"
+                    android:duration="100"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleY"
-                    android:valueFrom="0.92"
+                    android:valueFrom="0.94"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
             </set>

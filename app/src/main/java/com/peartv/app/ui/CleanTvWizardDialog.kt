@@ -137,16 +137,9 @@ fun CleanTvWizardDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0B1226), Color(0xFF050509), Color(0xFF000000))))
+            .background(Color.Black)
             .modalTrap()
     ) {
-        Box(
-            Modifier
-                .align(Alignment.TopCenter)
-                .size(760.dp)
-                .graphicsLayer { translationY = -260f }
-                .background(Brush.radialGradient(listOf(Color(0x330A84FF), Color.Transparent)), CircleShape)
-        )
 
         AnimatedContent(
             targetState = step,
@@ -183,7 +176,7 @@ fun CleanTvWizardDialog(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 LogoMark(34.dp)
-                Text("LeanTV", style = Ty.Heading.copy(color = Color(0xCCFFFFFF), fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
+                Text("Pear TV", style = Ty.Heading.copy(color = Color(0xCCFFFFFF), fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
             }
         }
 
@@ -220,7 +213,7 @@ private fun FadeUp(delayMs: Int, modifier: Modifier = Modifier, content: @Compos
 private fun LogoMark(size: Dp) {
     val shape = RoundedCornerShape(size * 0.26f)
     Box(
-        Modifier.size(size).clip(shape).background(Color(0xFF0D1F2A)).border(1.dp, Color(0x33FFFFFF), shape),
+        Modifier.size(size).clip(shape).background(Color.Black).border(1.dp, Color(0x33FFFFFF), shape),
         contentAlignment = Alignment.Center
     ) {
         Image(painterResource(R.drawable.ic_fg), contentDescription = null, modifier = Modifier.requiredSize(size * 1.45f))
@@ -279,34 +272,36 @@ private fun BigButton(text: String, onClick: () -> Unit, primary: Boolean = true
 @Composable
 private fun WelcomePage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FadeUp(0) { LogoHero(132.dp) }
-        Spacer(Modifier.height(22.dp))
-        FadeUp(180) {
-            Text("LeanTV", style = Ty.Display.copy(color = Color.White, fontSize = 80.sp, letterSpacing = (-2.5).sp))
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        FadeUp(0) {
+            Image(
+                painter = painterResource(R.drawable.banner),
+                contentDescription = "Pear TV",
+                modifier = Modifier
+                    .width(420.dp)
+                    .height(236.dp)
+            )
         }
-        Spacer(Modifier.height(6.dp))
-        FadeUp(320) {
+        Spacer(Modifier.height(10.dp))
+        FadeUp(140) {
             Text(
                 "A faster, cleaner home for your TV.",
-                style = Ty.Dim.copy(fontSize = 26.sp, color = Color(0xCCFFFFFF)),
+                style = Ty.Dim.copy(
+                    fontSize = 28.sp,
+                    color = Color(0xCCFFFFFF),
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = (-0.5).sp
+                ),
                 textAlign = TextAlign.Center
             )
         }
-        Spacer(Modifier.height(18.dp))
-        FadeUp(440) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("Takes 1 minute", "Everything stays on this TV").forEach { label ->
-                    Box(
-                        Modifier.clip(RoundedCornerShape(50)).background(Color(0x1FFFFFFF))
-                            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(50))
-                            .padding(horizontal = 16.dp, vertical = 7.dp)
-                    ) { Text(label, fontSize = 16.sp, color = Color(0xCCFFFFFF), fontWeight = FontWeight.Medium) }
-                }
-            }
+        Spacer(Modifier.height(44.dp))
+        FadeUp(260) {
+            BigButton("Get started", onNext, modifier = Modifier.width(340.dp).focusRequester(focus))
         }
-        Spacer(Modifier.height(34.dp))
-        FadeUp(600) { BigButton("Get started", onNext, modifier = Modifier.width(360.dp).focusRequester(focus)) }
     }
 }
 
