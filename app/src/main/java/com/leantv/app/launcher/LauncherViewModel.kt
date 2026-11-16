@@ -114,6 +114,8 @@ private fun isProtectedPackage(pkg: String): Boolean {
 }
 
 /** How long Quick Share stays on without any activity. */
+private const val DOCK_SLOTS = 4
+
 private const val QS_AUTO_OFF_MS = 15L * 60L * 1000L
 
 data class LauncherState(
@@ -123,6 +125,8 @@ data class LauncherState(
     val recentApps: List<InstalledAppInfo> = emptyList(),
     val dockApps: List<InstalledAppInfo> = emptyList(),
     val allApps: List<InstalledAppInfo> = emptyList(),
+    val hiddenApps: List<InstalledAppInfo> = emptyList(),
+    val showHiddenApps: Boolean = false,
     val appSortMode: AppSortMode = AppSortMode.RECENCY,
     val focusedApp: InstalledAppInfo? = null,
     val greetingText: String = "GOOD AFTERNOON",
@@ -346,6 +350,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
             delay(1500)
             syncAccountsToApps()
+            // Warm the screensaver thumbnails so that popup opens instantly.
+            launch(Dispatchers.IO) {
+                delay(2500)
+                try { com.leantv.app.ui.AerialThumbnailStore.prewarm(ctx) } catch (_: Throwable) {}
+            }
         }
     }
 
@@ -476,6 +485,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 fileManagerHighlightFile = null,
                 showPersonalization = false,
                 showCleanTvScreen = false,
+                showHiddenApps = false,
                 showScreensaver = false,
                 showScreensaverSettings = false,
                 showNativeQuickShare = false,
@@ -516,6 +526,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             s.showScreensaver -> { closeScreensaver(); true }
             s.showTvPlayer -> { closeTvPlayer(); true }
             s.showScreensaverSettings -> { closeScreensaverSettings(); true }
+            s.showHiddenApps -> { closeHiddenApps(); true }
             s.showCleanTvScreen -> { closeCleanTvScreen(); true }
             s.showStorageManager -> { closeStorageManager(); true }
             s.showFileManager -> { closeFileManager(); true }
@@ -747,6 +758,23 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         AppSortMode.ALPHABETICAL -> apps.sortedBy { it.appName.lowercase(Locale.ROOT) }
     }
 
+    /** Pinned apps take the first dock slots; recommended apps fill whatever is left (4 slots total). */
+    private fun buildDock(
+        pinned: List<InstalledAppInfo>,
+        recommended: List<InstalledAppInfo>,
+    ): List<InstalledAppInfo> {
+        val out = ArrayList<InstalledAppInfo>(DOCK_SLOTS)
+        out.addAll(pinned.take(DOCK_SLOTS))
+        if (out.size < DOCK_SLOTS) {
+            val taken = out.mapTo(HashSet()) { it.packageName }
+            for (a in recommended) {
+                if (out.size >= DOCK_SLOTS) break
+                if (taken.add(a.packageName)) out.add(a)
+            }
+        }
+        return out
+    }
+
     /** Heavy part of loading: pure computation, runs on a background dispatcher. */
     private fun computeLists(launchable: List<InstalledAppInfo>, mode: AppSortMode): AppLists {
         val favPackages = journal.favorites()
@@ -758,8 +786,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         val byScore = compareByDescending<InstalledAppInfo> { scores[it.packageName] ?: 0L }
             .thenBy { it.appName.lowercase(Locale.ROOT) }
 
-        // Dock: first 4 favorites, otherwise top launchable ranked by usage
-        val dock = if (favorites.isNotEmpty()) favorites.take(4) else launchable.sortedWith(byScore).take(4)
+        // Dock: pinned apps first, remaining slots filled with recommended (most used) apps
+        val dock = buildDock(favorites, launchable.sortedWith(byScore))
 
         // Frequently used: launch count > 0 or foreground time > 0
         val frequent = launchable
@@ -799,7 +827,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     val favPackages = journal.favorites()
                     val quickFav = launchable.filter { it.packageName in favPackages }
                     val quickAll = sortLaunchable(launchable, mode, null)
-                    val quickDock = if (quickFav.isNotEmpty()) quickFav.take(4) else quickAll.take(4)
+                    val quickDock = buildDock(quickFav, quickAll)
                     _state.update {
                         it.copy(
                             appSortMode = mode,
@@ -815,8 +843,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 computeLists(launchable, mode)
             }
 
+            val hiddenNow = journal.hiddenApps()
+            val hiddenList = if (hiddenNow.isEmpty()) emptyList() else installed
+                .filter { it.launchIntentAvailable && it.packageName != ctx.packageName && it.packageName in hiddenNow }
+                .sortedBy { it.appName.lowercase(Locale.ROOT) }
             _state.update {
                 it.copy(
+                    hiddenApps = hiddenList,
                     appSortMode = currentSortMode(),
                     featuredApps = lists.favorites.take(5),
                     favoriteApps = lists.favorites,
@@ -1085,6 +1118,35 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 toastMessage = if (nowHidden) "Hidden ${app.appName} from launcher" else "Restored ${app.appName}"
             )
         }
+    }
+
+    fun openHiddenApps() {
+        _state.update { it.copy(showHiddenApps = true) }
+    }
+
+    fun closeHiddenApps() {
+        _state.update { it.copy(showHiddenApps = false) }
+    }
+
+    fun unhideApp(app: InstalledAppInfo) {
+        if (journal.isAppHidden(app.packageName)) journal.toggleHideApp(app.packageName)
+        loadApps(silent = true)
+        _state.update {
+            val left = it.hiddenApps.filter { h -> h.packageName != app.packageName }
+            it.copy(
+                hiddenApps = left,
+                showHiddenApps = left.isNotEmpty(),
+                toastMessage = "Restored ${app.appName} to Home"
+            )
+        }
+    }
+
+    fun unhideAllApps() {
+        for (a in _state.value.hiddenApps) {
+            if (journal.isAppHidden(a.packageName)) journal.toggleHideApp(a.packageName)
+        }
+        loadApps(silent = true)
+        _state.update { it.copy(hiddenApps = emptyList(), showHiddenApps = false, toastMessage = "All apps restored to Home") }
     }
 
     fun clearAppDataAction(app: InstalledAppInfo) {

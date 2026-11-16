@@ -2,6 +2,21 @@ package com.leantv.app.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.LruCache
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
 import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
 import android.media.MediaMetadataRetriever
@@ -18,6 +33,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -68,39 +85,146 @@ import java.util.Locale
 // Persistent & Asset Thumbnail Store
 // ─────────────────────────────────────────────────────────────────────────────
 object AerialThumbnailStore {
-    fun load(context: Context, url: String): Bitmap? {
-        val name = url.substringAfterLast('/').substringBeforeLast('.') + ".jpg"
-        // 1. Bundled high-resolution asset first (0 network, instant <1ms)
-        try {
-            context.assets.open("aerial_thumbs/$name").use { input ->
-                val bmp = BitmapFactory.decodeStream(input)
-                if (bmp != null) return bmp
-            }
-        } catch (_: Exception) {}
+    // Process-wide memory cache: the 2nd open of the screensaver popup shows every thumbnail instantly.
+    private val mem = object : LruCache<String, ImageBitmap>(14 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 2
+    }
 
-        // 2. Disk cache
-        try {
-            val dir = File(context.cacheDir, "aerial_thumbs")
-            val f = File(dir, name)
-            if (f.exists() && f.length() > 500L) {
-                val bmp = BitmapFactory.decodeFile(f.absolutePath)
-                if (bmp != null) return bmp
-            }
-        } catch (_: Exception) {}
+    /** Cards are ~360px wide on a 1080p TV: decoding at ~480px keeps 27 thumbnails tiny and fast. */
+    private fun sample(w: Int): Int {
+        var n = 1
+        while (w / (n * 2) >= 400) n *= 2
+        return n
+    }
 
-        return null
+    private fun fileName(url: String) = url.substringAfterLast('/').substringBeforeLast('.') + ".jpg"
+
+    fun peek(url: String): ImageBitmap? = mem.get(url)
+
+    private fun decode(open: () -> java.io.InputStream?): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample(bounds.outWidth)
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        open()?.use { BitmapFactory.decodeStream(it, null, opts) }
+    } catch (_: Throwable) { null }
+
+    /** Memory -> bundled asset -> disk -> (optional) frame pulled from a downloaded video. Call off the main thread. */
+    suspend fun get(context: Context, url: String, allowExtract: Boolean): ImageBitmap? {
+        mem.get(url)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val name = fileName(url)
+            var bmp = decode { context.assets.open("aerial_thumbs/$name") }
+            if (bmp == null) {
+                val f = File(File(context.cacheDir, "aerial_thumbs"), name)
+                if (f.exists() && f.length() > 500L) bmp = decode { f.inputStream() }
+            }
+            if (bmp == null && allowExtract) bmp = extractFromVideo(context, url)
+            bmp?.asImageBitmap()?.also { mem.put(url, it) }
+        }
+    }
+
+    private fun extractFromVideo(context: Context, url: String): Bitmap? = try {
+        val file = AerialVideoCache.getCacheFile(context, url)
+        if (!file.exists() || file.length() <= AerialVideoCache.MIN_VALID_SIZE) null else {
+            val r = MediaMetadataRetriever()
+            r.setDataSource(file.absolutePath)
+            val frame = r.getFrameAtTime(2_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            r.release()
+            frame?.let {
+                val small = if (it.width > 480) Bitmap.createScaledBitmap(it, 480, 480 * it.height / it.width, true) else it
+                save(context, url, small)
+                small
+            }
+        }
+    } catch (_: Throwable) { null }
+
+    /** Fills the memory cache in the background (called shortly after the launcher starts). */
+    suspend fun prewarm(context: Context) {
+        for (v in APPLE_AERIAL_PRESETS) {
+            if (peek(v.url) == null) get(context, v.url, allowExtract = false)
+            kotlinx.coroutines.yield()
+        }
     }
 
     fun save(context: Context, url: String, bmp: Bitmap) {
         runCatching {
             val dir = File(context.cacheDir, "aerial_thumbs")
             if (!dir.exists()) dir.mkdirs()
-            val name = url.substringAfterLast('/').substringBeforeLast('.') + ".jpg"
-            val f = File(dir, name)
-            f.outputStream().use { out ->
-                bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
-            }
+            File(dir, fileName(url)).outputStream().use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, 85, out) }
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Light focus surface for this popup. Everything that changes on focus (scale, fill, ring, glow) is
+// animated INSIDE draw/graphicsLayer lambdas, so moving the remote never recomposes or re-measures.
+// No elevation shadow (the old one was the main cost per move). Optional [glow] draws a cheap soft halo.
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun SsFocusable(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(14.dp),
+    idle: Color = Color.Transparent,
+    focusedBg: Color = Color(0x33FFFFFF),
+    ring: Color = Color.White,
+    idleRing: Color = Color(0x22FFFFFF),
+    glow: Color? = null,
+    glowRadius: Dp = 14.dp,
+    idleOutline: Boolean = false,
+    scaleOnFocus: Float = 1.03f,
+    content: @Composable BoxScope.(focused: Boolean) -> Unit,
+) {
+    val view = LocalView.current
+    var focused by remember { mutableStateOf(false) }
+    val p = animateFloatAsState(if (focused) 1f else 0f, tween(110, easing = LinearOutSlowInEasing), label = "ssf")
+    Box(
+        modifier
+            .graphicsLayer {
+                val sc = 1f + (scaleOnFocus - 1f) * p.value
+                scaleX = sc
+                scaleY = sc
+            }
+            .drawBehind {
+                val g = glow
+                if (g != null && p.value > 0.01f) {
+                    val r = glowRadius.toPx()
+                    for (i in 1..3) {
+                        val grow = i * 5.dp.toPx()
+                        drawRoundRect(
+                            color = g.copy(alpha = 0.20f * p.value / i),
+                            topLeft = Offset(-grow, -grow),
+                            size = Size(size.width + grow * 2, size.height + grow * 2),
+                            cornerRadius = CornerRadius(r + grow)
+                        )
+                    }
+                }
+            }
+            .clip(shape)
+            .drawBehind { drawRect(lerp(idle, focusedBg, p.value)) }
+            .drawWithContent {
+                drawContent()
+                val outline = shape.createOutline(size, layoutDirection, this)
+                if (p.value > 0.01f) {
+                    drawOutline(outline, ring.copy(alpha = 0.9f * p.value), style = Stroke(1.5.dp.toPx() + 0.5.dp.toPx() * p.value))
+                } else if (idleOutline) {
+                    drawOutline(outline, idleRing, style = Stroke(1.dp.toPx()))
+                }
+            }
+            .onFocusChanged {
+                if (it.isFocused && !focused) TvSound.playMove(view)
+                focused = it.isFocused
+            }
+            .focusable()
+            .clickable(onClick = {
+                TvSound.playClick(view)
+                onClick()
+            })
+    ) {
+        content(focused)
     }
 }
 
@@ -176,13 +300,13 @@ fun ScreensaverSettingsDialog(
         label = "scrim"
     )
     val panelScale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.93f,
-        animationSpec = AppleMotion.SpringStandard,
+        targetValue = if (visible) 1f else 0.97f,
+        animationSpec = tween(170, easing = LinearOutSlowInEasing),
         label = "scale"
     )
     val panelAlpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(AppleMotion.DurStandard, easing = AppleMotion.Decelerate),
+        animationSpec = tween(150, easing = LinearOutSlowInEasing),
         label = "alpha"
     )
 
@@ -192,8 +316,6 @@ fun ScreensaverSettingsDialog(
 
     var cachedUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
     var totalCacheMb by remember { mutableLongStateOf(0L) }
-
-    val thumbnails = remember { mutableStateMapOf<String, Bitmap?>() }
 
     // Pre-load thumbnails & cache status in background (0 disk I/O on UI thread)
     LaunchedEffect(cacheVersion, AerialDownloads.finishTick.intValue) {
@@ -206,28 +328,6 @@ fun ScreensaverSettingsDialog(
                 totalCacheMb = total
             }
 
-            APPLE_AERIAL_PRESETS.forEach { video ->
-                if (video.url !in thumbnails) {
-                    val diskBmp = AerialThumbnailStore.load(context, video.url)
-                    if (diskBmp != null) {
-                        withContext(Dispatchers.Main) { thumbnails[video.url] = diskBmp }
-                    } else {
-                        val file = AerialVideoCache.getCacheFile(context, video.url)
-                        if (file.exists() && file.length() > AerialVideoCache.MIN_VALID_SIZE) {
-                            runCatching {
-                                val r = MediaMetadataRetriever()
-                                r.setDataSource(file.absolutePath)
-                                val extracted = r.getFrameAtTime(2_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                                r.release()
-                                if (extracted != null) {
-                                    AerialThumbnailStore.save(context, video.url, extracted)
-                                    withContext(Dispatchers.Main) { thumbnails[video.url] = extracted }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -244,7 +344,7 @@ fun ScreensaverSettingsDialog(
     //   • OK         : select / download / delete        • Back : close
     val streamReq = remember { FocusRequester() }
     val downloadedReq = remember { FocusRequester() }
-    val chipReqs = remember { List(7) { FocusRequester() } }
+    val chipReqs = remember { List(TIMER_OPTIONS.size) { FocusRequester() } }
     val previewReq = remember { FocusRequester() }
     val clearAllReq = remember { FocusRequester() }
     val doneReq = remember { FocusRequester() }
@@ -253,8 +353,7 @@ fun ScreensaverSettingsDialog(
     var returnToGrid by remember { mutableStateOf(false) }
     var openedOnce by remember { mutableStateOf(false) }
 
-    val timerValues = listOf(1, 2, 3, 5, 10, 15, 0)
-    val selTimerIdx = timerValues.indexOf(idleMinutes).coerceAtLeast(0)
+    val selTimerIdx = TIMER_OPTIONS.indexOfFirst { it.first == idleMinutes }.coerceAtLeast(0)
     val hasDownloads = cachedUrls.isNotEmpty()
 
     // Dedicated BackHandler so Back button ALWAYS works cleanly
@@ -272,7 +371,7 @@ fun ScreensaverSettingsDialog(
     // whenever a delete-confirmation sub-popup closes.
     LaunchedEffect(hasSubDialog) {
         if (hasSubDialog) return@LaunchedEffect
-        delay(100)
+        delay(50)
         val target = when {
             !openedOnce  -> if (autoCache) downloadedReq else streamReq   // the currently applied source
             returnToGrid -> gridZoneReq
@@ -367,7 +466,7 @@ fun ScreensaverSettingsDialog(
                         .fillMaxWidth()
                         .focusProperties {
                             up = streamReq
-                            down = chipReqs[selTimerIdx % 4]
+                            down = chipReqs[selTimerIdx % TIMER_COLS]
                             left = FocusRequester.Cancel
                             right = gridZoneReq
                         }
@@ -381,7 +480,7 @@ fun ScreensaverSettingsDialog(
                 Spacer(Modifier.height(2.dp))
                 SettingsLabel(
                     "IDLE TIMER",
-                    if (idleMinutes > 0) "Starts after $idleMinutes min" else "Disabled"
+                    if (idleMinutes > 0) "Starts after ${formatIdle(idleMinutes)}" else "Disabled"
                 )
                 IdleTimerChips(
                     idleMinutes = idleMinutes,
@@ -399,10 +498,13 @@ fun ScreensaverSettingsDialog(
                     label = "Preview Screensaver",
                     icon = Icons.Rounded.PlayArrow,
                     idle = Color(0xFF0A84FF),
+                    focusedBg = Color(0xFF3AA0FF),
+                    ring = Color(0xFFBFE0FF),
+                    glow = Color(0xFF0A84FF),
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusProperties {
-                            up = chipReqs[if (selTimerIdx >= 4) selTimerIdx else 4]
+                            up = chipReqs[TIMER_COLS * (TIMER_OPTIONS.size / TIMER_COLS - 1) + selTimerIdx % TIMER_COLS]
                             down = if (hasDownloads) clearAllReq else doneReq
                             left = FocusRequester.Cancel
                             right = gridZoneReq
@@ -415,7 +517,10 @@ fun ScreensaverSettingsDialog(
                         label = "Clear All Downloads ($totalCacheMb MB)",
                         icon = Icons.Rounded.DeleteSweep,
                         idle = Color(0x28FF3B30),
-                        contentColor = Color(0xFFFF5252),
+                        contentColor = Color(0xFFFF6B60),
+                        focusedBg = Color(0xFFFF3B30),
+                        ring = Color(0xFFFFB4AB),
+                        glow = Color(0xFFFF3B30),
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusProperties {
@@ -482,7 +587,6 @@ fun ScreensaverSettingsDialog(
                         .focusRequester(gridZoneReq),
                     leftExit = { lastLeftReq ?: streamReq },
                     cachedUrls = cachedUrls,
-                    thumbnails = thumbnails,
                     downloadProgressMap = downloadProgressMap,
                     onItemClick = { video, isCached ->
                         returnToGrid = true
@@ -506,7 +610,6 @@ fun ScreensaverSettingsDialog(
                 video = v,
                 onConfirm = {
                     AerialVideoCache.deleteFromCache(context, v.url)
-                    thumbnails.remove(v.url)
                     refreshCache()
                     videoToDelete = null
                 },
@@ -521,7 +624,6 @@ fun ScreensaverSettingsDialog(
                 totalMb = totalCacheMb,
                 onConfirm = {
                     AerialVideoCache.clearCache(context)
-                    thumbnails.clear()
                     onSelectVideoUrl(null)
                     refreshCache()
                     confirmDeleteAll = false
@@ -564,7 +666,7 @@ private fun SettingChoiceRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Focusable(
+    SsFocusable(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
@@ -614,6 +716,19 @@ private fun SettingChoiceRow(
     }
 }
 
+private const val TIMER_COLS = 4
+private val TIMER_OPTIONS = listOf(
+    1 to "1 min", 2 to "2 min", 3 to "3 min", 5 to "5 min",
+    10 to "10 min", 15 to "15 min", 20 to "20 min", 30 to "30 min",
+    45 to "45 min", 60 to "1 hr", 120 to "2 hr", 0 to "Never"
+)
+
+private fun formatIdle(mins: Int): String = when {
+    mins < 60 -> "$mins min"
+    mins % 60 == 0 -> if (mins == 60) "1 hour" else "${mins / 60} hours"
+    else -> "$mins min"
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun IdleTimerChips(
@@ -625,47 +740,35 @@ private fun IdleTimerChips(
     rightTarget: FocusRequester,
     onFocused: (FocusRequester) -> Unit
 ) {
-    val options = listOf(
-        1 to "1 min", 2 to "2 min", 3 to "3 min", 5 to "5 min",
-        10 to "10 min", 15 to "15 min", 0 to "Never"
-    )
+    val options = TIMER_OPTIONS
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(4).forEachIndexed { rowIdx, rowOptions ->
+        options.chunked(TIMER_COLS).forEachIndexed { rowIdx, rowOptions ->
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 rowOptions.forEachIndexed { i, (mins, label) ->
-                    val idx = rowIdx * 4 + i
+                    val idx = rowIdx * TIMER_COLS + i
                     val sel = idleMinutes == mins
-                    val isRowEnd = i == rowOptions.size - 1
-                    Focusable(
+                    SsFocusable(
                         onClick = { onSelect(mins) },
                         modifier = Modifier
                             .weight(1f)
                             .focusProperties {
-                                up = if (rowIdx == 0) upTarget else requesters[idx - 4]
-                                down = if (rowIdx == 0) requesters[(4 + i).coerceAtMost(options.size - 1)] else downTarget
+                                up = if (rowIdx == 0) upTarget else requesters[idx - TIMER_COLS]
+                                down = if (idx + TIMER_COLS < options.size) requesters[idx + TIMER_COLS] else downTarget
                                 left = if (i == 0) FocusRequester.Cancel else requesters[idx - 1]
-                                right = if (isRowEnd) rightTarget else requesters[idx + 1]
+                                right = if (i == rowOptions.size - 1) rightTarget else requesters[idx + 1]
                             }
                             .leftItem(requesters[idx], onFocused),
                         shape = RoundedCornerShape(10.dp),
-                        idle = Color.Transparent,
+                        idle = if (sel) Color(0xFF0A84FF) else Color(0x18FFFFFF),
+                        focusedBg = if (sel) Color(0xFF2997FF) else Color(0x40FFFFFF),
                         scaleOnFocus = 1.05f
-                    ) { focused ->
+                    ) {
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    when {
-                                        sel && focused -> Color(0xFF2997FF)
-                                        sel            -> Color(0xFF0A84FF)
-                                        focused        -> Color(0x38FFFFFF)
-                                        else           -> Color(0x18FFFFFF)
-                                    }
-                                )
                                 .padding(vertical = 9.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -681,8 +784,6 @@ private fun IdleTimerChips(
                         }
                     }
                 }
-                // Keep chip widths equal on the shorter last row.
-                repeat(4 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -695,15 +796,24 @@ private fun SettingsButton(
     idle: Color,
     modifier: Modifier = Modifier,
     contentColor: Color = Color.White,
+    focusedContentColor: Color = Color.White,
+    focusedBg: Color = Color(0x44FFFFFF),
+    ring: Color = Color.White,
+    glow: Color? = null,
     onClick: () -> Unit
 ) {
-    Focusable(
+    SsFocusable(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(13.dp),
         idle = idle,
+        focusedBg = focusedBg,
+        ring = ring,
+        glow = glow,
+        glowRadius = 13.dp,
         scaleOnFocus = 1.02f
-    ) {
+    ) { focused ->
+        val c = if (focused) focusedContentColor else contentColor
         Row(
             Modifier
                 .fillMaxWidth()
@@ -711,11 +821,11 @@ private fun SettingsButton(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, null, tint = contentColor, modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = c, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(
                 label,
-                style = Ty.Button.copy(color = contentColor, fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                style = Ty.Button.copy(color = c, fontSize = 14.sp, fontWeight = FontWeight.Bold),
                 maxLines = 1
             )
         }
@@ -736,7 +846,7 @@ private fun ModeOptionCard(
     appliedColor: Color,
     onClick: () -> Unit
 ) {
-    Focusable(
+    SsFocusable(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -831,6 +941,15 @@ private fun ModeOptionCard(
 // ─────────────────────────────────────────────────────────────────────────────
 // Downloaded Grid Panel
 // ─────────────────────────────────────────────────────────────────────────────
+private val GRID_ENTRIES: List<GridEntry> by lazy {
+    buildList {
+        APPLE_AERIAL_PRESETS.groupBy { it.location }.forEach { (loc, videos) ->
+            add(GridEntry.Header(loc))
+            videos.forEachIndexed { idx, v -> add(GridEntry.VideoItem(v, col = idx % 3)) }
+        }
+    }
+}
+
 private sealed class GridEntry {
     data class Header(val location: String) : GridEntry()
     data class VideoItem(val video: AppleAerialVideo, val col: Int) : GridEntry()
@@ -842,7 +961,6 @@ private fun DownloadedGridPanel(
     modifier: Modifier,
     leftExit: () -> FocusRequester,
     cachedUrls: Set<String>,
-    thumbnails: SnapshotStateMap<String, Bitmap?>,
     downloadProgressMap: SnapshotStateMap<String, AerialVideoCache.DownloadProgress>,
     onItemClick: (AppleAerialVideo, Boolean) -> Unit
 ) {
@@ -853,16 +971,7 @@ private fun DownloadedGridPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
     ) {
-        val flatItems: List<GridEntry> = buildList {
-            APPLE_AERIAL_PRESETS.groupBy { it.location }.forEach { (loc, videos) ->
-                add(GridEntry.Header(loc))
-                videos.forEachIndexed { idx, v ->
-                    add(GridEntry.VideoItem(v, col = idx % 3))
-                }
-            }
-        }
-
-        flatItems.forEach { entry ->
+        GRID_ENTRIES.forEach { entry ->
             when (entry) {
                 is GridEntry.Header -> {
                     item(key = "hdr_${entry.location}", span = { GridItemSpan(3) }) {
@@ -884,13 +993,11 @@ private fun DownloadedGridPanel(
                     item(key = video.url) {
                         val isCached         = video.url in cachedUrls
                         val downloadProgress = downloadProgressMap[video.url]
-                        val thumbnail        = thumbnails[video.url]
 
                         AerialThumbnailCard(
                             video = video,
                             col = col,
                             leftExit = leftExit,
-                            thumbnail = thumbnail,
                             isCached = isCached,
                             downloadProgress = downloadProgress,
                             onAction = { onItemClick(video, isCached) }
@@ -903,7 +1010,7 @@ private fun DownloadedGridPanel(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Card: High-contrast Dark Pill Badge + Smooth Live Video Crossfade (No grey gap)
+// Card: static thumbnail + status badge (no live video, keeps the grid snappy)
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -911,18 +1018,22 @@ private fun AerialThumbnailCard(
     video: AppleAerialVideo,
     col: Int,
     leftExit: () -> FocusRequester,
-    thumbnail: Bitmap?,
     isCached: Boolean,
     downloadProgress: AerialVideoCache.DownloadProgress?,
     onAction: () -> Unit
 ) {
+    val context = LocalContext.current
+    // Loaded per card, only when the card is composed (visible rows) and served from the shared memory cache.
+    val thumb by produceState<ImageBitmap?>(AerialThumbnailStore.peek(video.url), video.url, isCached) {
+        if (value == null) value = AerialThumbnailStore.get(context, video.url, allowExtract = isCached)
+    }
     val borderColor = when {
         downloadProgress != null -> Color(0xFF0A84FF)
-        isCached                 -> Color(0xFF30D158).copy(alpha = 0.6f)
+        isCached                 -> Color(0x9930D158)
         else                     -> Color(0x18FFFFFF)
     }
 
-    Focusable(
+    SsFocusable(
         onClick = onAction,
         modifier = Modifier.focusProperties {
             if (col == 0) left = leftExit()
@@ -930,57 +1041,26 @@ private fun AerialThumbnailCard(
         },
         shape = RoundedCornerShape(14.dp),
         idle = Color.Transparent,
+        focusedBg = Color.Transparent,
+        idleRing = borderColor,
         idleOutline = isCached || downloadProgress != null,
         scaleOnFocus = 1.04f
     ) { focused ->
-        var isVideoPlaying by remember { mutableStateOf(false) }
-
-        LaunchedEffect(focused) {
-            if (!focused) isVideoPlaying = false
-        }
-
-        val videoAlpha by animateFloatAsState(
-            targetValue = if (focused && isCached && isVideoPlaying) 1f else 0f,
-            animationSpec = tween(350, easing = LinearEasing),
-            label = "videoFadeIn"
-        )
-
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(14.dp))
-                .border(
-                    width = if (focused) 2.dp else if (downloadProgress != null) 2.dp else if (isCached) 1.dp else 0.dp,
-                    color = if (focused) Color.White else borderColor,
-                    shape = RoundedCornerShape(14.dp)
-                )
         ) {
-            // ─── Layer 1: High-res instant static thumbnail ALWAYS stays rendered underneath! ───
-            // ZERO grey color, ZERO blank screen while the video prepares!
-            if (thumbnail != null) {
+            val t = thumb
+            if (t != null) {
                 Image(
-                    bitmap = thumbnail.asImageBitmap(),
+                    bitmap = t,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
                 Box(Modifier.fillMaxSize().background(Color(0xFF1E2028)))
-            }
-
-            // ─── Layer 2: Live Video Player crossfades in smoothly only after prepared ───
-            if (focused && isCached && downloadProgress == null) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = videoAlpha }
-                ) {
-                    LiveCardVideoPreview(
-                        url = video.url,
-                        onPrepared = { isVideoPlaying = true }
-                    )
-                }
             }
 
             // Gradient scrim for text contrast
@@ -1000,7 +1080,6 @@ private fun AerialThumbnailCard(
             Box(Modifier.align(Alignment.TopEnd).padding(7.dp)) {
                 when {
                     downloadProgress != null -> StatusChip("${downloadProgress.percent}%", Color(0xFF64B5F6), Icons.Rounded.Refresh)
-                    focused && isCached      -> StatusChip("Live ▶", Color(0xFF30D158))
                     isCached                 -> StatusChip("Saved ✓", Color(0xFF30D158))
                     else                     -> StatusChip("${video.sizeMb} MB", Color(0xFFE8E8E8), Icons.Rounded.Download)
                 }
@@ -1104,81 +1183,6 @@ private fun AerialThumbnailCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Live Card Video Preview (Only plays local downloaded files, 0 network)
-// ─────────────────────────────────────────────────────────────────────────────
-@Composable
-private fun LiveCardVideoPreview(
-    url: String,
-    onPrepared: () -> Unit = {}
-) {
-    val context = LocalContext.current
-    val latestOnPrepared by rememberUpdatedState(onPrepared)
-
-    AndroidView(
-        factory = { ctx ->
-            TextureView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    var player: MediaPlayer? = null
-                    var surface: Surface? = null
-
-                    fun releaseAll() {
-                        player?.let { p ->
-                            runCatching {
-                                p.setOnPreparedListener(null)
-                                p.setOnErrorListener(null)
-                            }
-                            runCatching { p.reset() }
-                            runCatching { p.release() }
-                        }
-                        player = null
-                        runCatching { surface?.release() }
-                        surface = null
-                    }
-
-                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-                        releaseAll()
-                        if (!AerialVideoCache.isCached(context, url)) return // previews are local-only
-                        try {
-                            val s = Surface(st)
-                            surface = s
-                            val mp = MediaPlayer()
-                            player = mp
-                            mp.setSurface(s)
-                            mp.setDataSource(AerialVideoCache.getPlayableSource(context, url))
-                            mp.isLooping = true
-                            mp.setVolume(0f, 0f)
-                            mp.setOnErrorListener { _, _, _ -> true }
-                            mp.setOnPreparedListener { p ->
-                                runCatching {
-                                    p.start()
-                                    p.seekTo(1500)
-                                    latestOnPrepared()
-                                }
-                            }
-                            mp.prepareAsync()
-                        } catch (_: Throwable) {
-                            releaseAll()
-                        }
-                    }
-
-                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
-                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                        releaseAll()
-                        return true
-                    }
-                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Idle Timer Row (Clearly shows the currently selected timer & updates instantly)
 // ─────────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalComposeUiApi::class)
@@ -1226,7 +1230,7 @@ private fun IdleTimerRow(
             val isFirst = index == 0
             val isLast = index == timerOptions.size - 1
 
-            Focusable(
+            SsFocusable(
                 onClick = {
                     activeMins = mins
                     onSelectIdleMinutes(mins)
@@ -1355,7 +1359,7 @@ private fun ConfirmDeleteSingleDialog(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Focusable(
+                SsFocusable(
                     onClick = onConfirm,
                     modifier = Modifier
                         .weight(1f)
@@ -1367,21 +1371,25 @@ private fun ConfirmDeleteSingleDialog(
                             right = cancelBtnFocus
                         },
                     shape = RoundedCornerShape(12.dp),
-                    idle = Color(0xFFFF3B30),
-                    scaleOnFocus = 1.03f
-                ) {
+                    idle = Color(0x33FF3B30),
+                    focusedBg = Color(0xFFFF3B30),
+                    ring = Color(0xFFFFB4AB),
+                    glow = Color(0xFFFF3B30),
+                    glowRadius = 12.dp,
+                    scaleOnFocus = 1.04f
+                ) { f ->
                     Box(
                         Modifier.fillMaxWidth().padding(vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             "Delete",
-                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            style = Ty.Button.copy(color = if (f) Color.White else Color(0xFFFF6B60), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         )
                     }
                 }
 
-                Focusable(
+                SsFocusable(
                     onClick = onDismiss,
                     modifier = Modifier
                         .weight(1f)
@@ -1394,7 +1402,8 @@ private fun ConfirmDeleteSingleDialog(
                         },
                     shape = RoundedCornerShape(12.dp),
                     idle = Color(0x22FFFFFF),
-                    scaleOnFocus = 1.03f
+                    focusedBg = Color(0x55FFFFFF),
+                    scaleOnFocus = 1.04f
                 ) {
                     Box(
                         Modifier.fillMaxWidth().padding(vertical = 11.dp),
@@ -1474,7 +1483,7 @@ private fun ConfirmDeleteAllDialog(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Focusable(
+                SsFocusable(
                     onClick = onConfirm,
                     modifier = Modifier
                         .weight(1f)
@@ -1486,21 +1495,25 @@ private fun ConfirmDeleteAllDialog(
                             right = cancelBtnFocus
                         },
                     shape = RoundedCornerShape(12.dp),
-                    idle = Color(0xFFFF453A),
-                    scaleOnFocus = 1.03f
-                ) {
+                    idle = Color(0x33FF3B30),
+                    focusedBg = Color(0xFFFF453A),
+                    ring = Color(0xFFFFB4AB),
+                    glow = Color(0xFFFF453A),
+                    glowRadius = 12.dp,
+                    scaleOnFocus = 1.04f
+                ) { f ->
                     Box(
                         Modifier.fillMaxWidth().padding(vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             "Delete All",
-                            style = Ty.Button.copy(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            style = Ty.Button.copy(color = if (f) Color.White else Color(0xFFFF6B60), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         )
                     }
                 }
 
-                Focusable(
+                SsFocusable(
                     onClick = onDismiss,
                     modifier = Modifier
                         .weight(1f)
@@ -1513,7 +1526,8 @@ private fun ConfirmDeleteAllDialog(
                         },
                     shape = RoundedCornerShape(12.dp),
                     idle = Color(0x22FFFFFF),
-                    scaleOnFocus = 1.03f
+                    focusedBg = Color(0x55FFFFFF),
+                    scaleOnFocus = 1.04f
                 ) {
                     Box(
                         Modifier.fillMaxWidth().padding(vertical = 11.dp),

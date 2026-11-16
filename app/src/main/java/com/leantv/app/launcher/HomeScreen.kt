@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Widgets
@@ -49,6 +50,7 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.CompositionLocalProvider
 import com.leantv.app.ui.LocalDisableModalTraps
 import com.leantv.app.share.TransferPhase
@@ -298,7 +300,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             s.showInputsDialog || s.showProfileDialog || s.showMonitorPanel || s.showCleanTvWizard ||
             s.showCleanTvScreen || s.showFileManager || s.showStorageManager || s.showScreensaver || s.showScreensaverSettings ||
             s.debloatSuccessSummary != null || s.actionMenuApp != null ||
-            s.uninstallConfirmApp != null || s.showDefaultPrompt
+            s.uninstallConfirmApp != null || s.showDefaultPrompt || s.showHiddenApps
     val focusManager = LocalFocusManager.current
     var wasModalOpen by remember { mutableStateOf(false) }
     LaunchedEffect(modalOpen) {
@@ -480,7 +482,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                     }
                 }
 
-                val topBarPillRequesters = remember { List(9) { FocusRequester() } }
+                val topBarPillRequesters = remember { List(10) { FocusRequester() } }
                 val dockColRequesters = remember { List(cols) { FocusRequester() } }
                 val gridRow0ColRequesters = remember { List(cols) { FocusRequester() } }
 
@@ -521,6 +523,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                         onOpenFiles = vm::openFileManager,
                         onOpenScreensaver = vm::openScreensaverSettings,
                         onOpenSettings = vm::openSystemSettings,
+                        hiddenCount = s.hiddenApps.size,
+                        onOpenHidden = vm::openHiddenApps,
                         onTopFocus = { label, hasFocus ->
                             if (hasFocus) topBarLabel.value = label
                             else if (topBarLabel.value == label) topBarLabel.value = null
@@ -815,6 +819,16 @@ fun HomeScreen(vm: LauncherViewModel) {
                 )
             }
 
+            // Hidden apps: unhide from the top bar
+            if (s.showHiddenApps) {
+                HiddenAppsDialog(
+                    apps = s.hiddenApps,
+                    onUnhide = vm::unhideApp,
+                    onUnhideAll = vm::unhideAllApps,
+                    onDismiss = vm::closeHiddenApps
+                )
+            }
+
             // Uninstall confirmation dialog
             s.uninstallConfirmApp?.let { app ->
                 LauncherUninstallDialog(
@@ -1088,6 +1102,8 @@ private fun CleanTvTopBar(
     onOpenFiles: () -> Unit,
     onOpenScreensaver: () -> Unit,
     onOpenSettings: () -> Unit,
+    hiddenCount: Int = 0,
+    onOpenHidden: () -> Unit = {},
     onTopFocus: (label: String, hasFocus: Boolean) -> Unit = { _, _ -> },
 ) {
     val parts = timeText.trim().split(" ")
@@ -1277,6 +1293,18 @@ private fun CleanTvTopBar(
                 collapsible = true,
                 onFocusChange = { onTopFocus("Settings", it) },
             )
+            if (hiddenCount > 0) {
+                val hiddenLabel = "Hidden Apps ($hiddenCount)"
+                TvPill(
+                    label = hiddenLabel,
+                    icon = Icons.Rounded.Visibility,
+                    modifier = pillFocusModifier(9),
+                    onClick = onOpenHidden,
+                    contentDescription = "Hidden apps",
+                    collapsible = true,
+                    onFocusChange = { onTopFocus(hiddenLabel, it) },
+                )
+            }
         }
     }
 }
@@ -2291,6 +2319,54 @@ private fun LauncherActionDialog(
                 )
             }
             TvPill("App Info", Icons.Rounded.Info, guardAction(onDetails), Modifier.fillMaxWidth(), height = h, textSize = ts, fill = true)
+        }
+    }
+}
+
+/** Lists apps hidden from Home. OK on a row brings that app back. */
+@Composable
+private fun HiddenAppsDialog(
+    apps: List<InstalledAppInfo>,
+    onUnhide: (InstalledAppInfo) -> Unit,
+    onUnhideAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val firstFocus = rememberAutoFocus()
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xE6000000))
+            .modalTrap(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier
+                .width(560.dp)
+                .glassCard()
+                .padding(horizontal = 36.dp, vertical = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("Hidden Apps", style = Ty.Title.copy(fontSize = 34.sp))
+            Text("Select an app to show it on Home again.", style = Ty.Small.copy(color = Color(0x99FFFFFF), fontSize = 16.sp))
+            Spacer(Modifier.height(6.dp))
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                itemsIndexed(apps, key = { _, a -> a.packageName }) { i, app ->
+                    TvPill(
+                        label = "Unhide ${app.appName}",
+                        icon = Icons.Rounded.Visibility,
+                        onClick = { onUnhide(app) },
+                        modifier = Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier),
+                        height = 52.dp, textSize = 20.sp, fill = true
+                    )
+                }
+            }
+            if (apps.size > 1) {
+                TvPill("Unhide All", Icons.Rounded.Check, onUnhideAll, Modifier.fillMaxWidth(), height = 52.dp, textSize = 20.sp, fill = true)
+            }
+            TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 52.dp, textSize = 20.sp, fill = true)
         }
     }
 }
