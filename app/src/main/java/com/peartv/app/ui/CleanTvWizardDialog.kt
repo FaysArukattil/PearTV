@@ -308,39 +308,45 @@ private fun WelcomePage(onNext: () -> Unit) {
 
 // ───────────────────────── Page 1: features ─────────────────────────
 
-private class Feature(val iconRes: Int, val title: String, val sub: String, val c1: Color, val c2: Color)
+private class Feature(
+    val iconRes: Int,
+    val title: String,
+    val sub: String,
+    val c1: Color,
+    val c2: Color,
+    val iconSize: Dp = 36.dp,
+    val isLightBg: Boolean = false
+)
 
 @Composable
 private fun AppleAppIcon(
     iconRes: Int,
     c1: Color,
     c2: Color,
+    isLightBg: Boolean,
     modifier: Modifier = Modifier,
-    size: Dp = 48.dp,
-    iconSize: Dp = 26.dp
+    size: Dp = 54.dp,
+    iconSize: Dp = 36.dp
 ) {
-    val squircle = RoundedCornerShape(12.dp)
+    val squircle = RoundedCornerShape(14.dp)
+    val shadowColor = if (isLightBg) Color(0x35000000) else c1.copy(alpha = 0.55f)
+    val borderColor = if (isLightBg) {
+        Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0x2E000000)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0x66FFFFFF), Color(0x18FFFFFF)))
+    }
     Box(
         modifier = modifier
             .size(size)
             .shadow(
                 elevation = 8.dp,
                 shape = squircle,
-                ambientColor = c1.copy(alpha = 0.5f),
-                spotColor = c2.copy(alpha = 0.6f)
+                ambientColor = shadowColor,
+                spotColor = shadowColor
             )
             .clip(squircle)
             .background(Brush.linearGradient(listOf(c1, c2)))
-            .border(
-                1.dp,
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0x66FFFFFF),
-                        Color(0x18FFFFFF)
-                    )
-                ),
-                squircle
-            ),
+            .border(1.dp, borderColor, squircle),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -348,11 +354,11 @@ private fun AppleAppIcon(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(
-                            Color(0x30FFFFFF),
-                            Color(0x05FFFFFF),
-                            Color.Transparent
-                        )
+                        if (isLightBg) {
+                            listOf(Color(0x30FFFFFF), Color.Transparent)
+                        } else {
+                            listOf(Color(0x30FFFFFF), Color(0x05FFFFFF), Color.Transparent)
+                        }
                     )
                 )
         )
@@ -369,12 +375,12 @@ private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF5E5CE6)),
-            Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFF375F), Color(0xFFFF2D55)),
-            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFF1CB5FF), Color(0xFF1A65E8)),
-            Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFAF52DE), Color(0xFF5856D6)),
-            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF276BFD), Color(0xFF1A5FE8)),
-            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF222226), Color(0xFF121214)),
+            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF5E5CE6), iconSize = 36.dp),
+            Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
+            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
+            Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFAF52DE), Color(0xFF5856D6), iconSize = 36.dp),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF246BFD), Color(0xFF165AE0), iconSize = 38.dp),
+            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1C20), Color(0xFF101012), iconSize = 38.dp),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -399,14 +405,20 @@ private fun FeatureCard(f: Feature) {
     Column(
         Modifier
             .fillMaxWidth()
-            .height(134.dp)
+            .height(140.dp)
             .clip(shape)
             .background(Brush.verticalGradient(listOf(Color(0x20FFFFFF), Color(0x0CFFFFFF))))
             .border(1.dp, Color(0x26FFFFFF), shape)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        AppleAppIcon(iconRes = f.iconRes, c1 = f.c1, c2 = f.c2)
+        AppleAppIcon(
+            iconRes = f.iconRes,
+            c1 = f.c1,
+            c2 = f.c2,
+            isLightBg = f.isLightBg,
+            iconSize = f.iconSize
+        )
         Spacer(Modifier.height(10.dp))
         Text(f.title, style = Ty.Heading.copy(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
         Spacer(Modifier.height(2.dp))
