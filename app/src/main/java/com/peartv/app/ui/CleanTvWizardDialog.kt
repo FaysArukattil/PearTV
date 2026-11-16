@@ -405,7 +405,7 @@ private fun FeaturesPage(onNext: () -> Unit) {
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
-            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF276BFD), Color(0xFF165AE0), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF489CFF), Color(0xFF007AFF), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
             Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 38.dp, isLightBg = false),
         )
     }
