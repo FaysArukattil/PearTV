@@ -12,7 +12,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "LeanTV"
+rootProject.name = "PearTV"
 include(":app")
 include(":core-protocol")
 include(":discovery-android")

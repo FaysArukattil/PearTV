@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.leantv.app"
+    namespace = "com.peartv.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.leantv.app"
+        applicationId = "com.peartv.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 3

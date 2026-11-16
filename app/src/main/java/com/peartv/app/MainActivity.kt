@@ -1,0 +1,24 @@
+package com.peartv.app
+
+import android.os.Bundle
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import com.peartv.app.ui.PearTvApp
+import com.peartv.app.ui.MainViewModel
+
+class MainActivity : ComponentActivity() {
+    private val vm: MainViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setContent { PearTvApp(vm) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.onResume()
+    }
+}

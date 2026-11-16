@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Pear TV Splash logo. 288dp canvas; centered inside the safe 192dp circle.
-    Actual Apple TV layout with Bitten Pear + "tv" on pitch black.
+    Pear TV Splash logo. 288dp canvas.
+    Safely sized (scale=0.139, width=126dp) so the left pear stem and right "v" tip
+    never get clipped by Android's circular splash mask (160dp/192dp).
+    Pitch black AMOLED background.
 -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
@@ -17,14 +19,14 @@
                 android:name="pear_group"
                 android:pivotX="144"
                 android:pivotY="144"
-                android:scaleX="0.9"
-                android:scaleY="0.9"
-                android:translateX="34"
-                android:translateY="86">
+                android:scaleX="0.92"
+                android:scaleY="0.92"
+                android:translateX="81"
+                android:translateY="111">
 
                 <group
-                    android:scaleX="0.242"
-                    android:scaleY="0.242">
+                    android:scaleX="0.139"
+                    android:scaleY="0.139">
                     <!-- Pear Body with stem and jagged bite -->
                     <path
                         android:name="pear"
@@ -59,17 +61,17 @@
         <aapt:attr name="android:animation">
             <set android:ordering="together">
                 <objectAnimator
-                    android:duration="400"
+                    android:duration="450"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleX"
-                    android:valueFrom="0.9"
+                    android:valueFrom="0.92"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
                 <objectAnimator
-                    android:duration="400"
+                    android:duration="450"
                     android:interpolator="@android:interpolator/fast_out_slow_in"
                     android:propertyName="scaleY"
-                    android:valueFrom="0.9"
+                    android:valueFrom="0.92"
                     android:valueTo="1.0"
                     android:valueType="floatType" />
             </set>

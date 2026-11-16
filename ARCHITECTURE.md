@@ -1,6 +1,6 @@
-# LeanTV — Architecture Overview
+# PearTV — Architecture Overview
 
-LeanTV is an Android TV application designed for lightweight system optimization, custom Apple tvOS-style launcher functionality, comprehensive installed package management, live system monitoring, and network quick-sharing.
+PearTV is an Android TV application designed for lightweight system optimization, custom Apple tvOS-style launcher functionality, comprehensive installed package management, live system monitoring, and network quick-sharing.
 
 ---
 
@@ -18,10 +18,10 @@ LeanTV is an Android TV application designed for lightweight system optimization
 
 ## 2. Module & Package Structure
 
-The application is structured under the single application module `:app` with root package `com.leantv.app`:
+The application is structured under the single application module `:app` with root package `com.peartv.app`:
 
 ```
-com.leantv.app
+com.peartv.app
 ├── MainActivity.kt               # Entrypoint activity hosting the Compose UI
 │
 ├── adb/                          # Low-level on-device ADB protocol client
@@ -50,23 +50,23 @@ com.leantv.app
 ## 3. Planned Expansions (Phases 1–5)
 
 - **Phase 1 (Installed Apps & Uninstaller):**
-  - Package: `com.leantv.app.apps`
+  - Package: `com.peartv.app.apps`
   - Component: `InstalledAppsScreen.kt` + `AppManager.kt`
   - Provides All/User/System filters, search, sort by size/date/name, and remote-friendly uninstallation (`ACTION_DELETE` / `ACTION_UNINSTALL_PACKAGE`).
 
 - **Phase 2 (Apple tvOS-Style Custom Launcher):**
   - Component: `HomeActivity.kt` (`MAIN`, `HOME`, `DEFAULT`, `LEANBACK_LAUNCHER`)
-  - Package: `com.leantv.app.launcher`
+  - Package: `com.peartv.app.launcher`
   - High-performance, 60fps D-pad row navigation, top featured apps carousel, custom app categories, fast launch resolution (`getLeanbackLaunchIntentForPackage`).
 
 - **Phase 3 (Live System Monitor & Task Killer):**
-  - Package: `com.leantv.app.monitor`
+  - Package: `com.peartv.app.monitor`
   - Components: `SystemMonitor.kt`, `ProcessStats.kt`
   - Sliding drawer or panel showing real-time RAM (via `ActivityManager.MemoryInfo`), resilient CPU estimation, background process killer (`killBackgroundProcesses`).
 
 - **Phase 4 (Quick Share Side Panel & Local Server):**
-  - Package: `com.leantv.app.share`
-  - Components: Embedded lightweight HTTP server (Ktor or NanoHTTPD) binding on local Wi-Fi, QR code generation, PIN security, file receiver saving to `Downloads/LeanTV/`.
+  - Package: `com.peartv.app.share`
+  - Components: Embedded lightweight HTTP server (Ktor or NanoHTTPD) binding on local Wi-Fi, QR code generation, PIN security, file receiver saving to `Downloads/PearTV/`.
 
 - **Phase 5 (Performance Polish & Testing):**
   - Icon caching (LruCache / Coil/custom memory cache), leak elimination, full D-pad focus validation, comprehensive documentation.

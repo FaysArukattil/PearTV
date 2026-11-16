@@ -135,7 +135,7 @@ adb devices
 adb install -r app/build/outputs/apk/release/app-universal-release.apk
 
 # Launch CleanYourTV directly
-adb shell monkey -p com.leantv.app -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.peartv.app -c android.intent.category.LAUNCHER 1
 ```
 
 ---

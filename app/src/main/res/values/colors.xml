@@ -1,7 +1,6 @@
 <resources>
-    <!-- Window / splash background: matches the first colour of the default "Graphite" home wallpaper
-         so the splash -> home hand-off has no colour flash. -->
-    <color name="bg">#FF050507</color>
-    <color name="splash_bg">#FF050507</color>
+    <!-- Pitch Black AMOLED background for all screens and startup splash -->
+    <color name="bg">#FF000000</color>
+    <color name="splash_bg">#FF000000</color>
     <color name="ic_bg">#FF000000</color>
 </resources>
