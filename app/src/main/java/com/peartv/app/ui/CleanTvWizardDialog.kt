@@ -409,7 +409,7 @@ private fun FeaturesPage(onNext: () -> Unit) {
             Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_storage_brand, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 40.dp, isLightBg = true),
             Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF2870FD), Color(0xFF1456DA), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
-            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 38.dp, isLightBg = false),
+            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 42.dp, fullIconRes = R.drawable.ic_screensavers_brand),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
