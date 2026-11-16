@@ -262,21 +262,53 @@ object StorageHelper {
         return String.format(Locale.US, "%.0f KB", kb)
     }
 
-    /**
-     * Clear application cache using local ADB or system intent.
-     */
-    suspend fun clearAppData(ctx: Context, adbClient: AdbClient?, pkg: String): Boolean = withContext(Dispatchers.IO) {
-        if (adbClient != null && adbClient.isConnected) {
-            val res = adbClient.shell("pm clear $pkg")
-            return@withContext res.code == 0
-        }
-        // Fallback: Open App Settings
-        openAppDetails(ctx, pkg)
-        return@withContext false
+    /** Connects to on-device ADB if needed. True when a shell is available. */
+    private suspend fun ensureAdb(adbClient: AdbClient?): Boolean {
+        if (adbClient == null) return false
+        try { if (!adbClient.isConnected) adbClient.connect() } catch (_: Exception) {}
+        return adbClient.isConnected
     }
 
     /**
-     * Clear all temporary app caches across accessible directories.
+     * Wipes ALL data of [pkg] (`pm clear`), like Settings > Clear data. Tries on-device ADB (connecting
+     * if needed), then Shizuku / root. Only if both are unavailable does it open App Info and return false.
+     */
+    suspend fun clearAppData(ctx: Context, adbClient: AdbClient?, pkg: String): Boolean = withContext(Dispatchers.IO) {
+        val cmd = "pm clear $pkg"
+        if (ensureAdb(adbClient)) {
+            val res = adbClient!!.shell(cmd)
+            if (res.code == 0 && !res.out.contains("Failed", ignoreCase = true)) return@withContext true
+        }
+        if (com.leantv.app.data.SystemDebloater.runPrivilegedCommand(cmd)) return@withContext true
+        openAppDetails(ctx, pkg)
+        false
+    }
+
+    /**
+     * Clears cache of [pkg]. Android only lets the shell empty another app's external cache directly;
+     * its internal cache is freed by `pm trim-caches`, which clears cache of all apps (cache only, never data).
+     */
+    suspend fun clearAppCache(ctx: Context, adbClient: AdbClient?, pkg: String): Boolean = withContext(Dispatchers.IO) {
+        if (pkg == ctx.packageName) cleanAllAccessibleCaches(ctx)
+        val cmd = "rm -rf /sdcard/Android/data/$pkg/cache/* /sdcard/Android/data/$pkg/code_cache/*; pm trim-caches 999999999999"
+        if (ensureAdb(adbClient)) {
+            if (adbClient!!.shell(cmd).code == 0) return@withContext true
+        }
+        if (com.leantv.app.data.SystemDebloater.runPrivilegedCommand(cmd)) return@withContext true
+        openAppDetails(ctx, pkg)
+        false
+    }
+
+    /** Clears every app's cache (`pm trim-caches`) plus LeanTV's own. Returns LeanTV's own freed bytes. */
+    suspend fun clearAllAppCaches(ctx: Context, adbClient: AdbClient?): Long = withContext(Dispatchers.IO) {
+        val own = cleanAllAccessibleCaches(ctx)
+        val cmd = "pm trim-caches 999999999999"
+        val ok = ensureAdb(adbClient) && adbClient!!.shell(cmd).code == 0
+        if (!ok) com.leantv.app.data.SystemDebloater.runPrivilegedCommand(cmd)
+        own
+    }
+
+    /** Clear all temporary app caches across accessible directories.
      */
     suspend fun cleanAllAccessibleCaches(ctx: Context): Long = withContext(Dispatchers.IO) {
         var reclaimed = 0L

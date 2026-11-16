@@ -331,17 +331,8 @@ fun CleanTvScreen(
     fun clearCacheForApp(app: DebloatAppEntry) {
         scope.launch {
             statusMessage = "Clearing cache for ${app.label}..."
-            var ok = false
-            if (adbClient != null && adbClient.isConnected) {
-                val res = adbClient.shell("rm -rf /data/data/${app.pkg}/cache/* /data/data/${app.pkg}/code_cache/* /sdcard/Android/data/${app.pkg}/cache/*")
-                ok = res.code == 0
-            }
-            if (!ok) {
-                // Fallback to clearing accessible cache
-                StorageHelper.cleanAllAccessibleCaches(ctx)
-                ok = true
-            }
-            statusMessage = "✓ Cache cleared for ${app.label}"
+            val ok = StorageHelper.clearAppCache(ctx, adbClient, app.pkg)
+            statusMessage = if (ok) "✓ Cache cleared for ${app.label}" else "Opened App Settings to clear cache for ${app.label}"
             refreshList(isSilent = true)
         }
     }
@@ -534,8 +525,8 @@ fun CleanTvScreen(
                         text = "Clean All Cache",
                         onClick = {
                             scope.launch {
-                                val reclaimed = StorageHelper.cleanAllAccessibleCaches(ctx)
-                                statusMessage = "✓ Freed ${StorageHelper.formatBytes(reclaimed)} of cache!"
+                                val reclaimed = StorageHelper.clearAllAppCaches(ctx, adbClient)
+                                statusMessage = "✓ Cache cleared for all apps (LeanTV freed ${StorageHelper.formatBytes(reclaimed)})"
                                 refreshList(isSilent = true)
                             }
                         },

@@ -512,6 +512,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                         dateText = s.dateText,
                         networkLabel = s.networkLabel,
                         accountLabel = s.tvProfile.email ?: "Sign in",
+                        accountInitial = s.tvProfile.email?.take(1)?.uppercase(),
                         onOpenAccount = vm::openAccountsNative,
                         sortMode = s.appSortMode,
                         pillRequesters = topBarPillRequesters,
@@ -693,7 +694,10 @@ fun HomeScreen(vm: LauncherViewModel) {
                     onToggleOption = vm::toggleMajorOption,
                     onOpenDeveloperOptions = vm::openDeveloperOptions,
                     onConfirm = vm::executeOneClickCleanTv,
-                    onDismiss = vm::dismissCleanTvWizard
+                    onDismiss = vm::dismissCleanTvWizard,
+                    showPermissions = true,
+                    scanDone = s.wizardScanDone,
+                    bloatLabels = s.wizardTargetLabels
                 )
             }
 
@@ -1092,6 +1096,7 @@ private fun CleanTvTopBar(
     dateText: String,
     networkLabel: String,
     accountLabel: String,
+    accountInitial: String? = null,
     onOpenAccount: () -> Unit,
     sortMode: AppSortMode,
     pillRequesters: List<FocusRequester> = emptyList(),
@@ -1295,6 +1300,8 @@ private fun CleanTvTopBar(
             TvPill(
                 label = accountLabel,
                 icon = Icons.Rounded.AccountCircle,
+                avatarInitial = accountInitial,
+                avatarSeed = accountLabel,
                 modifier = pillFocusModifier(9),
                 contentDescription = "Google account",
                 onClick = onOpenAccount,
@@ -1328,6 +1335,8 @@ private fun TvPill(
     showDot: Boolean = false,
     onFocusChange: (Boolean) -> Unit = {},
     onPillFocus: () -> Unit = {},
+    avatarInitial: String? = null,
+    avatarSeed: String = "",
 ) {
     val view = LocalView.current
     var focused by remember { mutableStateOf(false) }
@@ -1354,7 +1363,7 @@ private fun TvPill(
         isSelected -> Brush.verticalGradient(listOf(Color(0x4DFFFFFF), Color(0x24FFFFFF)))
         else -> Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x14FFFFFF)))
     }
-    val iconSize = 26.dp
+    val iconSize = if (avatarInitial != null) 36.dp else 26.dp
     val sidePad = (height - iconSize) / 2   // centres the icon when collapsed
     Row(
         modifier
@@ -1405,7 +1414,20 @@ private fun TvPill(
         horizontalArrangement = if (fill || collapsible) Arrangement.Start else Arrangement.Center,
     ) {
         Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
-            if (iconRes != null) {
+            if (avatarInitial != null) {
+                val palette = listOf(0xFFFF9F0A, 0xFF0A84FF, 0xFF30D158, 0xFFBF5AF2, 0xFFFF375F, 0xFF64D2FF)
+                val base = Color(palette[(avatarSeed.hashCode() and 0x7fffffff) % palette.size])
+                Box(
+                    Modifier
+                        .size(iconSize)
+                        .clip(CircleShape)
+                        .background(Brush.verticalGradient(listOf(base, base.copy(alpha = 0.72f))))
+                        .border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(avatarInitial, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                }
+            } else if (iconRes != null) {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = contentDescription ?: label,
@@ -2213,6 +2235,8 @@ private fun ProfileAccountsDialog(
                     TvPill(
                         label = if (active) "$email  ·  Active" else email,
                         icon = if (active) Icons.Rounded.CheckCircle else Icons.Rounded.AccountCircle,
+                        avatarInitial = email.take(1).uppercase(),
+                        avatarSeed = email,
                         onClick = { onSelect(email) },
                         modifier = Modifier.weight(1f).then(if (i == 0) Modifier.focusRequester(autoFocus) else Modifier),
                         height = 62.dp, textSize = 21.sp, maxLabelWidth = 520.dp, fill = true, isSelected = active,

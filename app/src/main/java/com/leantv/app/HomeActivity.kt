@@ -60,8 +60,11 @@ class HomeActivity : ComponentActivity() {
 
         // Non-essential start-up work happens after Home is on its way to the screen.
         lifecycleScope.launch(Dispatchers.Default) { TvSound.init(applicationContext) }
-        checkInitialStoragePermissions()
-        checkAccountPermission()
+        // First run: the welcome screen asks for permissions itself, so no system pop-ups before it.
+        val firstRunPending = !getSharedPreferences("leantv", MODE_PRIVATE).getBoolean("debloat_wizard_dismissed", false)
+        if (!firstRunPending) {
+            checkInitialStoragePermissions()
+        }
         handleIntent(intent)
     }
 
@@ -72,17 +75,6 @@ class HomeActivity : ComponentActivity() {
             val initialDir = if (initialPath != null) java.io.File(initialPath) else null
             val highlight = intent.getStringExtra("highlight")
             vm.openFileManager(initialDir = initialDir, highlightFile = highlight)
-        }
-    }
-
-    /** Lets Home see the TV's signed-in Google account (shown in the top-right chip). */
-    private fun checkAccountPermission() {
-        val storagePending = Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
-            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-        if (!storagePending && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            checkSelfPermission(android.Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(android.Manifest.permission.GET_ACCOUNTS), 102)
         }
     }
 
@@ -104,8 +96,7 @@ class HomeActivity : ComponentActivity() {
                 requestPermissions(
                     arrayOf(
                         android.Manifest.permission.READ_EXTERNAL_STORAGE,
-                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                        android.Manifest.permission.GET_ACCOUNTS
+                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
                     ),
                     101
                 )

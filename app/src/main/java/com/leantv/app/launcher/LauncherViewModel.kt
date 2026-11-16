@@ -17,6 +17,7 @@ import com.leantv.app.account.TvAccountHelper
 import com.leantv.app.account.TvProfile
 import com.leantv.app.adb.AdbClient
 import com.leantv.app.adb.ConnResult
+import com.leantv.app.data.AppItem
 import com.leantv.app.data.Catalog
 import com.leantv.app.data.DebloatPresets
 import com.leantv.app.data.DeviceProbe
@@ -206,6 +207,8 @@ data class LauncherState(
     val debloatProgress: String? = null,
     val showCleanTvConfirm: Boolean = false,
     val showCleanTvWizard: Boolean = false,
+    val wizardScanDone: Boolean = false,
+    val wizardTargetLabels: List<String> = emptyList(),
     val majorOptions: List<MajorDebloatOption> = DebloatPresets.defaultMajorOptions(),
     val debloatSuccessSummary: String? = null,
     val detectedDeviceLabel: String = "Android TV",
@@ -373,6 +376,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (!journal.debloatWizardDismissed) {
             viewModelScope.launch {
                 delay(1200)
+                prepareWizardScan()
                 _state.update { it.copy(showCleanTvWizard = true) }
             }
         }
@@ -1158,18 +1162,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAppDataAction(app: InstalledAppInfo) {
         dismissActionMenu()
         viewModelScope.launch {
+            toast("Clearing data for ${app.appName}...")
             val ok = StorageHelper.clearAppData(ctx, adb, app.packageName)
-            if (ok) {
-                toast("Cleared data for ${app.appName}")
-            }
+            toast(if (ok) "Cleared data for ${app.appName}" else "Couldn't clear automatically. In App Info choose Storage > Clear data.")
         }
     }
 
     fun clearAppCacheAction(app: InstalledAppInfo) {
         dismissActionMenu()
         viewModelScope.launch {
-            StorageHelper.cleanAllAccessibleCaches(ctx)
-            toast("Cleared cache for ${app.appName}")
+            toast("Clearing cache...")
+            val ok = StorageHelper.clearAppCache(ctx, adb, app.packageName)
+            toast(if (ok) "Cleared cache for ${app.appName}" else "Couldn't clear automatically. In App Info choose Storage > Clear cache.")
         }
     }
 
@@ -2028,6 +2032,53 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(showCleanTvWizard = false) }
     }
 
+    /** System apps currently installed AND enabled (what the wizard can really act on). */
+    private var wizardApps: List<AppItem> = emptyList()
+
+    /** Which apps a clean would disable, given the keep/remove choices. Shared by the preview and the real run. */
+    private fun cleanTargets(apps: List<AppItem>, majorOpts: List<MajorDebloatOption>): List<AppItem> {
+        val packagesToExplicitlyKeep = majorOpts.filter { !it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+        val packagesToExplicitlyRemove = majorOpts.filter { it.isSelectedForRemoval }.flatMap { it.packages }.toSet()
+        return apps.filter { app ->
+            if (app.disabled) return@filter false
+            if (app.pkg in packagesToExplicitlyKeep) return@filter false
+            if (app.pkg in packagesToExplicitlyRemove) return@filter true
+
+            app.tier == Tier.RECOMMENDED ||
+            app.pkg.contains("adservice", ignoreCase = true) ||
+            app.pkg.contains("advertise", ignoreCase = true) ||
+            app.pkg.contains("analytics", ignoreCase = true) ||
+            app.pkg.contains("telemetry", ignoreCase = true) ||
+            app.pkg.contains("tracking", ignoreCase = true) ||
+            app.pkg.contains("statistic", ignoreCase = true) ||
+            app.pkg.contains("recommendation", ignoreCase = true) ||
+            app.pkg.contains("feedback", ignoreCase = true) ||
+            app.pkg.startsWith("com.xiaomi.mitv.advertise") ||
+            app.pkg.startsWith("com.mitv.tvhome") ||
+            app.pkg.startsWith("com.tcl.waterfall") ||
+            app.pkg.startsWith("com.tcl.commercial")
+        }
+    }
+
+    private fun refreshWizardTargets() {
+        val labels = cleanTargets(wizardApps, _state.value.majorOptions).map { it.label }
+        _state.update { it.copy(wizardTargetLabels = labels) }
+    }
+
+    /** Scans what is really on the TV so the wizard only lists bloat that is present and still enabled. */
+    private suspend fun prepareWizardScan() {
+        val scan = withContext(Dispatchers.Default) { runCatching { scanner.scan() }.getOrNull() }
+        wizardApps = scan?.apps?.filter { !it.disabled } ?: emptyList()
+        val present = wizardApps.map { it.pkg }.toSet()
+        _state.update { st ->
+            st.copy(
+                majorOptions = st.majorOptions.filter { opt -> opt.packages.any { it in present } },
+                wizardScanDone = true
+            )
+        }
+        refreshWizardTargets()
+    }
+
     fun toggleMajorOption(optionId: String) {
         _state.update { s ->
             val updated = s.majorOptions.map { opt ->
@@ -2036,6 +2087,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             }
             s.copy(majorOptions = updated)
         }
+        refreshWizardTargets()
     }
 
     fun dismissDebloatSummary() {
@@ -2076,25 +2128,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 val scan = withContext(Dispatchers.Default) { scanner.scan() }
                 journal.saveBaselineIfMissing(scan.allSystem)
 
-                val targets = scan.apps.filter { app ->
-                    if (app.disabled) return@filter false
-                    if (app.pkg in packagesToExplicitlyKeep) return@filter false
-                    if (app.pkg in packagesToExplicitlyRemove) return@filter true
-
-                    app.tier == Tier.RECOMMENDED ||
-                    app.pkg.contains("adservice", ignoreCase = true) ||
-                    app.pkg.contains("advertise", ignoreCase = true) ||
-                    app.pkg.contains("analytics", ignoreCase = true) ||
-                    app.pkg.contains("telemetry", ignoreCase = true) ||
-                    app.pkg.contains("tracking", ignoreCase = true) ||
-                    app.pkg.contains("statistic", ignoreCase = true) ||
-                    app.pkg.contains("recommendation", ignoreCase = true) ||
-                    app.pkg.contains("feedback", ignoreCase = true) ||
-                    app.pkg.startsWith("com.xiaomi.mitv.advertise") ||
-                    app.pkg.startsWith("com.mitv.tvhome") ||
-                    app.pkg.startsWith("com.tcl.waterfall") ||
-                    app.pkg.startsWith("com.tcl.commercial")
-                }
+                val targets = cleanTargets(scan.apps, majorOpts)
 
                 // 3. Disable bloatware packages safely
                 var disabledCount = 0

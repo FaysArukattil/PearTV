@@ -235,7 +235,7 @@ fun StorageManagerScreen(
                         onSelectCategory = { cat -> selectedCategory = cat },
                         onCleanCache = {
                             scope.launch {
-                                val reclaimed = StorageHelper.cleanAllAccessibleCaches(ctx)
+                                val reclaimed = StorageHelper.clearAllAppCaches(ctx, adbClient)
                                 statusMessage = "Cleaned ${StorageHelper.formatBytes(reclaimed)} of cache!"
                                 refresh()
                             }
