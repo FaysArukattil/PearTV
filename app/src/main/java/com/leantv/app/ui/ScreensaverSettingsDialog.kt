@@ -369,23 +369,32 @@ fun ScreensaverSettingsDialog(
 
     // Focus is pulled into this popup when it opens, and handed back to where the user was
     // whenever a delete-confirmation sub-popup closes.
+      var panelHasFocus by remember { mutableStateOf(false) }
+
     LaunchedEffect(hasSubDialog) {
         if (hasSubDialog) return@LaunchedEffect
-        delay(50)
+        delay(if (openedOnce) 50 else 220)
         val target = when {
             !openedOnce  -> if (autoCache) downloadedReq else streamReq   // the currently applied source
             returnToGrid -> gridZoneReq
             else         -> lastLeftReq ?: streamReq
         }
-        // The remembered item may have disappeared (e.g. "Clear All" after deleting everything).
-        runCatching { target.requestFocus() }.onFailure { runCatching { previewReq.requestFocus() } }
         openedOnce = true
+        // Retry until focus really lands inside the popup (something else can steal it while it animates in).
+        var tries = 0
+        do {
+            // The remembered item may have disappeared (e.g. "Clear All" after deleting everything).
+            runCatching { target.requestFocus() }.onFailure { runCatching { previewReq.requestFocus() } }
+            delay(90)
+            tries++
+        } while (!panelHasFocus && tries < 10)
     }
 
-    Box(
+     Box(
         Modifier
             .fillMaxSize()
-            .modalTrap()
+            .onFocusChanged { panelHasFocus = it.hasFocus }
+            .modalTrap(autoFocus = false)
             .background(Color(0xCC000000).copy(alpha = 0.95f * scrimAlpha))
             .onPreviewKeyEvent { ev ->
                 if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
