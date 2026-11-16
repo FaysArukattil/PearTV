@@ -30,14 +30,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(
         UiState(
-            screen = if (journal.onboarded) Screen.Setup else Screen.Welcome,
+            screen = Screen.Setup,
             removed = journal.removed(),
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
-        if (journal.onboarded) connect()
+        connect()
     }
 
     // ---------- navigation ----------
@@ -47,11 +47,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (screen == Screen.InstalledApps && _state.value.installedApps.isEmpty()) {
             loadInstalledApps()
         }
-    }
-
-    fun begin() {
-        go(Screen.Setup)
-        connect()
     }
 
     fun clearToast() = _state.update { it.copy(toast = null) }

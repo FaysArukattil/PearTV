@@ -703,20 +703,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             }
         }
 
-            // CleanYourTV 1-Click Wizard Dialog
-            if (s.showCleanTvWizard) {
-                CleanTvWizardDialog(
-                    deviceLabel = s.detectedDeviceLabel,
-                    majorOptions = s.majorOptions,
-                    onToggleOption = vm::toggleMajorOption,
-                    onOpenDeveloperOptions = vm::openDeveloperOptions,
-                    onAuthorizeAdb = vm::authorizeAdb,                    onConfirm = vm::executeOneClickCleanTv,
-                    onDismiss = vm::dismissCleanTvWizard,
-                    showPermissions = true,
-                    scanDone = s.wizardScanDone,
-                    bloatLabels = s.wizardTargetLabels
-                )
-            }
+
 
             // CleanYourTV Success Modal
             s.debloatSuccessSummary?.let { summary ->

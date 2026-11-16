@@ -2032,6 +2032,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun openCleanTvWizard() {
+        _state.update { it.copy(showCleanTvWizard = true) }
+        viewModelScope.launch { prepareWizardScan() }
+    }
+
     fun dismissCleanTvWizard() {
         journal.debloatWizardDismissed = true
         _state.update { it.copy(showCleanTvWizard = false) }

@@ -70,6 +70,12 @@ class HomeActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.getBooleanExtra("get_started", false) ||
+            intent.action == "com.peartv.app.action.GET_STARTED" ||
+            intent.getBooleanExtra("wizard", false) ||
+            intent.action == "com.peartv.app.action.WIZARD") {
+            vm.openCleanTvWizard()
+        }
         if (intent.getStringExtra("screen") == "file_manager" || intent.action == "com.peartv.app.action.FILE_MANAGER") {
             val initialPath = intent.getStringExtra("path")
             val initialDir = if (initialPath != null) java.io.File(initialPath) else null

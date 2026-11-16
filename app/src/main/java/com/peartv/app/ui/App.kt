@@ -59,7 +59,6 @@ private fun AppContent(vm: MainViewModel) {
                 .onPreviewKeyEvent { s.busy != null }
         ) {
             when (s.screen) {
-                Screen.Welcome -> WelcomeScreen(vm)
                 Screen.Setup -> SetupScreen(s, vm)
                 else -> Row(Modifier.fillMaxSize()) {
                     Rail(s, vm)

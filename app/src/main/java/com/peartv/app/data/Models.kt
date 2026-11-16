@@ -68,7 +68,7 @@ data class DeviceProfile(
         }
 }
 
-enum class Screen { Welcome, Setup, Dashboard, InstalledApps, Debloat, Tweaks, Restore }
+enum class Screen { Setup, Dashboard, InstalledApps, Debloat, Tweaks, Restore }
 
 enum class Filter(val label: String) {
     RECOMMENDED("Suggested"),
