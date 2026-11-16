@@ -290,12 +290,18 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             customWallpaperUri = journal.customWallpaperUri,
             is24hClock = journal.clockFormat24h,
             showGreeting = journal.showGreeting,
-            closeAppsOnHome = journal.closeAppsOnHome
+            closeAppsOnHome = journal.closeAppsOnHome,
+            showCleanTvWizard = !journal.debloatWizardDismissed
         )
     )
     val state: StateFlow<LauncherState> = _state.asStateFlow()
 
     init {
+        // If first-run wizard is pending, allow splash to hand off immediately without waiting for apps/artwork
+        if (!journal.debloatWizardDismissed) {
+            splashReady = true
+        }
+
         // 1) Everything needed for the first frame, nothing else.
         val (greeting, time, date) = clockFields()
         _state.update {
@@ -375,7 +381,6 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     private fun checkFirstRunDebloat() {
         if (!journal.debloatWizardDismissed) {
             viewModelScope.launch {
-                delay(1200)
                 prepareWizardScan()
                 _state.update { it.copy(showCleanTvWizard = true) }
             }

@@ -356,10 +356,9 @@ private fun AppleAppIcon(
                     )
                 )
         )
-        Icon(
+        Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            tint = Color.White,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -372,10 +371,10 @@ private fun FeaturesPage(onNext: () -> Unit) {
         listOf(
             Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF5E5CE6)),
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFF375F), Color(0xFFFF2D55)),
-            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFF007AFF), Color(0xFF5AC8FA)),
+            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFF1CB5FF), Color(0xFF1A65E8)),
             Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFAF52DE), Color(0xFF5856D6)),
-            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF00C7BE), Color(0xFF007AFF)),
-            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF34C759), Color(0xFF00C7BE)),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF276BFD), Color(0xFF1A5FE8)),
+            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF222226), Color(0xFF121214)),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
