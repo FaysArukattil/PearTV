@@ -693,7 +693,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                     majorOptions = s.majorOptions,
                     onToggleOption = vm::toggleMajorOption,
                     onOpenDeveloperOptions = vm::openDeveloperOptions,
-                    onConfirm = vm::executeOneClickCleanTv,
+                    onAuthorizeAdb = vm::authorizeAdb,                    onConfirm = vm::executeOneClickCleanTv,
                     onDismiss = vm::dismissCleanTvWizard,
                     showPermissions = true,
                     scanDone = s.wizardScanDone,

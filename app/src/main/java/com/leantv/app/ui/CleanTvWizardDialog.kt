@@ -26,6 +26,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,7 +58,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,7 +66,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,19 +78,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.leantv.app.R
 import com.leantv.app.data.MajorDebloatOption
 import kotlinx.coroutines.delay
 
 private const val LAST_STEP = 6
 
 /**
- * First-run onboarding: Welcome > Features > Files > Usage > Nearby > Debugging > One-tap clean.
- * Every permission gets its own page that explains why it is needed; pressing Continue shows the
- * system prompt. [showPermissions] = false keeps the old single-step "clean" dialog.
+ * First-run onboarding: Welcome > Features > Files > Usage > Nearby > USB debugging > One-tap clean.
+ * [onAuthorizeAdb] connects to the TV's ADB (this triggers the "Allow USB debugging?" prompt).
+ * Result: 0 = authorized, 1 = ADB port closed, 2 = refused/failed.
  */
 @Composable
 fun CleanTvWizardDialog(
@@ -103,6 +106,7 @@ fun CleanTvWizardDialog(
     showPermissions: Boolean = false,
     scanDone: Boolean = true,
     bloatLabels: List<String>? = null,
+    onAuthorizeAdb: ((Int) -> Unit) -> Unit = { it(2) },
 ) {
     if (!showPermissions) {
         val focus = rememberAutoFocus()
@@ -120,8 +124,15 @@ fun CleanTvWizardDialog(
         return
     }
 
-    var step by rememberSaveable { mutableIntStateOf(0) }
-    val next = { step = (step + 1).coerceAtMost(LAST_STEP) }
+    val ctx = LocalContext.current
+    val sp = remember { ctx.getSharedPreferences("leantv", Context.MODE_PRIVATE) }
+    // Step is persisted: Android can restart the app when a permission is granted.
+    var step by remember { mutableIntStateOf(sp.getInt("wizard_step", 0).coerceIn(0, LAST_STEP)) }
+    LaunchedEffect(step) { sp.edit().putInt("wizard_step", step).apply() }
+    val next = {
+        sp.edit().putBoolean("wizard_pending", false).apply()
+        step = (step + 1).coerceAtMost(LAST_STEP)
+    }
 
     Box(
         Modifier
@@ -129,7 +140,6 @@ fun CleanTvWizardDialog(
             .background(Brush.verticalGradient(listOf(Color(0xFF0B1226), Color(0xFF050509), Color(0xFF000000))))
             .modalTrap()
     ) {
-        // Soft blue glow behind the content.
         Box(
             Modifier
                 .align(Alignment.TopCenter)
@@ -146,14 +156,14 @@ fun CleanTvWizardDialog(
             label = "onboardingStep",
             modifier = Modifier.fillMaxSize()
         ) { s ->
-            Box(Modifier.fillMaxSize().padding(horizontal = 110.dp).padding(top = 40.dp, bottom = 84.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(horizontal = 110.dp).padding(top = 52.dp, bottom = 72.dp), contentAlignment = Alignment.Center) {
                 when (s) {
                     0 -> WelcomePage(next)
                     1 -> FeaturesPage(next)
-                    2 -> PermissionPage(filesSpec(), onNext = next)
-                    3 -> PermissionPage(usageSpec(), onNext = next)
-                    4 -> PermissionPage(nearbySpec(), onNext = next)
-                    5 -> PermissionPage(debugSpec(), onNext = next)
+                    2 -> PermissionPage(filesSpec(), 1, 4, next, onAuthorizeAdb)
+                    3 -> PermissionPage(usageSpec(), 2, 4, next, onAuthorizeAdb)
+                    4 -> PermissionPage(nearbySpec(), 3, 4, next, onAuthorizeAdb)
+                    5 -> PermissionPage(debugSpec(), 4, 4, next, onAuthorizeAdb)
                     else -> Column(
                         Modifier.width(900.dp).glassCard().padding(horizontal = 40.dp, vertical = 32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -165,9 +175,20 @@ fun CleanTvWizardDialog(
             }
         }
 
-        // Progress dots.
+        // Brand mark (top-left) on every page after the welcome screen.
+        if (step > 0) {
+            Row(
+                Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                LogoMark(34.dp)
+                Text("LeanTV", style = Ty.Heading.copy(color = Color(0xCCFFFFFF), fontSize = 20.sp, fontWeight = FontWeight.SemiBold))
+            }
+        }
+
         Row(
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp),
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 30.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -192,6 +213,36 @@ private fun FadeUp(delayMs: Int, modifier: Modifier = Modifier, content: @Compos
         a.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
     }
     Box(modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 44f }) { content() }
+}
+
+/** The real app logo (ic_fg on the launcher background colour). */
+@Composable
+private fun LogoMark(size: Dp) {
+    val shape = RoundedCornerShape(size * 0.26f)
+    Box(
+        Modifier.size(size).clip(shape).background(Color(0xFF0D1F2A)).border(1.dp, Color(0x33FFFFFF), shape),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(painterResource(R.drawable.ic_fg), contentDescription = null, modifier = Modifier.requiredSize(size * 1.45f))
+    }
+}
+
+@Composable
+private fun LogoHero(size: Dp = 140.dp) {
+    val t = rememberInfiniteTransition(label = "logoPulse")
+    val s by t.animateFloat(
+        1f, 1.18f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "logoScale"
+    )
+    Box(contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(size * 1.5f)
+                .graphicsLayer { scaleX = s; scaleY = s }
+                .background(Brush.radialGradient(listOf(Color(0x55FFB347), Color.Transparent)), CircleShape)
+        )
+        LogoMark(size)
+    }
 }
 
 @Composable
@@ -229,12 +280,12 @@ private fun BigButton(text: String, onClick: () -> Unit, primary: Boolean = true
 private fun WelcomePage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FadeUp(0) { GradientIcon(Icons.Rounded.Tv, 128) }
-        Spacer(Modifier.height(34.dp))
+        FadeUp(0) { LogoHero(132.dp) }
+        Spacer(Modifier.height(22.dp))
         FadeUp(180) {
-            Text("LeanTV", style = Ty.Display.copy(color = Color.White, fontSize = 84.sp, letterSpacing = (-2.5).sp))
+            Text("LeanTV", style = Ty.Display.copy(color = Color.White, fontSize = 80.sp, letterSpacing = (-2.5).sp))
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         FadeUp(320) {
             Text(
                 "A faster, cleaner home for your TV.",
@@ -242,73 +293,76 @@ private fun WelcomePage(onNext: () -> Unit) {
                 textAlign = TextAlign.Center
             )
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(18.dp))
         FadeUp(440) {
-            Text(
-                "Setup takes about a minute. We'll show what LeanTV can do, then ask only for what it needs.",
-                style = Ty.Dim.copy(fontSize = 20.sp),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(720.dp)
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("Takes 1 minute", "Everything stays on this TV").forEach { label ->
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(Color(0x1FFFFFFF))
+                            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(50))
+                            .padding(horizontal = 16.dp, vertical = 7.dp)
+                    ) { Text(label, fontSize = 16.sp, color = Color(0xCCFFFFFF), fontWeight = FontWeight.Medium) }
+                }
+            }
         }
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(34.dp))
         FadeUp(600) { BigButton("Get started", onNext, modifier = Modifier.width(360.dp).focusRequester(focus)) }
     }
 }
 
 // ───────────────────────── Page 1: features ─────────────────────────
 
-private class Feature(val icon: ImageVector, val title: String, val desc: String)
+private class Feature(val icon: ImageVector, val title: String, val sub: String, val c1: Color, val c2: Color)
 
 @Composable
 private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(Icons.Rounded.Delete, "Delete any app", "Uninstall or disable any app, even stubborn system ones."),
-            Feature(Icons.Rounded.Share, "Built-in Quick Share", "Send files to and from phones on the same Wi-Fi. Android and Apple."),
-            Feature(Icons.Rounded.Landscape, "Apple TV screensavers", "Beautiful aerial screensavers whenever your TV is idle."),
-            Feature(Icons.Rounded.Storage, "Storage manager", "See what is using space and clear cache and junk in one tap."),
-            Feature(Icons.Rounded.CleaningServices, "TV debloater", "Remove ads, trackers and preinstalled junk for a faster TV."),
+            Feature(Icons.Rounded.CleaningServices, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF64D2FF)),
+            Feature(Icons.Rounded.Delete, "App remover", "Uninstall anything", Color(0xFFFF375F), Color(0xFFFF8FA3)),
+            Feature(Icons.Rounded.Folder, "File manager", "Browse & manage files", Color(0xFFFF9F0A), Color(0xFFFFD60A)),
+            Feature(Icons.Rounded.Storage, "Storage", "Find & clear junk", Color(0xFFBF5AF2), Color(0xFFDA8FFF)),
+            Feature(Icons.Rounded.Share, "Quick Share", "Phone to TV, fast", Color(0xFF30D158), Color(0xFF8EE6A0)),
+            Feature(Icons.Rounded.Landscape, "Screensavers", "Apple TV aerials", Color(0xFF40C8E0), Color(0xFF90E8F5)),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FadeUp(0) { Text("Everything your TV needs", style = Ty.Title.copy(color = Color.White, fontSize = 46.sp), textAlign = TextAlign.Center) }
-        Spacer(Modifier.height(6.dp))
-        FadeUp(100) { Text("Built for the remote. No phone required.", style = Ty.Dim.copy(fontSize = 22.sp)) }
-        Spacer(Modifier.height(28.dp))
+        FadeUp(0) { Text("Everything your TV needs", style = Ty.Title.copy(color = Color.White, fontSize = 40.sp), textAlign = TextAlign.Center) }
+        Spacer(Modifier.height(20.dp))
         features.chunked(3).forEachIndexed { r, rowItems ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 rowItems.forEachIndexed { c, f ->
-                    FadeUp(220 + (r * 3 + c) * 110, Modifier.weight(1f)) { FeatureCard(f) }
+                    FadeUp(120 + (r * 3 + c) * 90, Modifier.weight(1f)) { FeatureCard(f) }
                 }
-                if (rowItems.size < 3) Spacer(Modifier.weight((3 - rowItems.size).toFloat()))
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
         }
-        Spacer(Modifier.height(10.dp))
-        FadeUp(900) { BigButton("Continue", onNext, modifier = Modifier.width(360.dp).focusRequester(focus)) }
+        Spacer(Modifier.height(6.dp))
+        FadeUp(760) { BigButton("Continue", onNext, modifier = Modifier.width(360.dp).focusRequester(focus)) }
     }
 }
 
 @Composable
 private fun FeatureCard(f: Feature) {
+    val shape = RoundedCornerShape(24.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .height(190.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .height(128.dp)
+            .clip(shape)
             .background(Brush.verticalGradient(listOf(Color(0x24FFFFFF), Color(0x10FFFFFF))))
-            .border(1.dp, Color(0x2EFFFFFF), RoundedCornerShape(28.dp))
-            .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .border(1.dp, Color(0x2EFFFFFF), shape)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Box(
-            Modifier.size(52.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Color(0xFF0A84FF), Color(0xFF64D2FF)))),
+            Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(f.c1, f.c2))),
             contentAlignment = Alignment.Center
-        ) { Icon(f.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp)) }
-        Text(f.title, style = Ty.Heading.copy(color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
-        Text(f.desc, style = Ty.Small.copy(fontSize = 16.sp, color = Color(0xB3FFFFFF)), maxLines = 3)
+        ) { Icon(f.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.height(3.dp))
+        Text(f.title, style = Ty.Heading.copy(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
+        Text(f.sub, style = Ty.Small.copy(fontSize = 14.sp, color = Color(0xB3FFFFFF)), maxLines = 1)
     }
 }
 
@@ -323,6 +377,7 @@ private class PermSpec(
     val granted: (Context) -> Boolean,
     val runtime: Array<String>? = null,
     val intents: (Context) -> List<Intent> = { emptyList() },
+    val isAdb: Boolean = false,
 )
 
 private fun usageAllowed(ctx: Context): Boolean = try {
@@ -348,8 +403,12 @@ private fun findActivity(ctx: Context): Activity? {
 private fun filesSpec() = PermSpec(
     icon = Icons.Rounded.Folder,
     title = "Files & storage",
-    why = "LeanTV needs access to your files to manage storage and keep your TV tidy.",
-    bullets = listOf("Browse and manage files with the built-in file manager", "Find big files and junk, then clear them", "Save files received with Quick Share"),
+    why = "LeanTV has a built-in file manager and storage cleaner. Both need access to your files.",
+    bullets = listOf(
+        "File manager: browse, copy, move and delete files",
+        "Storage manager: find big files and junk, then clear them",
+        "Quick Share: save files received from your phone"
+    ),
     manualHint = "Turn the switch on for LeanTV, then press Back.",
     granted = { ctx ->
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
@@ -368,8 +427,8 @@ private fun filesSpec() = PermSpec(
 private fun usageSpec() = PermSpec(
     icon = Icons.Rounded.BarChart,
     title = "Usage access",
-    why = "This lets LeanTV see how big each app really is and how often you use it.",
-    bullets = listOf("Shows accurate app and cache sizes", "Finds apps you never open", "Powers the storage manager charts"),
+    why = "Lets LeanTV see how big each app really is and how often you use it.",
+    bullets = listOf("Accurate app and cache sizes", "Finds apps you never open", "Powers the storage charts"),
     manualHint = "Find LeanTV in the list, turn it on, then press Back.",
     granted = { usageAllowed(it) },
     intents = { listOf(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
@@ -390,8 +449,8 @@ private fun nearbySpec(): PermSpec {
         icon = Icons.Rounded.Bluetooth,
         title = "Nearby devices",
         why = if (Build.VERSION.SDK_INT >= 31) "Quick Share uses Bluetooth and Wi-Fi to find phones on your network."
-              else "Android requires the location permission to scan for nearby phones. Your location is never read or stored.",
-        bullets = listOf("Makes your TV visible to phones on the same Wi-Fi", "Receive photos, videos and files from Android and iPhone", "Only active while Quick Share is turned on"),
+              else "Android needs the location permission to scan for phones. Your location is never read or stored.",
+        bullets = listOf("TV shows up on phones on the same Wi-Fi", "Receive photos, videos and files", "Only active while Quick Share is on"),
         manualHint = "Open Permissions in App Info and allow it for LeanTV.",
         granted = { allGranted(it, perms) },
         runtime = perms
@@ -400,31 +459,63 @@ private fun nearbySpec(): PermSpec {
 
 private fun debugSpec() = PermSpec(
     icon = Icons.Rounded.Code,
-    title = "USB debugging",
-    why = "To delete system apps and remove bloat, LeanTV needs USB debugging switched on. Everything stays on this TV.",
-    bullets = listOf("Delete or disable any app, even preinstalled ones", "Run the one-tap TV cleaner", "Clear app data and cache for any app"),
-    manualHint = "Turn on USB debugging, then accept the prompt when it appears.",
+    title = "USB debugging (ADB)",
+    why = "Needed to delete system apps and bloat. Everything stays on this TV.",
+    bullets = listOf(
+        "Delete or disable any app, even preinstalled ones",
+        "Run the one-tap TV cleaner",
+        "When asked “Allow USB debugging?”, tick Always allow"
+    ),
+    manualHint = "Turn on USB debugging (if hidden: About, tap Build 7 times), then come back.",
     granted = { ctx -> try { Settings.Global.getInt(ctx.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1 } catch (_: Exception) { false } },
     intents = {
         listOf(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS), Intent(Settings.ACTION_DEVICE_INFO_SETTINGS), Intent(Settings.ACTION_SETTINGS))
-    }
+    },
+    isAdb = true
 )
 
 @Composable
-private fun PermissionPage(spec: PermSpec, onNext: () -> Unit) {
+private fun PermissionPage(
+    spec: PermSpec,
+    index: Int,
+    total: Int,
+    onNext: () -> Unit,
+    onAuthorizeAdb: ((Int) -> Unit) -> Unit,
+) {
     val ctx = LocalContext.current
+    val sp = remember { ctx.getSharedPreferences("leantv", Context.MODE_PRIVATE) }
     val focus = rememberAutoFocus()
     var tick by remember { mutableIntStateOf(0) }
-    var requested by remember { mutableStateOf(false) }
+    var requested by remember { mutableStateOf(sp.getBoolean("wizard_pending", false)) }
     var hint by remember { mutableStateOf<String?>(null) }
+    var adbOk by remember { mutableStateOf(false) }
+    var authorizing by remember { mutableStateOf(false) }
 
-    // Re-check while open so the page notices the grant as soon as the user comes back.
     LaunchedEffect(Unit) { while (true) { delay(600); tick++ } }
-    val granted = remember(tick) { spec.granted(ctx) }
+    val enabled = remember(tick) { spec.granted(ctx) }
+    val granted = if (spec.isAdb) adbOk else enabled
 
-    // Move on automatically after a successful grant.
     LaunchedEffect(granted, requested) {
         if (granted && requested) { delay(650); onNext() }
+    }
+
+    fun authorize() {
+        if (authorizing) return
+        authorizing = true
+        hint = "Look for “Allow USB debugging?” on screen, tick Always allow, then press OK."
+        onAuthorizeAdb { r ->
+            authorizing = false
+            when (r) {
+                0 -> { adbOk = true; hint = null }
+                1 -> hint = "Also turn on Network debugging / ADB over network in Developer options, then press Allow again."
+                else -> hint = "Not authorized yet. Press Allow to try again."
+            }
+        }
+    }
+
+    // After the user switches USB debugging on in Settings and comes back, ask for the ADB prompt right away.
+    LaunchedEffect(enabled, requested) {
+        if (spec.isAdb && enabled && requested && !adbOk) authorize()
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
@@ -433,7 +524,6 @@ private fun PermissionPage(spec: PermSpec, onNext: () -> Unit) {
             val act = findActivity(ctx)
             val blocked = act != null && res.filter { !it.value }.keys.any { !act.shouldShowRequestPermissionRationale(it) }
             if (blocked) {
-                // Android won't show the pop-up again: send the user to the App Info page instead.
                 hint = "Android blocked the pop-up. Open Permissions and allow it for LeanTV."
                 tryStart(ctx, listOf(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))))
             } else hint = "Not allowed yet. You can allow it any time in App Info."
@@ -443,13 +533,18 @@ private fun PermissionPage(spec: PermSpec, onNext: () -> Unit) {
     fun onContinue() {
         if (granted) { onNext(); return }
         requested = true
+        sp.edit().putBoolean("wizard_pending", true).apply()
+        if (spec.isAdb) {
+            if (enabled) authorize() else { hint = spec.manualHint; tryStart(ctx, spec.intents(ctx)) }
+            return
+        }
         val rt = spec.runtime
         if (rt != null) launcher.launch(rt) else { hint = spec.manualHint; tryStart(ctx, spec.intents(ctx)) }
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(64.dp), verticalAlignment = Alignment.CenterVertically) {
         FadeUp(0) { GradientIcon(spec.icon, 150) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FadeUp(60) {
                 Row(
                     Modifier.clip(RoundedCornerShape(50)).background(if (granted) Color(0x3330D158) else Color(0x3364D2FF))
@@ -458,14 +553,14 @@ private fun PermissionPage(spec: PermSpec, onNext: () -> Unit) {
                 ) {
                     if (granted) { Icon(Icons.Rounded.Check, null, tint = Color(0xFF30D158), modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)) }
                     Text(
-                        if (granted) "ALLOWED" else "PERMISSION",
+                        if (granted) "ALLOWED" else "PERMISSION $index OF $total",
                         fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp,
                         color = if (granted) Color(0xFF30D158) else Color(0xFF64D2FF)
                     )
                 }
             }
-            FadeUp(120) { Text(spec.title, style = Ty.Title.copy(color = Color.White, fontSize = 46.sp)) }
-            FadeUp(180) { Text(spec.why, style = Ty.Dim.copy(fontSize = 22.sp, color = Color(0xCCFFFFFF))) }
+            FadeUp(120) { Text(spec.title, style = Ty.Title.copy(color = Color.White, fontSize = 44.sp)) }
+            FadeUp(180) { Text(spec.why, style = Ty.Dim.copy(fontSize = 21.sp, color = Color(0xCCFFFFFF))) }
             Spacer(Modifier.height(2.dp))
             spec.bullets.forEachIndexed { i, b ->
                 FadeUp(260 + i * 90) {
@@ -479,14 +574,18 @@ private fun PermissionPage(spec: PermSpec, onNext: () -> Unit) {
                 }
             }
             if (hint != null) Text(hint!!, style = Ty.Small.copy(fontSize = 17.sp, color = Color(0xFFFFD60A)))
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             FadeUp(560) {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BigButton("Continue", { onContinue() }, modifier = Modifier.width(300.dp).focusRequester(focus))
+                    BigButton(
+                        if (granted) "Continue" else if (authorizing) "Waiting…" else "Allow",
+                        { onContinue() },
+                        modifier = Modifier.width(300.dp).focusRequester(focus)
+                    )
                     BigButton("Not now", onNext, primary = false, modifier = Modifier.width(200.dp))
                 }
             }
-            Text("Optional. You can change this any time in Settings.", style = Ty.Small.copy(fontSize = 15.sp, color = Color(0x80FFFFFF)))
+            Text("You can change this any time in Settings.", style = Ty.Small.copy(fontSize = 15.sp, color = Color(0x80FFFFFF)))
         }
     }
 }

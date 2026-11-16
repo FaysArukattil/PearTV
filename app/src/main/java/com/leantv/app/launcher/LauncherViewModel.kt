@@ -500,7 +500,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 activeInputId = null,
                 showProfileDialog = false,
                 showMonitorPanel = false,
-                showCleanTvWizard = false,
+                showCleanTvWizard = it.showCleanTvWizard,                
                 showQuickShareHub = false,
                 showQuickShare = false,
                 debloatSuccessSummary = null,
@@ -2168,6 +2168,17 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Onboarding: connect to ADB so Android shows "Allow USB debugging?". 0 = ok, 1 = port closed, 2 = refused. */
+    fun authorizeAdb(onResult: (Int) -> Unit) {
+        viewModelScope.launch {
+            val r = if (adb.isConnected) 0 else when (adb.connect()) {
+                is ConnResult.Ok -> 0
+                is ConnResult.PortClosed -> 1
+                else -> 2
+            }
+            onResult(r)
+        }
+    }
     fun openDeveloperOptions() {
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
