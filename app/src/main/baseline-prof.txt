@@ -1,0 +1,15 @@
+Lcom/peartv/app/HomeActivity;
+HSPLcom/peartv/app/HomeActivity;-><init>()V
+HSPLcom/peartv/app/HomeActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/peartv/app/HomeActivity;->onResume()V
+HSPLcom/peartv/app/HomeActivity;->dispatchKeyEvent(Landroid/view/KeyEvent;)Z
+Lcom/peartv/app/launcher/HomeScreenKt;
+HSPLcom/peartv/app/launcher/HomeScreenKt;->HomeScreen(Lcom/peartv/app/launcher/LauncherViewModel;Landroidx/compose/runtime/Composer;I)V
+Lcom/peartv/app/launcher/LauncherViewModel;
+HSPLcom/peartv/app/launcher/LauncherViewModel;-><init>(Landroid/app/Application;)V
+HSPLcom/peartv/app/launcher/LauncherViewModel;->loadApps(Z)V
+Lcom/peartv/app/data/IconCache;
+Lcom/peartv/app/data/InstalledAppsScanner;
+Lcom/peartv/app/ui/ThemeKt;
+Lcom/peartv/app/ui/ComponentsKt;
+Lcom/peartv/app/ui/CleanTvWizardDialogKt;

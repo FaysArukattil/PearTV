@@ -200,7 +200,7 @@ object AppClassifier {
             out.add(
                 ClassifiedApp(
                     pkg = pkg, label = r.label, group = AppGroup.REMOVED, tier = null,
-                    reason = "Removed by CleanTV - tap Restore to bring it back.",
+                    reason = "Removed by Pear TV Cleaner - tap Restore to bring it back.",
                     isSystemFlag = true, installed = false,
                 )
             )
@@ -221,7 +221,7 @@ object AppClassifier {
     ): Verdict {
         fun system(why: String) = Verdict(AppGroup.SYSTEM, null, why)
 
-        // Hard rule: the Settings app is NEVER bloat (LeanTV has no settings of its own).
+        // Hard rule: the Settings app is NEVER bloat (Pear TV has no settings of its own).
         // Checked first so nothing else (e.g. a HOME intent-filter on TV Settings) can override it.
         if (pkg in settingsPkgs ||
             label.contains("settings", ignoreCase = true) ||
@@ -255,10 +255,10 @@ object AppClassifier {
 
         // Launchers LAST: only a stock launcher that matched no protection above can be bloat.
         if (pkg in homePkgs) {
-            if (!ourLauncherIsHome) return system("Current home screen - needed until LeanTV is your default launcher.")
+            if (!ourLauncherIsHome) return system("Current home screen - needed until Pear TV is your default launcher.")
             return Verdict(
                 AppGroup.BLOAT, Tier.ADVANCED,
-                "Stock launcher. Not needed while LeanTV is your home screen. Keep it if you want a fallback."
+                "Stock launcher. Not needed while Pear TV is your home screen. Keep it if you want a fallback."
             )
         }
 

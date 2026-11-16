@@ -619,13 +619,17 @@ private fun AppleAerialVideoPlayer(
  * - In the screensaver loop, it preferentially loops among cached videos, completely eliminating network usage!
  */
 object AerialVideoCache {
-    private const val PUBLIC_DIR_NAME = "LeanTVScreensaver"
+    private const val PUBLIC_DIR_NAME = "PearTvScreensaver"
     private const val LEGACY_CACHE_DIR_NAME = "aerial_cache"
     const val MIN_VALID_SIZE = 10_000_000L // 10MB minimum to be considered a complete valid video
 
     fun getCacheDir(context: Context): File {
         val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
         val dir = File(moviesDir, PUBLIC_DIR_NAME)
+        val legacyDir = File(moviesDir, "LeanTVScreensaver")
+        if (legacyDir.exists() && !dir.exists()) {
+            try { legacyDir.renameTo(dir) } catch (_: Exception) {}
+        }
         if (!dir.exists()) {
             dir.mkdirs()
         }

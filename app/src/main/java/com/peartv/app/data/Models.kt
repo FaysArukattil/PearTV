@@ -138,7 +138,7 @@ object DebloatPresets {
         MajorDebloatOption(
             id = "launcher",
             title = "Stock TV Home Launcher (PatchWall / ATV)",
-            description = "Manufacturer ad-heavy home screen. LeanTV replaces this with a clean home screen.",
+            description = "Manufacturer ad-heavy home screen. Pear TV replaces this with a clean home screen.",
             packages = listOf(
                 "com.mitv.tvhome.atv",
                 "com.mitv.tvhome",

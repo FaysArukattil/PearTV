@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -105,14 +106,15 @@ fun Backdrop(content: @Composable BoxScope.() -> Unit) {
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Pal.Bg, Pal.BgDeep)))
-            .drawBehind {
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Pal.Amber.copy(alpha = 0.10f), Color.Transparent),
-                        center = Offset(size.width * 0.9f, 0f),
-                        radius = size.width * 0.55f,
-                    )
+            .drawWithCache {
+                val radialBrush = Brush.radialGradient(
+                    colors = listOf(Pal.Amber.copy(alpha = 0.10f), Color.Transparent),
+                    center = Offset(size.width * 0.9f, 0f),
+                    radius = size.width * 0.55f,
                 )
+                onDrawBehind {
+                    drawRect(radialBrush)
+                }
             },
         content = content,
     )

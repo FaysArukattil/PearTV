@@ -428,7 +428,7 @@ fun FileManagerScreen(
 
                         Column {
                             Text(
-                                text = "LEANTV FILES",
+                                text = "PEAR TV FILES",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF388AF6),
@@ -592,7 +592,7 @@ fun FileManagerScreen(
                 )
 
                 categories.forEach { (key, label) ->
-                    val isCatSelected = activeCategory == key || (key == "quickshare" && currentDir?.name == "LeanTvQuickshare")
+                    val isCatSelected = activeCategory == key || (key == "quickshare" && (currentDir?.name == "PearTvQuickshare" || currentDir?.name == "LeanTvQuickshare"))
                     val icon = when (key) {
                         "quickshare" -> Icons.Rounded.Bolt
                         "downloads" -> Icons.Rounded.Download
@@ -940,7 +940,7 @@ fun FileManagerScreen(
         if (showPermissionPrompt && !hasPermission) {
             TvConfirmDialog(
                 title = "Storage Access Required",
-                message = "LeanTV needs full storage access to browse your files, install APKs, and save incoming Quick Share files to internal storage.",
+                message = "Pear TV needs full storage access to browse your files, install APKs, and save incoming Quick Share files to internal storage.",
                 confirmLabel = "Grant Storage Access",
                 confirmColor = Color(0xFF0A84FF),
                 onConfirm = {

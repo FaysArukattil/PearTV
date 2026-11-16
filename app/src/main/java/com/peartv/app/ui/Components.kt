@@ -101,13 +101,6 @@ fun Focusable(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(
-                elevation = if (focused) 24.dp else 0.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = Color(0x66000000),
-                spotColor = Color(0x99000000)
-            )
             .clip(shape)
             .background(bg)
             .border(if (focused) 1.5.dp else if (idleOutline) 1.dp else 0.dp, ring, shape)
@@ -161,13 +154,6 @@ fun TvButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(
-                elevation = if (focused) 20.dp else 0.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = Color(0x66000000),
-                spotColor = Color(0x99000000)
-            )
             .clip(shape)
             .background(bg)
             .border(if (focused) 1.5.dp else 0.dp, Color.White.copy(alpha = 0.9f), shape)

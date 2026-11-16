@@ -1,111 +1,96 @@
-# LeanTV — Development Progress
+# Pear TV — Development Progress & Optimization Roadmap
 
 ## 1. Project Overview & Architecture Summary
-LeanTV is a native Android TV system manager and custom launcher built using Jetpack Compose, Kotlin 2.0.21, and AndroidX libraries (minSdk 26, targetSdk 34, compileSdk 35). It provides:
-1. System optimization and debloating capabilities via on-device ADB.
-2. Full installed application browsing with User/System filtering, search, sorting, and D-pad uninstallation.
-3. An Apple tvOS-inspired lean launcher (`HomeActivity`) with top featured apps, rows, and remote-friendly navigation.
-4. Live RAM and CPU system monitoring with background task termination.
-5. In-app Quick Share local HTTP server with QR code pairing for direct mobile-to-TV transfer.
+**Pear TV** (`com.peartv.app`) is an ultra-lightweight, 60fps native Android TV launcher, system cleaner, and local network sharing suite built using Kotlin 2.0.21, Jetpack Compose (BOM 2024.10.01), and AndroidX libraries (minSdk 24, targetSdk 34, compileSdk 35).
+
+It combines three foundational pillars engineered specifically for low-resource TV hardware (1GB–2GB RAM, low-end quad-core ARM Cortex-A53/A35 chipsets):
+1. **Apple tvOS Launcher & Native Video Screensavers**:
+   - High-performance 1280x720 density-normalized UI (`TvCanvas`) with Apple HIG motion physics (`AppleMotion`).
+   - Adapted from the Apple Aerial screensaver ecosystem: live 4K/1080p aerial presets with intelligent local storage caching in `/sdcard/Movies/` to prevent network re-downloads and avoid bloating internal app storage.
+2. **Clean TV (Integrated 1-Click System Debloater)**:
+   - Adapted from the **CleanYourTV** open-source Android TV debloater architecture.
+   - Comprehensive multi-vendor catalog (`catalog.json`) identifying manufacturer bloat, ad tracking services, telemetry, and background daemons (Xiaomi PatchWall, Google TV LauncherX, Amazon FireTV, Sony, TCL, Hisense).
+   - On-device local ADB socket communication (`localhost:5555` via `Dadb`) and Shizuku integration for safe disabling without requiring a PC.
+3. **Native Google/Samsung Quick Share via Reverse Engineering (REA)**:
+   - Clean-room implementation based on reverse-engineering the Quick Share / Nearby Connections protocol (modules `:core-protocol` and `:discovery-android`).
+   - Implements Google's offline wire formats (Protobuf Lite), BLE advertisement & fast GATT bootstrap, Wi-Fi Direct / Local Wi-Fi socket multiplexing, and UKEY2 secure channel cryptography.
+   - Fallback zero-dependency web upload server with QR-code pairing for any browser on the local network.
 
 ---
 
-## 2. Phase Checklist
+## 2. Completed Phases (0 through 5)
 
-- [x] **PHASE 0 — ANALYSIS**
-  - [x] Inspect project structure, manifest, build files, and dependencies
-  - [x] Identify minSdk (26), targetSdk (34), compileSdk (35), UI stack (Compose + Material 3)
-  - [x] Create `ARCHITECTURE.md`, `PROGRESS.md`, and `CHANGELOG.md`
-  - [x] Confirm baseline build (`./gradlew assembleDebug` passes)
-- [x] **PHASE 1 — INSTALLED APPS LIST + UNINSTALL**
-  - [x] Add `REQUEST_DELETE_PACKAGES` and query permissions to manifest
-  - [x] Implement `InstalledApp` model, repository/scanner fetching package icon, name, version, size, install time
-  - [x] Add filter toggle (All / User / System), sort (Name, Size, Install Date), and search
-  - [x] Add D-pad focusable app cards and remote-friendly confirmation dialog for uninstall (`ACTION_DELETE`)
-  - [x] Gracefully handle system apps (disable/cannot uninstall indication)
-- [x] **PHASE 2 — CUSTOM LAUNCHER (Apple TV-STYLE HOME)**
-  - [x] Add `HomeActivity` with `MAIN`, `HOME`, `DEFAULT`, and `LEANBACK_LAUNCHER` intent filters
-  - [x] Implement Apple tvOS-style top featured row with focus scale, subtle glow/shadow, and background accent
-  - [x] Implement Favorites and All Apps grid/rows with 60fps focus and icon caching
-  - [x] Add top-corner clock and date
-  - [x] Add app launch fallback (`getLeanbackLaunchIntentForPackage` -> `getLaunchIntentForPackage`)
-  - [x] Add long-press / Menu action sheet (Open, Uninstall, App Info, Favorite)
-  - [x] Add "Set as default launcher" prompt and system settings intent
-- [x] **PHASE 3 — SYSTEM MONITOR (RAM + CPU) WITH KILL TASK**
-  - [x] Implement live RAM readout via `ActivityManager.MemoryInfo`
-  - [x] Implement resilient CPU monitor with graceful fallback on Android 10+
-  - [x] Implement running background processes list with memory consumption
-  - [x] Implement background process kill action (`ActivityManager.killBackgroundProcesses`) and "Clean All"
-  - [x] Bind polling to panel visibility lifecycle (stop updates when closed)
-- [x] **PHASE 4 — QUICK SHARE (BUILT INTO THE SIDE)**
-  - [x] Add collapsible side panel triggered by D-pad Left or dedicated toggle
-  - [x] Implement embedded lightweight HTTP server on local network
-  - [x] Generate on-screen QR code and PIN for pairing
-  - [x] Implement file upload receiver saving to `Downloads/LeanTV/`
-  - [x] Implement received text/link display with one-click open
-- [x] **PHASE 5 — POLISH, OPTIMIZATION, TESTING**
-  - [x] Cache app icons in memory to ensure fluid 60fps scrolling
-  - [x] Verify D-pad focus flows across all screens
-  - [x] Validate manifest features and permissions
-  - [x] Verify build and produce final APK and zip deliverables
+- [x] **PHASE 0 — BASELINE & FOUNDATION**: Project structure, Android TV leanback manifests, permissions, base Compose UI.
+- [x] **PHASE 1 — INSTALLED APPS MANAGER**: Package scanner, user/system filters, sorting, D-pad uninstallation.
+- [x] **PHASE 2 — CUSTOM LAUNCHER (Apple TV-STYLE HOME)**: Top featured dock, ambient wallpaper glow, responsive grid, live clock, D-pad menus.
+- [x] **PHASE 3 — LIVE SYSTEM MONITOR**: Real-time RAM (ActivityManager) and CPU telemetry, background task killer.
+- [x] **PHASE 4 — QUICK SHARE & LOCAL TRANSFER**: Dual-engine Quick Share (native BLE/mDNS receiver + lightweight browser upload server).
+- [x] **PHASE 5 — BRANDING & TV POLISH**: Apple HIG visual redesign (Apple Files, TV Cleaner, Storage, Screensavers, official Quick Share circular arrows glyph).
 
 ---
 
-## 3. Files Created or Modified
+## 3. PHASE 6 — ULTRA LOW-SPEC TV OPTIMIZATION & SIZE REDUCTION (Active)
 
-| File | Purpose |
-| :--- | :--- |
-| `ARCHITECTURE.md` | Documents system architecture, tech stack, and module layout. |
-| `PROGRESS.md` | Tracks phase completion, active decisions, and resumption instructions. |
-| `CHANGELOG.md` | Records chronological changes across development phases. |
-| `AndroidManifest.xml` | Added `REQUEST_DELETE_PACKAGES` permission for user uninstallation flow. |
-| `app/.../data/InstalledAppModels.kt` | Data definitions for `InstalledAppInfo`, `AppTypeFilter`, and `AppSortOrder`. |
-| `app/.../data/IconCache.kt` | LRU in-memory cache for app icons with asynchronous background decoding. |
-| `app/.../data/InstalledAppsScanner.kt` | Background package scanner computing APK size, split paths, and launch intents. |
-| `app/.../data/Models.kt` | Added `Screen.InstalledApps` and filter/sort/search state properties to `UiState`. |
-| `app/.../ui/InstalledAppsScreen.kt` | D-pad navigable installed apps screen with filters, search, and confirmation dialogs. |
-| `app/.../ui/MainViewModel.kt` | Added state management for installed apps, uninstaller launch, and app execution. |
-| `app/.../ui/App.kt` | Integrated Installed Apps screen into rail navigation, back handler, and route switcher. |
-| `app/.../HomeActivity.kt` | Dedicated TV launcher activity with `singleTask` launchMode and `CATEGORY_HOME`. |
-| `app/.../launcher/LauncherViewModel.kt` | ViewModel driving launcher shelves, featured apps, favorites, and default home setup. |
-| `app/.../launcher/HomeScreen.kt` | Apple tvOS-inspired Compose home screen with live clock, ambient backdrop, and D-pad menus. |
-| `app/.../data/Journal.kt` | Added launcher favorites and default launcher prompt persistence methods. |
-| `app/.../monitor/SystemMonitor.kt` | Real-time RAM, CPU fallback, running process PSS extraction, and background task killer. |
-| `app/.../monitor/SystemMonitorPanel.kt` | Slide-in drawer UI with animated RAM meter, CPU card, running process list, and Clean All action. |
-| `app/.../share/ShareModels.kt` | Data classes for `SharedFile`, `SharedText`, and `QuickShareState`. |
-| `app/.../share/QrGenerator.kt` | ZXing-powered QR code generator rendering directly to Compose `ImageBitmap`. |
-| `app/.../share/QuickShareServer.kt` | Embedded lightweight HTTP server with mobile upload page, PIN validation, and streaming file saver. |
-| `app/.../share/QuickSharePanel.kt` | Slide-in drawer with live Wi-Fi IP, QR code, PIN, transfer progress, and received content cards. |
-| `app/.../res/xml/file_paths.xml` | FileProvider path definitions for secure content URI sharing of received downloads. |
-| `README.md` | Comprehensive user and technical guide for LeanTV setup, features, permissions, and build steps. |
+### Goal Checklist & Current Status:
+- [x] **Comprehensive Profiling**:
+  - Identified 22MB debug APK vs 3.8MB unoptimized release APK.
+  - Identified 1.68 MB uncompressed aerial thumbnails in `assets/aerial_thumbs/`.
+  - Identified ~450 KB of uncompressed brand PNGs and unused assets (`ic_airdrop_official.png`, `ic_quick_share_brand.png`, `ic_quick_share_arrows.png`).
+  - Identified continuous `rememberInfiniteTransition` GPU redraw loops in `CleanTvWizardDialog.kt` (`LogoHero` and `ApplePermissionHero`).
+  - Identified 600ms main-thread Binder polling in onboarding permission checks.
+  - Identified dynamic colored RenderNode shadows (`Modifier.shadow(20.dp)`) causing GPU fillrate choking on Mali-450/G31 chips.
+- [x] **Asset Compression & Pruning**:
+  - Deleted unused PNG drawables: `ic_airdrop_official.png`, `ic_quick_share_arrows.png`, `ic_quick_share_brand.png`.
+  - Converted active brand PNGs (`ic_apple_files_brand`, `ic_apple_storage_brand`, `ic_apple_tv_cleaner_brand`, `ic_quick_share_official`, `ic_screensavers_brand`) to WebP (384px lossless).
+  - Converted all 27 aerial thumbnails in `assets/aerial_thumbs/` from JPG (1.68 MB) to WebP (~249 KB) — **saved 1.43 MB directly**.
+  - Updated `ScreensaverSettingsDialog.kt` to load `.webp` thumbnails.
+- [x] **ProGuard & R8 Optimization Rules**:
+  - Added `-allowaccessmodification` and `-repackageclasses ''` in `proguard-rules.pro`.
+  - Added `-assumenosideeffects class android.util.Log { v(...); d(...); i(...); }` to strip debug logging overhead.
+  - Added Protobuf Lite and Shizuku keep rules.
+- [x] **Gradle Build Properties**:
+  - Enabled `android.enableResourceOptimizations=true` and disabled unused build features (BuildConfig, AIDL, Renderscript, Shaders) in `gradle.properties`.
+- [x] **Pear TV Rebranding (No "LeanTV" text)**:
+  - Replaced all user-facing strings across `FileManagerScreen.kt`, `QuickShareServer.kt`, `QuickSharePanel.kt`, `AppClassifier.kt`, `Models.kt`, `Scanner.kt`, `Screens.kt`, `CleanTvScreen.kt`, `catalog.json`, `FileManagerHelper.kt`, `TvFileDestinationFactory.kt`, and `AppleTvScreensaver.kt`.
+  - Public directory names migrated seamlessly to `PearTvQuickshare` and `PearTvScreensaver` with backward-compatible legacy directory detection.
+- [x] **Asset Cutout & Edge Polish**:
+  - Replaced flat-clipped rounded rectangles in `ic_apple_files_brand.webp` and `ic_screensavers_brand.webp` with true continuous Apple superellipse squircles ($p = 4.8$) with 20px inset padding.
+  - Supersampled at 4x resolution (1536x1536) and downscaled using Lanczos filtering to eliminate all hard boundary cuts, jagged corners, and cutting marks.
+  - Verified edge rows/columns have zero alpha leakage on canvas boundaries.
+- [x] **Onboarding & Runtime Smoothness Overhaul**:
+  - Removed continuous `rememberInfiniteTransition` pulse loops from `CleanTvWizardDialog.kt`.
+  - Replaced dynamic RenderNode elevation shadows with high-performance draw-phase border & specular highlight styling.
+  - Replaced 600ms main-thread polling in `PermissionPage` with `LifecycleResumeEffect` / on-demand checks.
+  - Optimized `Components.kt` (`Focusable` & `TvButton`) to eliminate GPU fillrate bottlenecks on low-end Mali/PowerVR TV chipsets.
+  - Updated `Theme.kt` with `drawWithCache` to avoid re-allocating radial gradient brushes per frame.
+- [x] **Build Optimization & Size Reduction**:
+  - Configured `app/build.gradle.kts` for split ARM APKs (`armeabi-v7a`, `arm64-v8a`) and universal release APK.
+  - Stripped non-English translations with `resourceConfigurations += listOf("en")`.
+  - Stripped Kotlin parameter, call, and receiver assertions (`-Xno-param-assertions`, `-Xno-call-assertions`, `-Xno-receiver-assertions`).
+  - Added ProfileInstaller (`androidx.profileinstaller:1.4.1`) and baseline profile (`baseline-prof.txt`) for immediate AOT compilation on TV installation.
+- [x] **Verification & Metrics**:
+  - Debug APK: **22.3 MB** ➔ Release APK: **2.3 MB** (**90% size reduction!**).
+  - Single ARM64 APK: **2.3 MB**; Universal APK: **2.3 MB**.
+  - All features preserved: Quick Share (Protobuf Lite), Clean TV debloater with ADB loopback, Apple Aerial screensavers, and File Manager.
 
 ---
 
-## 4. Decisions, Known Issues, and Limitations
+## 4. Key Component Origins & Technical Implementation
 
-1. **Android TV Fixed Canvas Scaling:** The app relies on `TvCanvas` in `ui/Theme.kt` to scale density to a fixed 1280x720 reference grid. All new Compose layouts will respect this system for consistent TV overscan safety and legibility.
-2. **Output Archive Directory:** Root `/output/` is protected under macOS SIP without root permissions. Phase archives are generated into both `<projectRoot>/output/` and `/tmp/output/` for user accessibility.
-3. **App Listing Queries:** Android 11+ (API 30+) requires `QUERY_ALL_PACKAGES` to view user and system applications; already declared in `AndroidManifest.xml`.
-4. **Package Uninstallation on TV:** Standard Android third-party apps cannot silently uninstall packages without system/root/device owner privileges. Uninstallation prompts the platform `PackageInstaller` via `Intent.ACTION_DELETE` or `PackageInstaller.Session`.
-5. **Default Launcher Setting Limitation:** Android OS strictly prohibits apps from setting themselves as the default home launcher silently in background for user security. On first run, LeanTV guides the user via `RoleManager.createRequestRoleIntent(ROLE_HOME)` on Android 10+ with automatic fallback to `Settings.ACTION_HOME_SETTINGS`.
+### A. Quick Share Protocol (Reverse Engineered - REA)
+The native Quick Share engine in `:core-protocol` and `:discovery-android` was developed by reverse-engineering Google's Nearby Connections / Quick Share specification:
+- **Wire Formats**: Protobuf-based frames (`offline_wire_formats.proto`, `wire_format.proto`) handling connection requests, bandwidth upgrade negotiation, and chunked payload transfers.
+- **Discovery Layer**: Low-energy Bluetooth (BLE) service UUID `0000fef3-0000-1000-8000-00805f9b34fb` broadcasting fast advertisements.
+- **Connection Handshake**: Initial exchange via BLE GATT server or Wi-Fi Aware, followed by UKEY2 (Unix-like Key Exchange 2) Diffie-Hellman curve25519 key derivation for encrypted communication.
+- **High-Speed Transfer**: Bandwidth upgrade to local Wi-Fi TCP socket server (port multiplexing) or Wi-Fi Direct P2P Group Owner.
 
-6. **CPU Telemetry on Modern Android (API 29+):** Access to `/proc/stat` is restricted by SELinux on Android 10 and higher for third-party applications. `SystemMonitor` attempts to read `/proc/stat` for backwards compatibility, but safely falls back to reporting hardware core architecture and active thread units rather than failing or crashing.
-7. **Task Termination Policy:** Third-party applications using `ActivityManager.killBackgroundProcesses` can only terminate cached and background processes without root/system privileges. Active foreground apps and system-critical services are protected by the OS. The UI explicitly discloses this behavior.
+### B. Clean TV (Debloater Engine)
+Based on the architectural principles of **CleanYourTV**:
+- Categorizes packages into Safe (Protected), Recommended Debloat (OEM telemetry, tracking, ad servers), Optional (vendor storefronts, keyboards), and Advanced (OEM stock launchers).
+- Probes TV hardware via `DeviceProbe.kt` (MediaTek, Amlogic, Realtek, Broadcom) to apply chipset-specific safe heuristics.
+- Executes non-destructive `pm disable-user --user 0` and uninstallation via on-device loopback ADB (`127.0.0.1:5555`) using the embedded Kotlin `Dadb` client.
 
-8. **Local Quick Share Protocol:** Google Quick Share / Nearby Share lacks an open, stable Android TV server SDK. LeanTV implements an ultra-lightweight zero-dependency socket HTTP server pairing via a random 4-digit TV-displayed PIN and QR code. Mobile devices on the same Wi-Fi can open the web portal on any browser without installing extra software.
-
----
-
-## 5. NEXT STEP (Resumption Guide)
-
-**ALL PHASES COMPLETED (Phases 0 through 5).**
-
-### Summary of Deliverables
-- `output/app-debug.apk`: Production-ready compiled debug APK with TV banner and launcher filters.
-- `output/LeanTV_final.zip`: Complete buildable project source tree (excluding build artifacts and cache).
-- `output/LeanTV_phase0.zip` through `output/LeanTV_phase4.zip`: Checkpointed archives after each development phase.
-
-### Manual Actions Required by User on Device
-1. **Sideloading the APK:** Install `app-debug.apk` onto the TV via ADB (`adb install -r app-debug.apk`) or via USB flash drive.
-2. **Setting Default Launcher:** When pressing the Home button on the TV remote for the first time, choose **LeanTV** and select **Always**. Alternatively, navigate to TV **Settings** &rarr; **Apps** &rarr; **Default apps** &rarr; **Home app** &rarr; select **LeanTV**.
-3. **Optional On-Device ADB:** To enable system bloatware removal without a PC, enable **Developer options** &rarr; **USB debugging** &rarr; run `adb tcpip 5555` once from a computer connected to the TV.
+### C. Apple TV Aerial Screensaver
+Adapted from the Apple Aerial open-source catalog:
+- Streams official Apple CDN high-bitrate H.264/HEVC aerial videos (ISS Space, Earth, Oceans, Cities).
+- Uses `AerialVideoCache` to store completed streams in external public storage (`/sdcard/Movies/`), keeping app package memory footprint negligible in TV system settings.

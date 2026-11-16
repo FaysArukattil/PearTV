@@ -538,7 +538,7 @@ fun CleanTvScreen(
                         onClick = {
                             scope.launch {
                                 val reclaimed = StorageHelper.clearAllAppCaches(ctx, adbClient)
-                                statusMessage = "✓ Cache cleared for all apps (LeanTV freed ${StorageHelper.formatBytes(reclaimed)})"
+                                statusMessage = "✓ Cache cleared for all apps (Pear TV freed ${StorageHelper.formatBytes(reclaimed)})"
                                 refreshList(isSilent = true)
                             }
                         },

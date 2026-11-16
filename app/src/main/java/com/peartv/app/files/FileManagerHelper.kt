@@ -60,10 +60,14 @@ object FileManagerHelper {
     private const val TAG = "FileManagerHelper"
 
     fun ensureQuickShareDir(): File {
-        // Target: /storage/emulated/0/Download/LeanTvQuickshare
+        // Target: /storage/emulated/0/Download/PearTvQuickshare
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             ?: File("/storage/emulated/0/Download")
-        val dir = File(downloadsDir, "LeanTvQuickshare")
+        val dir = File(downloadsDir, "PearTvQuickshare")
+        val legacyDir = File(downloadsDir, "LeanTvQuickshare")
+        if (legacyDir.exists() && !dir.exists()) {
+            try { legacyDir.renameTo(dir) } catch (_: Exception) {}
+        }
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -414,6 +418,7 @@ object FileManagerHelper {
             }
             "apks" -> {
                 targetFolders.add(File(root, "Download"))
+                targetFolders.add(File(root, "Download/PearTvQuickshare"))
                 targetFolders.add(File(root, "Download/LeanTvQuickshare"))
             }
         }

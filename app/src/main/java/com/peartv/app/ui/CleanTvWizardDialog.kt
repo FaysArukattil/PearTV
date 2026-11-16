@@ -149,7 +149,7 @@ fun CleanTvWizardDialog(
         AnimatedContent(
             targetState = step,
             transitionSpec = {
-                (fadeIn(tween(420, delayMillis = 140)) + slideInHorizontally(tween(460)) { it / 10 }) togetherWith fadeOut(tween(160))
+                (fadeIn(tween(200)) + slideInHorizontally(tween(220)) { it / 16 }) togetherWith fadeOut(tween(140))
             },
             label = "onboardingStep",
             modifier = Modifier.fillMaxSize()
@@ -207,10 +207,10 @@ fun CleanTvWizardDialog(
 private fun FadeUp(delayMs: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val a = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        delay(delayMs.toLong())
-        a.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
+        if (delayMs > 0) delay(minOf(delayMs.toLong(), 120L))
+        a.animateTo(1f, tween(240, easing = FastOutSlowInEasing))
     }
-    Box(modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 44f }) { content() }
+    Box(modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 16f }) { content() }
 }
 
 /** The real app logo (ic_fg on the launcher background colour). */
@@ -225,23 +225,6 @@ private fun LogoMark(size: Dp) {
     }
 }
 
-@Composable
-private fun LogoHero(size: Dp = 140.dp) {
-    val t = rememberInfiniteTransition(label = "logoPulse")
-    val s by t.animateFloat(
-        1f, 1.18f,
-        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "logoScale"
-    )
-    Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size(size * 1.5f)
-                .graphicsLayer { scaleX = s; scaleY = s }
-                .background(Brush.radialGradient(listOf(Color(0x55FFB347), Color.Transparent)), CircleShape)
-        )
-        LogoMark(size)
-    }
-}
 
 @Composable
 private fun BigButton(text: String, onClick: () -> Unit, primary: Boolean = true, modifier: Modifier = Modifier) {
@@ -480,6 +463,8 @@ private fun filesSpec() = PermSpec(
     iconRes = R.drawable.ic_apple_files,
     fullIconRes = R.drawable.ic_apple_files_brand,
     isLightBg = true,
+    iconBgColor = Color(0xFFFFFFFF),
+    iconBgColor2 = Color(0xFFEFF1F4),
     badgeTitle = "PRIVACY & ACCESS",
     title = "“Pear TV” Would Like to Access Files and Storage",
     why = "This allows Pear TV to browse your files, organize media, clean residual app caches, and receive transfers via Quick Share. Your data remains strictly private on this TV.",
@@ -577,21 +562,14 @@ private fun ApplePermissionHero(
     spec: PermSpec,
     size: Dp = 150.dp
 ) {
-    val t = rememberInfiniteTransition(label = "heroPulse")
-    val s by t.animateFloat(
-        1f, 1.14f,
-        infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "heroScale"
-    )
     val squircle = RoundedCornerShape(38.dp)
     val glowColor = if (spec.isLightBg) Color(0x350084FF) else spec.iconBgColor.copy(alpha = 0.35f)
 
     Box(contentAlignment = Alignment.Center) {
-        // Soft Apple ambient glow behind
+        // Soft Apple ambient glow behind (static, zero recomposition or GPU overhead)
         Box(
             Modifier
                 .size(size * 1.35f)
-                .graphicsLayer { scaleX = s; scaleY = s }
                 .background(Brush.radialGradient(listOf(glowColor, Color.Transparent)), CircleShape)
         )
 
@@ -599,16 +577,9 @@ private fun ApplePermissionHero(
         Box(
             modifier = Modifier
                 .size(size)
-                .shadow(
-                    elevation = 20.dp,
-                    shape = squircle,
-                    ambientColor = if (spec.isLightBg) Color(0x40000000) else spec.iconBgColor.copy(alpha = 0.5f),
-                    spotColor = if (spec.isLightBg) Color(0x40000000) else spec.iconBgColor.copy(alpha = 0.5f)
-                )
                 .clip(squircle)
                 .background(
-                    if (spec.fullIconRes != null) Brush.linearGradient(listOf(spec.iconBgColor, spec.iconBgColor2))
-                    else if (spec.isLightBg) Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFEFF1F4)))
+                    if (spec.isLightBg) Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFEFF1F4)))
                     else Brush.linearGradient(listOf(spec.iconBgColor, spec.iconBgColor2))
                 )
                 .border(
@@ -661,7 +632,21 @@ private fun PermissionPage(
     var adbOk by remember { mutableStateOf(false) }
     var authorizing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { while (true) { delay(600); tick++ } }
+    // Re-check immediately whenever the TV screen regains focus from system settings / permission dialog
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        tick++
+        onPauseOrDispose {}
+    }
+
+    // Only poll when actively waiting for a background permission change (e.g. user in settings)
+    LaunchedEffect(requested) {
+        if (requested) {
+            while (true) {
+                delay(800)
+                tick++
+            }
+        }
+    }
     val enabled = remember(tick) { spec.granted(ctx) }
     val granted = if (spec.isAdb) adbOk else enabled
 

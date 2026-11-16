@@ -77,7 +77,7 @@ fun WelcomeScreen(vm: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("CleanYourTV • LeanTV", style = Ty.Heading.copy(color = Pal.Amber, fontSize = 20.sp))
+                Text("CleanYourTV • Pear TV", style = Ty.Heading.copy(color = Pal.Amber, fontSize = 20.sp))
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(6.dp))

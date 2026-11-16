@@ -24,7 +24,7 @@ class TvFileDestinationFactory(
 
     companion object {
         private const val TAG = "TvFileDestFactory"
-        const val FOLDER_NAME = "LeanTvQuickshare"
+        const val FOLDER_NAME = "PearTvQuickshare"
 
         fun getDownloadDir(ctx: Context): File {
             val primary = com.peartv.app.files.FileManagerHelper.ensureQuickShareDir()

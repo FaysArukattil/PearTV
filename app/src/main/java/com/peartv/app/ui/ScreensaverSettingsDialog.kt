@@ -116,7 +116,14 @@ object AerialThumbnailStore {
         mem.get(url)?.let { return it }
         return withContext(Dispatchers.IO) {
             val name = fileName(url)
-            var bmp = decode { context.assets.open("aerial_thumbs/$name") }
+            val webpName = name.substringBeforeLast('.') + ".webp"
+            var bmp = decode {
+                try {
+                    context.assets.open("aerial_thumbs/$webpName")
+                } catch (_: Throwable) {
+                    try { context.assets.open("aerial_thumbs/$name") } catch (_: Throwable) { null }
+                }
+            }
             if (bmp == null) {
                 val f = File(File(context.cacheDir, "aerial_thumbs"), name)
                 if (f.exists() && f.length() > 500L) bmp = decode { f.inputStream() }

@@ -16,7 +16,7 @@
     { "pkg": "com.google.android.tvrecommendations", "name": "Google TV Recommendations", "tier": "RECOMMENDED",
       "why": "Pushes sponsored rows and video previews to the home screen. Disabling stops TV promo feeds." },
     { "pkg": "com.google.android.tvlauncher", "name": "Google Android TV Launcher", "tier": "OPTIONAL",
-      "why": "Stock launcher with ads and sponsored banners. Safe to disable when using LeanTV as default home." },
+      "why": "Stock launcher with ads and sponsored banners. Safe to disable when using Pear TV as default home." },
     { "pkg": "com.google.android.videos", "name": "Google TV / Play Movies", "tier": "RECOMMENDED",
       "why": "Store app for renting films with heavy background trailers. Streaming apps already cover this." },
     { "pkg": "com.google.android.play.games", "name": "Google Play Games", "tier": "RECOMMENDED",

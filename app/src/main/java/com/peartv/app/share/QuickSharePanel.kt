@@ -108,7 +108,7 @@ fun QuickSharePanel(
                         ) {
                             Image(
                                 bitmap = qrBitmap,
-                                contentDescription = "Scan to open LeanTV Quick Share",
+                                contentDescription = "Scan to open Pear TV Quick Share",
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -260,7 +260,7 @@ private fun SharedFileRow(
                     maxLines = 1
                 )
                 Text(
-                    "${item.formattedSize} • Saved to Downloads/LeanTV/ • ${item.formattedTime}",
+                    "${item.formattedSize} • Saved to Downloads/PearTV/ • ${item.formattedTime}",
                     style = Ty.Small.copy(fontSize = 16.sp)
                 )
             }

@@ -500,7 +500,7 @@ class QuickShareServer(
 
     private fun serveZipDownload(files: List<File>, output: OutputStream) {
         try {
-            val zipName = "LeanTV_Files_${System.currentTimeMillis()}.zip"
+            val zipName = "PearTV_Files_${System.currentTimeMillis()}.zip"
             val header = "HTTP/1.1 200 OK\r\n" +
                 "Content-Type: application/zip\r\n" +
                 "Content-Disposition: attachment; filename=\"$zipName\"\r\n" +
@@ -577,7 +577,7 @@ class QuickShareServer(
                     <h2 style="color:#64D2FF; font-size:18px;">⚡ Files from TV</h2>
                     ${if (hostedFiles.size > 1) "<a href='/download?zip=true' style='background:#30D158; color:black; padding:8px 14px; border-radius:10px; text-decoration:none; font-size:13px; font-weight:700;'>Download All (.zip)</a>" else ""}
                 </div>
-                <p class="sub" style="margin-bottom: 14px;">LeanTV shared ${hostedFiles.size} item(s) with your phone. Tap below to download:</p>
+                <p class="sub" style="margin-bottom: 14px;">Pear TV shared ${hostedFiles.size} item(s) with your phone. Tap below to download:</p>
                 <div style="display:flex; flex-direction:column;">
                     $itemsHtml
                 </div>
@@ -591,7 +591,7 @@ class QuickShareServer(
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <title>LeanTV Quick Share</title>
+                <title>Pear TV Quick Share</title>
                 <style>
                     :root {
                         --bg: #000000;
@@ -746,7 +746,7 @@ class QuickShareServer(
                         <div class="logo-icon">
                             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14v-4H8l4-4 4 4h-3v4h-2z"/></svg>
                         </div>
-                        <h1>LeanTV Quick Share</h1>
+                        <h1>Pear TV Quick Share</h1>
                         <p class="sub">Send files, photos, videos or notes to your TV</p>
                     </header>
 
@@ -773,7 +773,7 @@ class QuickShareServer(
                         <div class="logo-icon">
                             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14v-4H8l4-4 4 4h-3v4h-2z"/></svg>
                         </div>
-                        <h1>LeanTV Quick Share</h1>
+                        <h1>Pear TV Quick Share</h1>
                         <p class="sub">Send files, photos, videos or notes to your TV</p>
                     </header>
 
@@ -950,7 +950,7 @@ class QuickShareServer(
                         progFill.style.width = '100%';
                         progPct.innerText = '100%';
                         progStatus.innerText = 'Complete!';
-                        showStatus('fileStatusBox', 'ok', '✓ Saved to TV (LeanTvQuickshare)!');
+                        showStatus('fileStatusBox', 'ok', '✓ Saved to TV (Pear TV Quick Share)!');
                         sendBtn.style.display = 'none';
                         sendBtn.disabled = false;
                         document.getElementById('fileTitle').innerText = 'Choose Photos or Files';

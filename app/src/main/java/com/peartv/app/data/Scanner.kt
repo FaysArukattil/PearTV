@@ -117,7 +117,7 @@ class Scanner(private val ctx: Context, private val catalog: Catalog) {
                 }
                 pkg in home -> AppItem(
                     pkg, label, Tier.ADVANCED,
-                    "Alternative home screen. Disable only when LeanTV is working as default.",
+                    "Alternative home screen. Disable only when Pear TV is working as default.",
                     !ai.enabled
                 )
                 else -> {
