@@ -345,7 +345,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                 onOpenDeveloperOptions = vm::openDeveloperOptions,
                 onAuthorizeAdb = vm::authorizeAdb,
                 onConfirm = vm::executeOneClickCleanTv,
-                onDismiss = { /* Never dismiss into home screen without completing */ },
+                onDismiss = vm::dismissCleanTvWizard,
                 showPermissions = true,
                 scanDone = s.wizardScanDone,
                 bloatLabels = s.wizardTargetLabels

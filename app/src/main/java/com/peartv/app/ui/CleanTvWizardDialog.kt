@@ -385,7 +385,7 @@ private fun FeaturesPage(onNext: () -> Unit) {
         listOf(
             Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFFFF5E3A), Color(0xFFFF2D55), iconSize = 42.dp, fullIconRes = R.drawable.ic_apple_tv_cleaner_brand),
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
-            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
+            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 42.dp, fullIconRes = R.drawable.ic_apple_files_brand),
             Feature(R.drawable.ic_apple_storage_brand, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 40.dp, isLightBg = true),
             Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF2870FD), Color(0xFF1456DA), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
             Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 42.dp, fullIconRes = R.drawable.ic_screensavers_brand),
@@ -478,6 +478,7 @@ private fun findActivity(ctx: Context): Activity? {
 private fun filesSpec() = PermSpec(
     icon = Icons.Rounded.Folder,
     iconRes = R.drawable.ic_apple_files,
+    fullIconRes = R.drawable.ic_apple_files_brand,
     isLightBg = true,
     badgeTitle = "PRIVACY & ACCESS",
     title = "“Pear TV” Would Like to Access Files and Storage",
