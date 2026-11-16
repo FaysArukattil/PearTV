@@ -155,6 +155,22 @@ fun StorageManagerScreen(
         }
     }
 
+    // HomeActivity swallows Back and calls the ViewModel, so we register here (see StorageCommon.kt).
+    StorageBackHandler {
+        when {
+            fileToDelete != null -> {
+                fileToDelete = null
+                true
+            }
+            selectedCategory != null -> {
+                selectedCategory = null
+                refresh()
+                true
+            }
+            else -> false
+        }
+    }
+
     BackHandler(enabled = true) {
         when {
             fileToDelete != null -> {

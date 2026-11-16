@@ -2,7 +2,6 @@ package com.leantv.app.ui
 
 import android.graphics.Bitmap
 import android.view.KeyEvent
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -127,7 +126,7 @@ fun StorageAppsView(
     var selectedPkg by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var armed by remember { mutableStateOf<String?>(null) }
+    var confirmId by remember { mutableStateOf<String?>(null) }
     var inActionPane by remember { mutableStateOf(false) }
     var resumeTick by remember { mutableStateOf(0) }
     val icons = remember { mutableStateMapOf<String, Bitmap>() }
@@ -196,7 +195,7 @@ fun StorageAppsView(
             }
         }
     }
-    LaunchedEffect(selected?.pkg, group) { armed = null }
+    LaunchedEffect(selected?.pkg, group) { confirmId = null }
 
     // ---------- focus helpers ----------
     fun focusListItem(index: Int) {
@@ -230,8 +229,9 @@ fun StorageAppsView(
         }
     }
 
-    BackHandler(enabled = true) {
+    StorageBackHandler {
         if (inActionPane) focusSelectedInList() else onBack()
+        true
     }
 
     // ---------- actions ----------
@@ -245,7 +245,7 @@ fun StorageAppsView(
             } catch (e: Exception) {
                 "Failed: ${e.message}"
             }
-            armed = null
+            confirmId = null
             reloadFresh()
             busy = false
             if (returnToList) {
@@ -336,6 +336,7 @@ fun StorageAppsView(
         return
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         // ---- Header ----
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -584,28 +585,17 @@ fun StorageAppsView(
                     }
 
                     actions.forEachIndexed { i, act ->
-                        val isArmed = armed == act.id
-                        val warn = selected.tier == Tier.ADVANCED && selected.group == AppGroup.BLOAT
                         TvButton(
-                            text = when {
-                                busy -> "Working..."
-                                isArmed && warn -> "Unsure app - press OK again to confirm"
-                                isArmed -> "Press OK again to confirm"
-                                else -> act.text
-                            },
+                            text = if (busy) "Working..." else act.text,
                             onClick = {
-                                if (act.destructive && !isArmed) armed = act.id
-                                else {
-                                    armed = null
-                                    act.run()
+                                if (!busy) {
+                                    if (act.destructive) confirmId = act.id else act.run()
                                 }
                             },
-                            primary = act.primary || isArmed,
-                            enabled = !busy,
+                            primary = act.primary,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(actionFocus[i])
-                                .onFocusChanged { if (!it.hasFocus && armed == act.id) armed = null }
                                 .dpad { key ->
                                     when (key) {
                                         KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -630,6 +620,47 @@ fun StorageAppsView(
                 }
             }
         }
+    }
+
+    // ---- confirm dialog (single OK press, no hold) ----
+    val cAct = actions.firstOrNull { it.id == confirmId }
+    val cApp = selected
+    if (cAct != null && cApp != null) {
+        val actIdx = actions.indexOf(cAct).coerceAtLeast(0)
+        val restoreFocus: () -> Unit = {
+            scope.launch {
+                delay(100)
+                runCatching { actionFocus[actIdx.coerceAtMost(actionFocus.lastIndex)].requestFocus() }
+            }
+        }
+        ConfirmDialog(
+            title = when (cAct.id) {
+                "data" -> "Clear all data of ${cApp.label}?"
+                else -> if (cApp.group == AppGroup.INSTALLED) "Uninstall ${cApp.label}?" else "Remove ${cApp.label}?"
+            },
+            message = when {
+                cAct.id == "data" -> "Logins, settings and downloads of this app will be erased."
+                cApp.group == AppGroup.BLOAT && cApp.tier == Tier.ADVANCED ->
+                    "This app is not recognised. Removing it may affect some TV features. You can bring it back from the Removed tab."
+                cApp.group == AppGroup.BLOAT -> "You can bring it back any time from the Removed tab."
+                else -> "The app will be uninstalled from this TV."
+            },
+            confirmText = when {
+                cAct.id == "data" -> "Clear data"
+                cApp.group == AppGroup.INSTALLED -> "Uninstall"
+                else -> "Remove"
+            },
+            onConfirm = {
+                confirmId = null
+                cAct.run()
+                restoreFocus()
+            },
+            onDismiss = {
+                confirmId = null
+                restoreFocus()
+            }
+        )
+    }
     }
 }
 

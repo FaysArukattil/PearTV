@@ -530,7 +530,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
             s.showScreensaverSettings -> { closeScreensaverSettings(); true }
             s.showHiddenApps -> { closeHiddenApps(); true }
             s.showCleanTvScreen -> { closeCleanTvScreen(); true }
-            s.showStorageManager -> { closeStorageManager(); true }
+            s.showStorageManager -> {
+                // One step back inside Storage first (viewer -> list -> category -> overview), then close.
+                if (com.leantv.app.ui.StorageBack.handler?.invoke() != true) closeStorageManager()
+                true
+            }
             s.showFileManager -> { closeFileManager(); true }
             s.showPersonalization -> { closePersonalization(); true }
             s.showQuickShare -> { closeQuickShareControl(); true }

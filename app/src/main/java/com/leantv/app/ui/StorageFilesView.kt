@@ -8,7 +8,6 @@ import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
 import android.util.LruCache
 import android.view.KeyEvent
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -261,7 +260,7 @@ fun StorageFilesView(
     var focusedPath by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var armed by remember { mutableStateOf<String?>(null) }
+    var confirmTargets by remember { mutableStateOf<List<StorageFileItem>?>(null) }
     var inPanel by remember { mutableStateOf(false) }
     var viewerPath by remember { mutableStateOf<String?>(null) }
 
@@ -317,13 +316,12 @@ fun StorageFilesView(
             status = null
         }
     }
-    LaunchedEffect(current?.path) { armed = null }
 
     fun toggle(path: String) {
         if (checked.remove(path) == null) checked[path] = true
     }
 
-    BackHandler(enabled = true) {
+    StorageBackHandler {
         when {
             viewerPath != null -> {
                 val p = viewerPath
@@ -333,6 +331,7 @@ fun StorageFilesView(
             inPanel -> focusCurrent()
             else -> onBack()
         }
+        true
     }
 
     fun deleteFiles(targets: List<StorageFileItem>) {
@@ -354,7 +353,6 @@ fun StorageFilesView(
             gone.forEach { checked.remove(it) }
             status = if (ok == targets.size) "✓ Deleted $ok file(s) • freed ${StorageHelper.formatBytes(bytes)}"
             else "Deleted $ok of ${targets.size} file(s) - some could not be removed"
-            armed = null
             busy = false
             delay(100)
             focusList(idx)
@@ -449,24 +447,18 @@ fun StorageFilesView(
                         onClick = { sort = FileSort.entries[(sort.ordinal + 1) % FileSort.entries.size] }
                     )
                     if (checkedCount > 0) {
-                        val a = armed == "delsel"
                         TopChip(
-                            text = if (a) "Press OK again to delete" else "Delete selected ($checkedCount • ${StorageHelper.formatBytes(checkedBytes)})",
+                            text = "Delete selected ($checkedCount • ${StorageHelper.formatBytes(checkedBytes)})",
                             danger = true,
-                            modifier = Modifier.focusRequester(delSelF)
-                                .onFocusChanged { if (!it.hasFocus && armed == "delsel") armed = null }
-                                .dpad { k ->
-                                    when (k) {
-                                        KeyEvent.KEYCODE_DPAD_LEFT -> { runCatching { sortF.requestFocus() }; true }
-                                        KeyEvent.KEYCODE_DPAD_DOWN -> { if (sortedNow.isNotEmpty()) focusCurrent(); true }
-                                        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> true
-                                        else -> false
-                                    }
-                                },
-                            onClick = {
-                                if (armed != "delsel") armed = "delsel"
-                                else deleteFiles(items.filter { it.path in checked })
-                            }
+                            modifier = Modifier.focusRequester(delSelF).dpad { k ->
+                                when (k) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> { runCatching { sortF.requestFocus() }; true }
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> { if (sortedNow.isNotEmpty()) focusCurrent(); true }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> true
+                                    else -> false
+                                }
+                            },
+                            onClick = { confirmTargets = items.filter { it.path in checked } }
                         )
                     }
                 }
@@ -598,20 +590,19 @@ fun StorageFilesView(
                                 Triple("del", "Delete this file", false),
                             )
                             acts.forEachIndexed { i, (id, label, primary) ->
-                                val a = armed == id
                                 TvButton(
-                                    text = if (busy) "Working..." else if (a) "Press OK again to delete" else label,
-                                    primary = primary || a,
-                                    enabled = !busy,
+                                    text = if (busy) "Working..." else label,
+                                    primary = primary,
                                     onClick = {
-                                        when (id) {
-                                            "open" -> openItem(cur)
-                                            "sel" -> toggle(cur.path)
-                                            "del" -> if (armed != "del") armed = "del" else deleteFiles(listOf(cur))
+                                        if (!busy) {
+                                            when (id) {
+                                                "open" -> openItem(cur)
+                                                "sel" -> toggle(cur.path)
+                                                "del" -> confirmTargets = listOf(cur)
+                                            }
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth().focusRequester(actionF[i])
-                                        .onFocusChanged { if (!it.hasFocus && armed == id) armed = null }
                                         .dpad { k ->
                                             when (k) {
                                                 KeyEvent.KEYCODE_DPAD_LEFT -> { focusCurrent(); true }
@@ -682,6 +673,22 @@ fun StorageFilesView(
                     }
                 }
             }
+        }
+
+        confirmTargets?.let { t ->
+            ConfirmDialog(
+                title = if (t.size == 1) "Delete ${t[0].name}?" else "Delete ${t.size} files?",
+                message = "${StorageHelper.formatBytes(t.sumOf { it.size })} will be permanently removed. This cannot be undone.",
+                confirmText = "Delete",
+                onConfirm = {
+                    confirmTargets = null
+                    deleteFiles(t)
+                },
+                onDismiss = {
+                    confirmTargets = null
+                    focusCurrent()
+                }
+            )
         }
     }
 }
