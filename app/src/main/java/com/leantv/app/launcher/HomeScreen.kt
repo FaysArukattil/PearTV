@@ -72,6 +72,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SettingsEthernet
@@ -749,6 +750,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                     profile = s.tvProfile,
                     onAddAccount = vm::openAddGoogleAccount,
                     onManageSettings = vm::openSystemAccountsSettings,
+                    onSelect = vm::selectAccount,
+                    onRemove = vm::removeAccount,
                     onDismiss = vm::closeProfile
                 )
             }
@@ -1193,16 +1196,6 @@ private fun CleanTvTopBar(
                         maxLines = 1,
                     )
                 }
-                // Signed-in Google account: icon only, email slides out on focus.
-                TvPill(
-                    label = accountLabel,
-                    icon = Icons.Rounded.AccountCircle,
-                    contentDescription = "Google account",
-                    onClick = onOpenAccount,
-                    maxLabelWidth = 280.dp,
-                    collapsible = true,
-                    onFocusChange = { onTopFocus(accountLabel, it) },
-                )
             }
         }
 
@@ -1298,6 +1291,17 @@ private fun CleanTvTopBar(
                     onFocusChange = { onTopFocus(hiddenLabel, it) },
                 )
             }
+            Spacer(Modifier.weight(1f))
+            TvPill(
+                label = accountLabel,
+                icon = Icons.Rounded.AccountCircle,
+                modifier = pillFocusModifier(9),
+                contentDescription = "Google account",
+                onClick = onOpenAccount,
+                maxLabelWidth = 280.dp,
+                collapsible = true,
+                onFocusChange = { onTopFocus(accountLabel, it) },
+            )
         }
     }
 }
@@ -1435,7 +1439,7 @@ private fun TvPill(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .padding(start = 10.dp)
-                    .widthIn(max = maxLabelWidth)
+                    .then(if (fill) Modifier.weight(1f) else Modifier.widthIn(max = maxLabelWidth))
                     .graphicsLayer {
                         // Fades in slightly after the pill starts growing, so text never looks clipped.
                         if (collapsible) alpha = ((expand.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
@@ -2169,12 +2173,14 @@ private fun PortIcon(kind: String, color: Color, modifier: Modifier = Modifier) 
     }
 }
 
-/** Google Account Switcher & Profile Dialog (Feature #5) */
+/** Google Account Switcher: lists every TV account; pick one as active, add, or remove. */
 @Composable
 private fun ProfileAccountsDialog(
     profile: TvProfile,
     onAddAccount: () -> Unit,
     onManageSettings: () -> Unit,
+    onSelect: (String) -> Unit,
+    onRemove: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val autoFocus = rememberAutoFocus()
@@ -2189,43 +2195,42 @@ private fun ProfileAccountsDialog(
     ) {
         Column(
             Modifier
-                .width(660.dp)
+                .width(700.dp)
                 .glassCard()
                 .padding(horizontal = 44.dp, vertical = 38.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Accounts", style = Ty.Title.copy(fontSize = 38.sp))
-            Text("Google accounts linked to this TV", style = Ty.Dim.copy(fontSize = 19.sp))
+            Text("Google accounts on this TV. Apps like YouTube use these.", style = Ty.Dim.copy(fontSize = 19.sp))
             Spacer(Modifier.height(6.dp))
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0x14FFFFFF))
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(60.dp).clip(CircleShape).background(Pal.Amber),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(profile.initial, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                }
-                Spacer(Modifier.width(18.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(profile.displayName, style = Ty.Heading.copy(fontSize = 24.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    profile.email?.let {
-                        Text(it, style = Ty.Dim.copy(fontSize = 18.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (profile.allAccounts.size > 1) {
-                        Text("${profile.allAccounts.size} accounts synced", style = Ty.Small.copy(fontSize = 16.sp))
-                    }
+            if (profile.allAccounts.isEmpty()) {
+                Text("No account found. If the TV already has one, allow access in the app's permissions, or add one below.", style = Ty.Dim.copy(fontSize = 19.sp))
+            }
+            profile.allAccounts.forEachIndexed { i, email ->
+                val active = email == profile.email
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TvPill(
+                        label = if (active) "$email  ·  Active" else email,
+                        icon = if (active) Icons.Rounded.CheckCircle else Icons.Rounded.AccountCircle,
+                        onClick = { onSelect(email) },
+                        modifier = Modifier.weight(1f).then(if (i == 0) Modifier.focusRequester(autoFocus) else Modifier),
+                        height = 62.dp, textSize = 21.sp, maxLabelWidth = 520.dp, fill = true, isSelected = active,
+                    )
+                    TvPill(
+                        label = "Remove",
+                        icon = Icons.Rounded.Delete,
+                        onClick = { onRemove(email) },
+                        contentDescription = "Remove $email",
+                        height = 62.dp, textSize = 21.sp, collapsible = true,
+                    )
                 }
             }
 
             Spacer(Modifier.height(4.dp))
-            TvPill("Add or Switch Account", Icons.Rounded.PersonAdd, onAddAccount, Modifier.fillMaxWidth().focusRequester(autoFocus), height = 62.dp, textSize = 21.sp, fill = true)
+            TvPill("Add Google Account", Icons.Rounded.PersonAdd, onAddAccount,
+                Modifier.fillMaxWidth().then(if (profile.allAccounts.isEmpty()) Modifier.focusRequester(autoFocus) else Modifier),
+                height = 62.dp, textSize = 21.sp, fill = true)
             TvPill("Manage in System Settings", Icons.Rounded.Settings, onManageSettings, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
             TvPill("Close", Icons.Rounded.Close, onDismiss, Modifier.fillMaxWidth(), height = 62.dp, textSize = 21.sp, fill = true)
         }
@@ -2279,7 +2284,7 @@ private fun LauncherActionDialog(
     ) {
         Column(
             Modifier
-                .width(560.dp)
+                .width(620.dp)
                 .glassCard()
                 .padding(horizontal = 36.dp, vertical = 30.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)

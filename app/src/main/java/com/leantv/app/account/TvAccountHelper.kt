@@ -29,7 +29,9 @@ object TvAccountHelper {
             val am = AccountManager.get(ctx)
             val accounts: Array<Account> = am.getAccountsByType("com.google")
             if (accounts.isNotEmpty()) {
-                val primary = accounts[0].name
+                val names = accounts.map { it.name }
+                val pref = getPreferred(ctx)
+                val primary = if (pref != null && pref in names) pref else names[0]
                 val namePart = primary.substringBefore("@")
                 val displayName = namePart.replaceFirstChar { it.uppercase() }
                 val initial = displayName.take(1).uppercase()
@@ -68,6 +70,54 @@ object TvAccountHelper {
                 allAccounts = emptyList()
             )
         }
+    }
+
+    /** Builds the profile from a list of account emails (preferred one first). */
+    fun buildProfile(ctx: Context, names: List<String>): TvProfile {
+        if (names.isEmpty()) return TvProfile(null, "Add Account", "👤", emptyList())
+        val pref = getPreferred(ctx)
+        val primary = if (pref != null && pref in names) pref else names[0]
+        val display = primary.substringBefore("@").replaceFirstChar { it.uppercase() }
+        return TvProfile(primary, display, display.take(1).uppercase(), names)
+    }
+
+    /**
+     * Fallback when AccountManager shows nothing (no GET_ACCOUNTS grant / hidden accounts):
+     * read the TV's Google accounts through on-device ADB (`dumpsys account`).
+     */
+    @Volatile var lastAdbError: String? = null
+
+    suspend fun readAccountsViaAdb(adb: AdbClient, allowConnect: Boolean): List<String> {
+        return try {
+            lastAdbError = null
+            if (!adb.isConnected && allowConnect) {
+                when (val r = adb.connect()) {
+                    is com.leantv.app.adb.ConnResult.PortClosed ->
+                        lastAdbError = "ADB port 5555 is closed on the TV. On your Mac run: adb tcpip 5555"
+                    is com.leantv.app.adb.ConnResult.Failed ->
+                        lastAdbError = "ADB failed: ${r.reason}. Accept the 'Allow USB debugging' prompt on the TV."
+                    else -> {}
+                }
+            }
+            if (!adb.isConnected) return emptyList()
+            val out = adb.shell("dumpsys account").out
+            Regex("Account \\{name=([^,}]+), type=com\\.google\\}")
+                .findAll(out).map { it.groupValues[1].trim() }.distinct().toList()
+        } catch (e: Exception) {
+            Log.w(TAG, "ADB account read failed", e)
+            emptyList()
+        }
+    }
+
+    private const val PREFS = "leantv_accounts"
+    private const val KEY_PREFERRED = "preferred_email"
+
+    fun getPreferred(ctx: Context): String? =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_PREFERRED, null)
+
+    /** The account LeanTV shows as "active" (Android itself has no global active account). */
+    fun setPreferred(ctx: Context, email: String) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PREFERRED, email).apply()
     }
 
     private const val GET_ACCOUNTS = "android.permission.GET_ACCOUNTS"
@@ -166,15 +216,16 @@ object TvAccountHelper {
     }
 
     /**
-     * Launch Account Settings / Switcher on TV.
+     * Opens the TV's Settings. Same entry the Settings pill uses (known to work on every TV), because
+     * the dedicated sync/account screens close instantly on many Google TV builds.
      */
     fun openAccountSettings(ctx: Context): Boolean {
         val intents = listOf(
-            Intent(Settings.ACTION_SYNC_SETTINGS),
-            Intent("android.settings.ACCOUNT_SYNC_SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
+            Intent(Settings.ACTION_SETTINGS),
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")).setAction("android.intent.action.MAIN"),
+            Intent().setComponent(android.content.ComponentName("com.android.tv.settings", "com.android.tv.settings.SettingsActivity")),
+            Intent("android.settings.SETTINGS")
         )
-
-        return startNative(ctx, intents)
+        return com.leantv.app.inputs.TvInputHelper.startFirstResolvable(ctx, intents)
     }
 }

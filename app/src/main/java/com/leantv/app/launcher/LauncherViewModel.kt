@@ -1278,9 +1278,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Google Account Profile (Feature #6) ----------
 
-    fun loadProfile() {
+    fun loadProfile(allowAdbConnect: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
-            val profile = TvAccountHelper.getConnectedProfile(ctx)
+            var profile = TvAccountHelper.getConnectedProfile(ctx)
+            if (profile.allAccounts.isEmpty()) {
+                val names = TvAccountHelper.readAccountsViaAdb(adb, allowAdbConnect)
+                if (names.isNotEmpty()) profile = TvAccountHelper.buildProfile(ctx, names)
+                else if (allowAdbConnect) TvAccountHelper.lastAdbError?.let { toast(it) }
+            }
             _state.update {
                 it.copy(
                     tvProfile = profile,
@@ -1290,10 +1295,19 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Corner account chip: go straight to the TV's own account screens (no separate sign-in in this app). */
-    fun openAccountsNative() {
-        val has = _state.value.tvProfile.email != null
-        if (!TvAccountHelper.openAccountsNative(ctx, has)) toast("Couldn't open Accounts.")
+    /** Account chip in the top bar: opens the in-app account switcher. */
+    fun openAccountsNative() = openProfile()
+
+    fun selectAccount(email: String) {
+        TvAccountHelper.setPreferred(ctx, email)
+        loadProfile()
+        toast("Active account: $email")
+    }
+
+    /** Android only lets the system Settings remove accounts, so jump there. */
+    fun removeAccount(email: String) {
+        toast("In Settings open Accounts, pick $email, then Remove account.")
+        if (!TvAccountHelper.openAccountSettings(ctx)) toast("Please manage Accounts in TV Settings.")
     }
 
     private var lastAccountSyncMs = 0L
@@ -1337,7 +1351,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openProfile() {
-        loadProfile()
+        loadProfile(allowAdbConnect = true)
         _state.update { it.copy(showProfileDialog = true) }
     }
 
@@ -1346,13 +1360,12 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openAddGoogleAccount() {
-        closeProfile()
         val ok = TvAccountHelper.openAddAccount(ctx)
         if (!ok) toast("Please add Google Account in TV Settings -> Accounts.")
     }
 
     fun openSystemAccountsSettings() {
-        closeProfile()
+        toast("In Settings open Accounts & Sign-in.")
         val ok = TvAccountHelper.openAccountSettings(ctx)
         if (!ok) toast("Please manage Accounts in TV Settings.")
     }
