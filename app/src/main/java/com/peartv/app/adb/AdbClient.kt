@@ -4,6 +4,7 @@ import dadb.AdbKeyPair
 import dadb.Dadb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
@@ -71,14 +72,16 @@ class AdbClient(private val keyDir: File) {
             ConnResult.PortClosed
         } else {
             try {
-                val d = Dadb.create(host, targetPort, keys())
-                val reply = d.shell("echo cleanyourtv").output.trim()
-                if (reply == "cleanyourtv") {
-                    dadb = d
-                    connectedPort = targetPort
-                    ConnResult.Ok(host, targetPort)
-                } else {
-                    ConnResult.Failed("Unexpected response from TV adbd: $reply")
+                withTimeout(4500L) {
+                    val d = Dadb.create(host, targetPort, keys())
+                    val reply = withTimeout(3000L) { d.shell("echo cleanyourtv").output.trim() }
+                    if (reply == "cleanyourtv") {
+                        dadb = d
+                        connectedPort = targetPort
+                        ConnResult.Ok(host, targetPort)
+                    } else {
+                        ConnResult.Failed("Unexpected response from TV adbd: $reply")
+                    }
                 }
             } catch (t: Throwable) {
                 ConnResult.Failed(t.message ?: t.javaClass.simpleName)

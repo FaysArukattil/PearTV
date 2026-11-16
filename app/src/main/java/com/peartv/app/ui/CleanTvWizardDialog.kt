@@ -796,11 +796,21 @@ private fun PermissionPage(
             }
             Spacer(Modifier.height(8.dp))
             FadeUp(560) {
-                BigButton(
-                    text = if (granted) "Continue" else if (authorizing) "Connecting…" else "Allow Access",
-                    onClick = { onContinue() },
-                    modifier = Modifier.width(320.dp).focusRequester(focus)
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BigButton(
+                        text = if (granted) "Continue" else if (authorizing) "Connecting…" else "Allow Access",
+                        onClick = { onContinue() },
+                        modifier = Modifier.width(if (spec.isAdb && !granted) 280.dp else 340.dp).focusRequester(focus)
+                    )
+                    if (spec.isAdb && !granted) {
+                        BigButton(
+                            text = "Set Up Later",
+                            onClick = onNext,
+                            primary = false,
+                            modifier = Modifier.width(200.dp)
+                        )
+                    }
+                }
             }
             Text("You can manage permissions at any time in Settings > Apps > Pear TV.", style = Ty.Small.copy(fontSize = 14.sp, color = Color(0x80FFFFFF)))
         }

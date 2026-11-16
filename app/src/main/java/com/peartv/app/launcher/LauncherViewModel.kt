@@ -2176,11 +2176,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Onboarding: connect to ADB so Android shows "Allow USB debugging?". 0 = ok, 1 = port closed, 2 = refused. */
     fun authorizeAdb(onResult: (Int) -> Unit) {
         viewModelScope.launch {
-            val r = if (adb.isConnected) 0 else when (adb.connect()) {
-                is ConnResult.Ok -> 0
-                is ConnResult.PortClosed -> 1
-                else -> 2
-            }
+            val r = withTimeoutOrNull(5000L) {
+                if (adb.isConnected) 0 else when (adb.connect()) {
+                    is ConnResult.Ok -> 0
+                    is ConnResult.PortClosed -> 1
+                    else -> 2
+                }
+            } ?: 2
             onResult(r)
         }
     }
