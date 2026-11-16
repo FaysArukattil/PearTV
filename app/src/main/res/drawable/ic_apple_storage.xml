@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Storage Segment 1: Apps (Primary Solid) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,2.6V11h8.4C20.95,6.7 17.7,3.45 13,2.6z"/>
+    <!-- Storage Segment 2: Media (Translucent) -->
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M13,13v8.4c4.3,-0.45 7.55,-3.7 8.4,-8H13z"/>
+    <!-- Storage Segment 3: System & Cache (Glass Alpha) -->
+    <path
+        android:fillColor="#80FFFFFF"
+        android:pathData="M11,2.6C6.3,3.1 2.6,7 2.6,12s3.7,8.9 8.4,9.4V2.6z"/>
+</vector>

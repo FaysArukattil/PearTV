@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -307,19 +308,74 @@ private fun WelcomePage(onNext: () -> Unit) {
 
 // ───────────────────────── Page 1: features ─────────────────────────
 
-private class Feature(val icon: ImageVector, val title: String, val sub: String, val c1: Color, val c2: Color)
+private class Feature(val iconRes: Int, val title: String, val sub: String, val c1: Color, val c2: Color)
+
+@Composable
+private fun AppleAppIcon(
+    iconRes: Int,
+    c1: Color,
+    c2: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 48.dp,
+    iconSize: Dp = 26.dp
+) {
+    val squircle = RoundedCornerShape(12.dp)
+    Box(
+        modifier = modifier
+            .size(size)
+            .shadow(
+                elevation = 8.dp,
+                shape = squircle,
+                ambientColor = c1.copy(alpha = 0.5f),
+                spotColor = c2.copy(alpha = 0.6f)
+            )
+            .clip(squircle)
+            .background(Brush.linearGradient(listOf(c1, c2)))
+            .border(
+                1.dp,
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0x66FFFFFF),
+                        Color(0x18FFFFFF)
+                    )
+                ),
+                squircle
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color(0x30FFFFFF),
+                            Color(0x05FFFFFF),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
 
 @Composable
 private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(Icons.Rounded.CleaningServices, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF64D2FF)),
-            Feature(Icons.Rounded.Delete, "App remover", "Uninstall anything", Color(0xFFFF375F), Color(0xFFFF8FA3)),
-            Feature(Icons.Rounded.Folder, "File manager", "Browse & manage files", Color(0xFFFF9F0A), Color(0xFFFFD60A)),
-            Feature(Icons.Rounded.Storage, "Storage", "Find & clear junk", Color(0xFFBF5AF2), Color(0xFFDA8FFF)),
-            Feature(Icons.Rounded.Share, "Quick Share", "Phone to TV, fast", Color(0xFF30D158), Color(0xFF8EE6A0)),
-            Feature(Icons.Rounded.Landscape, "Screensavers", "Apple TV aerials", Color(0xFF40C8E0), Color(0xFF90E8F5)),
+            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF0A84FF), Color(0xFF5E5CE6)),
+            Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFF375F), Color(0xFFFF2D55)),
+            Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFF007AFF), Color(0xFF5AC8FA)),
+            Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFAF52DE), Color(0xFF5856D6)),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF00C7BE), Color(0xFF007AFF)),
+            Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF34C759), Color(0xFF00C7BE)),
         )
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -340,24 +396,22 @@ private fun FeaturesPage(onNext: () -> Unit) {
 
 @Composable
 private fun FeatureCard(f: Feature) {
-    val shape = RoundedCornerShape(24.dp)
+    val shape = RoundedCornerShape(22.dp)
     Column(
         Modifier
             .fillMaxWidth()
-            .height(128.dp)
+            .height(134.dp)
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0x24FFFFFF), Color(0x10FFFFFF))))
-            .border(1.dp, Color(0x2EFFFFFF), shape)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+            .background(Brush.verticalGradient(listOf(Color(0x20FFFFFF), Color(0x0CFFFFFF))))
+            .border(1.dp, Color(0x26FFFFFF), shape)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(f.c1, f.c2))),
-            contentAlignment = Alignment.Center
-        ) { Icon(f.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp)) }
-        Spacer(Modifier.height(3.dp))
+        AppleAppIcon(iconRes = f.iconRes, c1 = f.c1, c2 = f.c2)
+        Spacer(Modifier.height(10.dp))
         Text(f.title, style = Ty.Heading.copy(color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold), maxLines = 1)
-        Text(f.sub, style = Ty.Small.copy(fontSize = 14.sp, color = Color(0xB3FFFFFF)), maxLines = 1)
+        Spacer(Modifier.height(2.dp))
+        Text(f.sub, style = Ty.Small.copy(fontSize = 13.5.sp, color = Color(0xB3FFFFFF)), maxLines = 1)
     }
 }
 
