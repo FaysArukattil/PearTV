@@ -401,7 +401,7 @@ private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
+            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 42.dp, isLightBg = false, fullIconRes = R.drawable.ic_apple_tv_cleaner_brand),
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_storage, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
