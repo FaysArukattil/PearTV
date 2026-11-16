@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -343,12 +344,14 @@ private fun AppleAppIcon(
                     spotColor = shadowColor
                 )
                 .clip(squircle)
-                .border(1.dp, Brush.verticalGradient(listOf(Color(0x66FFFFFF), Color(0x18FFFFFF))), squircle),
+                .background(Brush.linearGradient(listOf(c1, c2)))
+                .border(1.dp, Brush.verticalGradient(listOf(Color(0x35FFFFFF), Color(0x10FFFFFF))), squircle),
             contentAlignment = Alignment.Center
         ) {
             Image(
                 painter = painterResource(fullIconRes),
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -401,11 +404,11 @@ private fun FeaturesPage(onNext: () -> Unit) {
     val focus = rememberAutoFocus()
     val features = remember {
         listOf(
-            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 42.dp, fullIconRes = R.drawable.ic_apple_tv_cleaner_brand),
+            Feature(R.drawable.ic_apple_tv_cleaner, "TV cleaner", "Remove bloat & ads", Color(0xFFFF5E3A), Color(0xFFFF2D55), iconSize = 42.dp, fullIconRes = R.drawable.ic_apple_tv_cleaner_brand),
             Feature(R.drawable.ic_apple_app_remover, "App remover", "Uninstall anything", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 36.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_files, "File manager", "Browse & manage files", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 38.dp, isLightBg = true),
             Feature(R.drawable.ic_apple_storage_brand, "Storage", "Find & clear junk", Color(0xFFFFFFFF), Color(0xFFEFF1F4), iconSize = 40.dp, isLightBg = true),
-            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF276BFD), Color(0xFF165AE0), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
+            Feature(R.drawable.ic_quick_share, "Quick Share", "Phone to TV, fast", Color(0xFF2870FD), Color(0xFF1456DA), iconSize = 42.dp, fullIconRes = R.drawable.ic_quick_share_official),
             Feature(R.drawable.ic_apple_screensavers, "Screensavers", "Apple TV aerials", Color(0xFF1C1A1E), Color(0xFF100F12), iconSize = 38.dp, isLightBg = false),
         )
     }
