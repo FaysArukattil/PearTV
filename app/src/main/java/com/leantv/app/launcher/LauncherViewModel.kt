@@ -172,6 +172,8 @@ data class LauncherState(
 
     // Storage Manager Screen (Samsung Device Care style)
     val showStorageManager: Boolean = false,
+    /** true = Storage opens straight on the Apps screen (CleanTV entry point). */
+    val storageOpenApps: Boolean = false,
 
     // File Manager Screen (Amaze TV style)
     val showFileManager: Boolean = false,
@@ -1354,11 +1356,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Storage Manager Screen (Samsung Device Care - Feature #4) ----------
 
     fun openStorageManager() {
-        _state.update { it.copy(showStorageManager = true) }
+        _state.update { it.copy(showStorageManager = true, storageOpenApps = false) }
     }
 
     fun closeStorageManager() {
-        _state.update { it.copy(showStorageManager = false) }
+        _state.update { it.copy(showStorageManager = false, storageOpenApps = false) }
         loadApps(silent = true)
     }
 
@@ -1914,12 +1916,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- ⚡ CleanYourTV Debloater Menu (Feature #9) ----------
 
+    // CleanTV now lives inside Storage -> Apps (Installed / System / Bloat / Removed).
     fun requestCleanTv() {
-        _state.update { it.copy(showCleanTvScreen = true) }
+        _state.update { it.copy(showStorageManager = true, storageOpenApps = true) }
     }
 
     fun openCleanTvScreen() {
-        _state.update { it.copy(showCleanTvScreen = true) }
+        _state.update { it.copy(showStorageManager = true, storageOpenApps = true) }
     }
 
     fun closeCleanTvScreen() {

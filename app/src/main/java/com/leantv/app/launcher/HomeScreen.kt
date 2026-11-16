@@ -197,6 +197,7 @@ import com.leantv.app.ui.Pal
 import com.leantv.app.ui.PersonalizationDialog
 import com.leantv.app.ui.Safe
 import com.leantv.app.ui.Spinner
+import com.leantv.app.ui.StorageCategory
 import com.leantv.app.ui.StorageManagerScreen
 import com.leantv.app.ui.TvButton
 import com.leantv.app.ui.TvCanvas
@@ -404,6 +405,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 StorageManagerScreen(
                                     adbClient = vm.adb,
                                     journal = vm.journal,
+                                    scanner = vm.scanner,
+                                    initialCategory = if (s.storageOpenApps) StorageCategory.APPS else null,
                                     onClose = vm::closeStorageManager
                                 )
                             }
@@ -517,7 +520,6 @@ fun HomeScreen(vm: LauncherViewModel) {
                         onOpenQuickShare = { vm.openQuickShareControl() },
                         onOpenInputs = vm::openInputs,
                         onOpenNetwork = vm::openNetworkSettings,
-                        onOpenCleanTv = vm::requestCleanTv,
                         onToggleSort = { vm.toggleAppSortMode() },
                         onOpenStorage = vm::openStorageManager,
                         onOpenFiles = vm::openFileManager,
@@ -584,7 +586,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                                             focusScale = 1.05f, showNames = false,
                                             returningPkg = returningAppPackage,
                                             tileModifier = { index, _ ->
-                                                val topIdx = (index * 9 / dock.size.coerceAtLeast(1)).coerceIn(0, 8)
+                                                val topIdx = (index * 8 / dock.size.coerceAtLeast(1)).coerceIn(0, 7)
                                                 val gridTargetCol = index.coerceAtMost((gridRows.firstOrNull()?.size ?: 1) - 1)
                                                 Modifier
                                                     .focusRequester(dockColRequesters[index.coerceIn(0, cols - 1)])
@@ -1096,7 +1098,6 @@ private fun CleanTvTopBar(
     onOpenQuickShare: () -> Unit,
     onOpenInputs: () -> Unit,
     onOpenNetwork: () -> Unit,
-    onOpenCleanTv: () -> Unit,
     onToggleSort: () -> Unit,
     onOpenStorage: () -> Unit,
     onOpenFiles: () -> Unit,
@@ -1113,7 +1114,7 @@ private fun CleanTvTopBar(
 
     fun pillFocusModifier(index: Int): Modifier {
         if (pillRequesters.size <= index) return Modifier
-        val targetCol = if (dockSize > 0) (index * dockSize / 9).coerceIn(0, dockSize - 1) else 0
+        val targetCol = if (dockSize > 0) (index * dockSize / 8).coerceIn(0, dockSize - 1) else 0
         return Modifier
             .focusRequester(pillRequesters[index])
             .focusProperties {
@@ -1223,17 +1224,9 @@ private fun CleanTvTopBar(
                 onFocusChange = { onTopFocus(qsLabel, it) },
             )
             TvPill(
-                label = "Clean TV",
-                icon = Icons.Rounded.AutoAwesome,
-                modifier = pillFocusModifier(1),
-                onClick = onOpenCleanTv,
-                collapsible = true,
-                onFocusChange = { onTopFocus("Clean TV", it) },
-            )
-            TvPill(
                 label = "Inputs",
                 icon = Icons.AutoMirrored.Rounded.Input,
-                modifier = pillFocusModifier(2),
+                modifier = pillFocusModifier(1),
                 onClick = onOpenInputs,
                 collapsible = true,
                 onFocusChange = { onTopFocus("Inputs", it) },
@@ -1242,7 +1235,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = sortLabel,
                 icon = if (sortMode == AppSortMode.RECENCY) Icons.Rounded.Schedule else Icons.AutoMirrored.Rounded.Sort,
-                modifier = pillFocusModifier(3),
+                modifier = pillFocusModifier(2),
                 onClick = onToggleSort,
                 collapsible = true,
                 onFocusChange = { onTopFocus(sortLabel, it) },
@@ -1251,7 +1244,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = netText,
                 icon = netIcon,
-                modifier = pillFocusModifier(4),
+                modifier = pillFocusModifier(3),
                 onClick = onOpenNetwork,
                 maxLabelWidth = 200.dp,
                 collapsible = true,
@@ -1260,7 +1253,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = "Storage",
                 icon = Icons.Rounded.Storage,
-                modifier = pillFocusModifier(5),
+                modifier = pillFocusModifier(4),
                 onClick = onOpenStorage,
                 contentDescription = "Storage",
                 collapsible = true,
@@ -1269,7 +1262,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = "Files",
                 icon = Icons.Rounded.Folder,
-                modifier = pillFocusModifier(6),
+                modifier = pillFocusModifier(5),
                 onClick = onOpenFiles,
                 contentDescription = "Files",
                 collapsible = true,
@@ -1278,7 +1271,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = "Screensaver",
                 icon = Icons.Rounded.Tv,
-                modifier = pillFocusModifier(7),
+                modifier = pillFocusModifier(6),
                 onClick = onOpenScreensaver,
                 contentDescription = "Screensaver",
                 collapsible = true,
@@ -1287,7 +1280,7 @@ private fun CleanTvTopBar(
             TvPill(
                 label = "Settings",
                 icon = Icons.Rounded.Settings,
-                modifier = pillFocusModifier(8),
+                modifier = pillFocusModifier(7),
                 onClick = onOpenSettings,
                 contentDescription = "Settings",
                 collapsible = true,
@@ -1298,7 +1291,7 @@ private fun CleanTvTopBar(
                 TvPill(
                     label = hiddenLabel,
                     icon = Icons.Rounded.Visibility,
-                    modifier = pillFocusModifier(9),
+                    modifier = pillFocusModifier(8),
                     onClick = onOpenHidden,
                     contentDescription = "Hidden apps",
                     collapsible = true,

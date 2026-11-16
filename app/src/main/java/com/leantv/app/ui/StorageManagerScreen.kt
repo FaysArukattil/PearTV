@@ -40,7 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.leantv.app.adb.AdbClient
+import com.leantv.app.data.AppGroup
 import com.leantv.app.data.Journal
+import com.leantv.app.data.Scanner
 import com.leantv.app.data.DebloatResult
 import com.leantv.app.data.SystemDebloater
 import com.leantv.app.storage.AppStorageDetail
@@ -74,6 +76,8 @@ enum class StorageCategory(val title: String) {
 fun StorageManagerScreen(
     adbClient: AdbClient?,
     journal: Journal,
+    scanner: Scanner,
+    initialCategory: StorageCategory? = null,
     onClose: () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -90,7 +94,7 @@ fun StorageManagerScreen(
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // Navigation state
-    var selectedCategory by remember { mutableStateOf<StorageCategory?>(null) }
+    var selectedCategory by remember { mutableStateOf(initialCategory) }
 
     // Apps selection state (inside APPS category)
     var selectedApp by remember { mutableStateOf<AppStorageDetail?>(null) }
@@ -175,6 +179,8 @@ fun StorageManagerScreen(
                     ev.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK
                 ) {
                     when {
+                        // Apps + file views handle Back themselves (viewer -> side panel -> list -> storage)
+                        selectedCategory != null -> false
                         fileToDelete != null -> {
                             fileToDelete = null
                             true
@@ -226,17 +232,14 @@ fun StorageManagerScreen(
                     // ══════════════════════════════════════════════════════════════
                     // 2. APPS MANAGEMENT VIEW (Clear Cache / Data / Uninstall)
                     // ══════════════════════════════════════════════════════════════
-                    AppsManagementView(
+                    StorageAppsView(
                         overview = currentOverview,
-                        selectedApp = selectedApp,
-                        appIcons = appIcons,
                         adbClient = adbClient,
                         journal = journal,
-                        backFocus = categoryFocusRequester,
-                        onBack = { selectedCategory = null },
-                        onSelectApp = { app -> selectedApp = app },
-                        onAppModified = { msg ->
-                            statusMessage = msg
+                        scanner = scanner,
+                        initialGroup = if (initialCategory == StorageCategory.APPS) AppGroup.BLOAT else AppGroup.INSTALLED,
+                        onBack = {
+                            selectedCategory = null
                             refresh()
                         }
                     )
@@ -271,15 +274,13 @@ fun StorageManagerScreen(
                         else -> 0L
                     }
 
-                    FileCategoryView(
-                        title = catTitle,
+                    StorageFilesView(
                         category = selectedCategory!!,
-                        totalBytes = catTotal,
+                        title = catTitle,
                         files = files,
-                        backFocus = categoryFocusRequester,
-                        onBack = { selectedCategory = null },
-                        onRequestDelete = { fileItem ->
-                            fileToDelete = fileItem
+                        onBack = {
+                            selectedCategory = null
+                            refresh()
                         }
                     )
                 }
