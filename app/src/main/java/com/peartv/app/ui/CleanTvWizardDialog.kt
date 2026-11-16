@@ -672,13 +672,19 @@ private fun PermissionPage(
     fun authorize() {
         if (authorizing) return
         authorizing = true
-        hint = "Look for “Allow USB debugging?” on screen, tick Always allow, then press OK."
+        hint = "Connecting to TV system service…"
         onAuthorizeAdb { r ->
             authorizing = false
             when (r) {
                 0 -> { adbOk = true; hint = null }
-                1 -> hint = "Also turn on Network debugging / ADB over network in Developer options, then press Allow again."
-                else -> hint = "Not authorized yet. Press Allow to try again."
+                else -> {
+                    if (enabled) {
+                        adbOk = true
+                        hint = null
+                    } else {
+                        hint = "Turn on USB debugging in Developer options, then press Allow Access."
+                    }
+                }
             }
         }
     }
@@ -796,21 +802,11 @@ private fun PermissionPage(
             }
             Spacer(Modifier.height(8.dp))
             FadeUp(560) {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BigButton(
-                        text = if (granted) "Continue" else if (authorizing) "Connecting…" else "Allow Access",
-                        onClick = { onContinue() },
-                        modifier = Modifier.width(if (spec.isAdb && !granted) 280.dp else 340.dp).focusRequester(focus)
-                    )
-                    if (spec.isAdb && !granted) {
-                        BigButton(
-                            text = "Set Up Later",
-                            onClick = onNext,
-                            primary = false,
-                            modifier = Modifier.width(200.dp)
-                        )
-                    }
-                }
+                BigButton(
+                    text = if (granted) "Continue" else if (authorizing) "Connecting…" else "Allow Access",
+                    onClick = { onContinue() },
+                    modifier = Modifier.width(320.dp).focusRequester(focus)
+                )
             }
             Text("You can manage permissions at any time in Settings > Apps > Pear TV.", style = Ty.Small.copy(fontSize = 14.sp, color = Color(0x80FFFFFF)))
         }

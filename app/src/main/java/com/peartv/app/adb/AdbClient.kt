@@ -65,28 +65,33 @@ class AdbClient(private val keyDir: File) {
      */
     suspend fun connect(targetPort: Int = ADB_PORT, specificHost: String? = null): ConnResult = withContext(Dispatchers.IO) {
         close()
-        val hosts = if (specificHost != null) listOf(specificHost) else listOfNotNull("127.0.0.1", lanIp())
-        val host = hosts.firstOrNull { probe(it, targetPort) }
+        val candidates = if (specificHost != null) listOf(specificHost) else listOfNotNull("127.0.0.1", lanIp()).distinct()
+        var anyPortOpen = false
+        var lastErr = "Failed to connect"
 
-        if (host == null) {
-            ConnResult.PortClosed
-        } else {
+        for (h in candidates) {
+            if (!probe(h, targetPort, timeoutMs = 800)) continue
+            anyPortOpen = true
             try {
-                withTimeout(4500L) {
-                    val d = Dadb.create(host, targetPort, keys())
-                    val reply = withTimeout(3000L) { d.shell("echo cleanyourtv").output.trim() }
-                    if (reply == "cleanyourtv") {
-                        dadb = d
-                        connectedPort = targetPort
-                        ConnResult.Ok(host, targetPort)
-                    } else {
-                        ConnResult.Failed("Unexpected response from TV adbd: $reply")
-                    }
+                val d = withTimeout(3500L) {
+                    Dadb.create(h, targetPort, keys())
+                }
+                val reply = withTimeout(2000L) {
+                    d.shell("echo cleanyourtv").output.trim()
+                }
+                if (reply == "cleanyourtv") {
+                    dadb = d
+                    connectedPort = targetPort
+                    return@withContext ConnResult.Ok(h, targetPort)
+                } else {
+                    lastErr = "Unexpected response from TV adbd: $reply"
                 }
             } catch (t: Throwable) {
-                ConnResult.Failed(t.message ?: t.javaClass.simpleName)
+                lastErr = t.message ?: t.javaClass.simpleName
             }
         }
+
+        if (!anyPortOpen) ConnResult.PortClosed else ConnResult.Failed(lastErr)
     }
 
     suspend fun shell(cmd: String): Shell = withContext(Dispatchers.IO) {
