@@ -14,6 +14,7 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.peartv.app"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.peartv.app"
@@ -55,7 +56,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             ndk {
                 abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-                debugSymbolLevel = "FULL"
+                debugSymbolLevel = "SYMBOL_TABLE"
             }
             signingConfig = if (keystoreProps.containsKey("storeFile")) {
                 signingConfigs.getByName("release")
