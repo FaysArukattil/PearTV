@@ -144,12 +144,12 @@ class NativeQuickShareReceiver : Service() {
                     context = ctx,
                     onFileCommitted = { file, payloadId ->
                         committedPayloadFiles[payloadId] = file
-                        Log.i(TAG, "Quick Share file committed: ${file.absolutePath} for payload $payloadId")
+                        Log.w(TAG, "Quick Share file committed: ${file.absolutePath} for payload $payloadId")
                     }
                 )
             },
             mediumRegistry = mediumRegistry,
-            logger = { Log.i(TAG, "BadaCore: $it") }
+            logger = { Log.w(TAG, "BadaCore: $it") }
         )
         tcpServer = server
 
@@ -348,6 +348,7 @@ class NativeQuickShareReceiver : Service() {
     private fun observeConnection(conn: InboundConnection) {
         serviceScope.launch {
             conn.state.collect { connState ->
+                Log.w(TAG, "observeConnection: $connState")
                 when (connState) {
                     is InboundConnectionState.WaitingForUserConsent -> {
                         val meta = connState.metadata
@@ -449,6 +450,7 @@ class NativeQuickShareReceiver : Service() {
 
     fun submitConsent(accepted: Boolean) {
         val transfer = _state.value.incomingTransfer
+        Log.w(TAG, "submitConsent: accepted=$accepted, conn=${transfer?.connection != null}")
         if (transfer?.connection != null) {
             transfer.connection.submitUserConsent(accepted)
         }

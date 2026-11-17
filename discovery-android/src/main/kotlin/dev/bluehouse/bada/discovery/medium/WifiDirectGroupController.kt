@@ -127,9 +127,8 @@ internal class WifiDirectGroupController(
         channel: WifiP2pManager.Channel,
         requested: RequestedWifiDirectCredentials,
     ): Boolean {
-        primeP2pChannel(channel)
         removeExistingGroupBeforeServerCreate(channel)
-        val createOk =
+        var createOk =
             awaitActionListener("createGroup") { listener ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     manager.createGroup(channel, requested.toConfig(), listener)
@@ -138,7 +137,16 @@ internal class WifiDirectGroupController(
                 }
             }
         if (!createOk) {
-            Log.w(TAG, "WifiP2pManager.createGroup failed — falling back")
+            Log.w(TAG, "WifiP2pManager.createGroup fast path failed — trying primed retry")
+            primeP2pChannel(channel)
+            createOk =
+                awaitActionListener("createGroupRetry") { listener ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        manager.createGroup(channel, requested.toConfig(), listener)
+                    } else {
+                        manager.createGroup(channel, listener)
+                    }
+                }
         }
         return createOk
     }
@@ -520,12 +528,17 @@ internal class WifiDirectGroupController(
         // is RECEIVER_NOT_EXPORTED because the WIFI_P2P_CONNECTION_CHANGED
         // action is system-broadcast — only the platform itself sends
         // it, so we never need exported delivery from third-party apps.
+        val exportFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.RECEIVER_EXPORTED
+        } else {
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        }
         try {
             ContextCompat.registerReceiver(
                 context,
                 receiver,
                 filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED,
+                exportFlag,
             )
         } catch (
             @Suppress("TooGenericExceptionCaught") t: Throwable,
@@ -539,12 +552,17 @@ internal class WifiDirectGroupController(
     private fun registerStateChangedReceiver(): StateChangedReceiver {
         val receiver = StateChangedReceiver()
         val filter = IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+        val exportFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.RECEIVER_EXPORTED
+        } else {
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        }
         try {
             ContextCompat.registerReceiver(
                 context,
                 receiver,
                 filter,
-                ContextCompat.RECEIVER_NOT_EXPORTED,
+                exportFlag,
             )
         } catch (
             @Suppress("TooGenericExceptionCaught") t: Throwable,

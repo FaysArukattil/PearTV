@@ -99,7 +99,7 @@ class TvFileDestinationFactory(
                 val channel = raf.channel
                 activeFiles[header.id] = targetFile
                 activeChannels[header.id] = channel
-                Log.i(TAG, "Opened destination channel: ${targetFile.absolutePath}")
+                Log.w(TAG, "Opened destination channel: ${targetFile.absolutePath}")
                 return channel
             } catch (e: Exception) {
                 lastEx = e
@@ -120,12 +120,12 @@ class TvFileDestinationFactory(
                     val publicDest = resolveUniqueFile(targetDir, file.name)
                     if (file.renameTo(publicDest)) {
                         file = publicDest
-                        Log.i(TAG, "Promoted received file to public LeanTvQuickshare: ${file.absolutePath}")
+                        Log.w(TAG, "Promoted received file to public LeanTvQuickshare: ${file.absolutePath}")
                     } else {
                         file.copyTo(publicDest, overwrite = true)
                         file.delete()
                         file = publicDest
-                        Log.i(TAG, "Copied received file to public LeanTvQuickshare: ${file.absolutePath}")
+                        Log.w(TAG, "Copied received file to public LeanTvQuickshare: ${file.absolutePath}")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Could not promote file to public QuickShare dir: ${e.message}")

@@ -183,62 +183,28 @@ fun NativeQuickShareConsentDialog(
                     }
                 }
 
-                // ─── Connection & Off-LAN Info Card ──────────────────────────────────
-                Column(
+                // ─── Clean Apple TV Device Info Bar ─────────────────────────────────
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.White.copy(alpha = 0.04f))
-                        .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(20.dp))
-                        .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Device Name",
-                            style = Ty.Small.copy(color = Pal.Dim)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = deviceName.ifBlank { "Pear TV" },
-                                style = Ty.Small.copy(
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Transfer Mode",
-                            style = Ty.Small.copy(color = Pal.Dim)
-                        )
-                        Text(
-                            text = "Direct Wi-Fi P2P & BLE (Offline)",
-                            style = Ty.Small.copy(
-                                color = Pal.Mint,
-                                fontWeight = FontWeight.Medium
-                            )
-                        )
-                    }
-
                     Text(
-                        text = "⚡ Instant off-LAN discovery: Phone and TV do not need to be on the same Wi-Fi. Just tap the TV in your phone's Quick Share picker.",
-                        style = Ty.Small.copy(color = Pal.Dim.copy(alpha = 0.85f), fontSize = 14.sp, lineHeight = 19.sp)
+                        text = "Visible to nearby devices as",
+                        style = Ty.Body.copy(color = Pal.Dim, fontSize = 16.sp)
+                    )
+                    Text(
+                        text = deviceName.ifBlank { "Pear TV" },
+                        style = Ty.Body.copy(
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
+                        )
                     )
                 }
 
@@ -433,8 +399,10 @@ fun NativeQuickShareConsentPopup(
                         style = Ty.Title,
                         textAlign = TextAlign.Center,
                     )
+                    val totalBytes: Long = transfer.files.sumOf { it.sizeBytes }
+                    val sizeSummary = if (totalBytes > 0L) " · ${formatBytes(totalBytes)}" else ""
                     Text(
-                        text = "${transfer.files.size} file${if (transfer.files.size == 1) "" else "s"} · Direct P2P Transfer",
+                        text = "${transfer.files.size} file${if (transfer.files.size == 1) "" else "s"}$sizeSummary",
                         style = Ty.Small.copy(color = Pal.Dim)
                     )
                 }

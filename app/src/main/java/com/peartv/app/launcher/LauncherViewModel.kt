@@ -373,11 +373,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun detectDevice() {
-        val profile = DeviceProbe.read(ctx)
-        val brand = profile.brand.replaceFirstChar { it.uppercase() }
-        val model = profile.model
+        val friendlyName = try {
+            android.provider.Settings.Global.getString(ctx.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+                ?.takeIf { it.isNotBlank() }
+                ?: android.provider.Settings.Secure.getString(ctx.contentResolver, "bluetooth_name")
+                    ?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+        val label = if (!friendlyName.isNullOrBlank()) {
+            friendlyName
+        } else {
+            val profile = DeviceProbe.read(ctx)
+            val brand = profile.brand.replaceFirstChar { it.uppercase() }
+            val model = profile.model
+            if (model.contains(brand, ignoreCase = true)) model else "$brand $model"
+        }
         _state.update {
-            it.copy(detectedDeviceLabel = if (model.contains(brand, ignoreCase = true)) model else "$brand $model")
+            it.copy(detectedDeviceLabel = label)
         }
     }
 

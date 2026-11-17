@@ -768,7 +768,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             }
 
             // Quick Share control panel (opened via Quick Share pill/tile)
-            if (s.showQuickShare) {
+            if (s.showQuickShare && s.nativeQuickShareState.incomingTransfer == null) {
                 com.peartv.app.share.NativeQuickShareConsentDialog(
                     state = s.nativeQuickShareState,
                     isQuickShareActive = s.isQuickShareActive,

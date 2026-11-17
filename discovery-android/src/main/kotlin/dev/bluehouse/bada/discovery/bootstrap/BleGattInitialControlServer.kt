@@ -704,45 +704,60 @@ private class BleWeaveGattSession(
     }
 
     private fun handleSocketMessage(message: ByteArray) {
-        if (!introReceived) {
-            handleIntroductionMessage(message)
-        } else {
-            handleServiceMessage(message)
+        if (message.size < NearbyBleSocketFrames.CONTROL_PACKET_PREFIX_LEN) {
+            Log.w(BleGattInitialControlServer.TAG, "discarded undersized BLE socket payload: len=${message.size}")
+            return
         }
-    }
 
-    private fun handleIntroductionMessage(message: ByteArray) {
-        val control = NearbyBleSocketFrames.parseControlPacket(message)
-        val isIntroduction =
-            control?.type == BleFramesProto.SocketControlFrame.ControlFrameType.INTRODUCTION &&
-                control.introduction.socketVersion == BleFramesProto.SocketVersion.V2 &&
-                control.introduction.serviceIdHash
-                    .toByteArray()
-                    .contentEquals(NearbyServiceId.hashPrefix)
-        if (isIntroduction) {
-            introReceived = true
-            Log.i(BleGattInitialControlServer.TAG, "BLE socket introduction accepted")
-        } else {
-            Log.w(BleGattInitialControlServer.TAG, "discarded non-introduction first socket message")
-        }
-    }
-
-    private fun handleServiceMessage(message: ByteArray) {
+        val prefix = message.copyOfRange(0, NearbyBleSocketFrames.CONTROL_PACKET_PREFIX_LEN)
         when {
-            message.size < NearbyServiceId.hashPrefix.size -> {
-                Log.w(BleGattInitialControlServer.TAG, "discarded undersized BLE socket payload")
+            prefix.contentEquals(NearbyBleSocketFrames.controlPacketPrefix()) -> {
+                handleControlPacket(message)
             }
-
-            !message.copyOfRange(0, NearbyServiceId.hashPrefix.size).contentEquals(NearbyServiceId.hashPrefix) -> {
-                Log.w(BleGattInitialControlServer.TAG, "discarded BLE payload for unexpected service hash")
-            }
-
-            else -> {
+            prefix.contentEquals(NearbyServiceId.hashPrefix) -> {
                 val payload = message.copyOfRange(NearbyServiceId.hashPrefix.size, message.size)
                 sendWeaveMessage(NearbyBleSocketFrames.encodePacketAcknowledgementPacket(payload.size))
-                multiplexBridge.receivePhysicalBytes(
-                    payload,
+                multiplexBridge.receivePhysicalBytes(payload)
+            }
+            else -> {
+                Log.w(
+                    BleGattInitialControlServer.TAG,
+                    "BLE payload with unhandled prefix=${prefix.toHex()} len=${message.size}, passing to multiplex fallback",
                 )
+                multiplexBridge.receivePhysicalBytes(message)
+            }
+        }
+    }
+
+    private fun handleControlPacket(message: ByteArray) {
+        val control = NearbyBleSocketFrames.parseControlPacket(message)
+        if (control == null) {
+            Log.w(BleGattInitialControlServer.TAG, "BLE GATT unparseable control packet len=${message.size}")
+            return
+        }
+        when (control.type) {
+            BleFramesProto.SocketControlFrame.ControlFrameType.INTRODUCTION -> {
+                val isIntroValid =
+                    control.introduction.socketVersion == BleFramesProto.SocketVersion.V2 &&
+                        control.introduction.serviceIdHash
+                            .toByteArray()
+                            .contentEquals(NearbyServiceId.hashPrefix)
+                if (isIntroValid) {
+                    introReceived = true
+                    Log.w(BleGattInitialControlServer.TAG, "BLE socket introduction accepted")
+                } else {
+                    Log.w(BleGattInitialControlServer.TAG, "BLE socket introduction rejected (version/hash mismatch)")
+                }
+            }
+            BleFramesProto.SocketControlFrame.ControlFrameType.PACKET_ACKNOWLEDGEMENT -> {
+                Log.w(BleGattInitialControlServer.TAG, "BLE GATT packet ack received size=${control.packetAcknowledgement.receivedSize}")
+            }
+            BleFramesProto.SocketControlFrame.ControlFrameType.DISCONNECTION -> {
+                Log.w(BleGattInitialControlServer.TAG, "BLE GATT peer requested disconnection")
+                close()
+            }
+            else -> {
+                Log.w(BleGattInitialControlServer.TAG, "BLE GATT control frame type=${control.type}")
             }
         }
     }
