@@ -678,6 +678,166 @@
       box-shadow: 0 4px 20px rgba(255, 255, 255, 0.3);
     }
 
+    /* =========================================================
+       OFFICIAL LISTING SHOWCASE & GALLERY
+       ========================================================= */
+    .gallery-section {
+      padding: 80px 40px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      position: relative;
+      z-index: 5;
+    }
+    .gallery-showcase-container {
+      max-width: 1040px;
+      margin: 0 auto;
+      position: relative;
+    }
+    .gallery-viewport {
+      position: relative;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #000000;
+      box-shadow: 
+        0 40px 100px -20px rgba(0, 0, 0, 0.95),
+        0 0 80px rgba(10, 132, 255, 0.15);
+      aspect-ratio: 1024 / 571;
+    }
+    .gallery-slide-stage {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      background: #000000;
+    }
+    .gallery-main-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .gallery-img-glare {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.01) 40%, transparent 65%);
+      pointer-events: none;
+    }
+    .gallery-nav-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(10, 11, 16, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #FFFFFF;
+      font-size: 1.8rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      z-index: 10;
+    }
+    .gallery-nav-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-50%) scale(1.08);
+      border-color: #FFFFFF;
+    }
+    .gallery-nav-btn.prev { left: 20px; }
+    .gallery-nav-btn.next { right: 20px; }
+
+    .gallery-meta-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 22px;
+      padding: 0 8px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .gallery-slide-badge {
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary-light);
+      background: rgba(10, 132, 255, 0.12);
+      border: 1px solid rgba(10, 132, 255, 0.25);
+      padding: 3px 10px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .gallery-slide-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: -0.02em;
+    }
+    .gallery-dots-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .gallery-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .gallery-dot.active {
+      width: 24px;
+      border-radius: 999px;
+      background: var(--primary);
+      box-shadow: 0 0 10px var(--primary);
+    }
+
+    .gallery-thumbnails-strip {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      scrollbar-width: none;
+    }
+    .gallery-thumbnails-strip::-webkit-scrollbar { display: none; }
+    .thumb-pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-muted);
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .thumb-pill:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+    }
+    .thumb-pill.active {
+      background: #FFFFFF;
+      color: #000000;
+      border-color: #FFFFFF;
+      box-shadow: 0 4px 18px rgba(255, 255, 255, 0.35);
+    }
+
     /* Footer */
     footer {
       padding: 40px;
@@ -741,6 +901,7 @@
       <div class="nav-pill-center">
         <a href="./" class="active">Home</a>
         <a href="#features">Features</a>
+        <a href="#gallery">Gallery</a>
         <a href="#upstream">Open Source</a>
         <a href="privacy/">Privacy</a>
         <a href="terms/">Terms</a>
@@ -893,6 +1054,60 @@
       </div>
     </div>
 
+    <!-- Official Listing Showcase & Gallery Section -->
+    <div class="gallery-section" id="gallery">
+      <div class="section-header">
+        <span class="section-pill">Visual Showcase</span>
+        <h2 class="section-title">Designed for Living Room Luxury</h2>
+        <p class="hero-subtitle" style="margin-bottom: 0;">Browse the official listing preview and experience the intuitive, distraction-free tvOS design language built for Android TV.</p>
+      </div>
+
+      <div class="gallery-showcase-container">
+        <!-- Main Slide Viewport -->
+        <div class="gallery-viewport">
+          <div class="gallery-slide-stage">
+            <img id="galleryMainImg" src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." class="gallery-main-img">
+            <div class="gallery-img-glare"></div>
+          </div>
+
+          <!-- Controls: Prev / Next Buttons -->
+          <button class="gallery-nav-btn prev" id="galleryBtnPrev" aria-label="Previous slide">&#8249;</button>
+          <button class="gallery-nav-btn next" id="galleryBtnNext" aria-label="Next slide">&#8250;</button>
+        </div>
+
+        <!-- Meta Bar (Badge + Title + Dots) -->
+        <div class="gallery-meta-bar">
+          <div class="gallery-meta-text">
+            <span class="gallery-slide-badge" id="galleryBadge">MAIN TV LAUNCHER</span>
+            <h3 class="gallery-slide-title" id="galleryTitle">Pure television. Zero distractions.</h3>
+          </div>
+          <div class="gallery-dots-row" id="galleryDots"></div>
+        </div>
+
+        <!-- Thumbnail Selector Tabs -->
+        <div class="gallery-thumbnails-strip">
+          <button class="thumb-pill active" data-index="0">
+            <span>📺</span> Pure TV
+          </button>
+          <button class="thumb-pill" data-index="1">
+            <span>📲</span> Quick Share
+          </button>
+          <button class="thumb-pill" data-index="2">
+            <span>⚡</span> Storage &amp; Speed
+          </button>
+          <button class="thumb-pill" data-index="3">
+            <span>📁</span> File System
+          </button>
+          <button class="thumb-pill" data-index="4">
+            <span>🎛️</span> Complete Suite
+          </button>
+          <button class="thumb-pill" data-index="5">
+            <span>🍐</span> Startup Splash
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Upstream Acknowledgements (Courteous Thank-You Section) -->
     <div class="upstream-section" id="upstream">
       <div class="section-header">
@@ -954,6 +1169,7 @@
       <div class="footer-links">
         <a href="./">Home</a>
         <a href="#features">Features</a>
+        <a href="#gallery">Gallery</a>
         <a href="#upstream">Open Source</a>
         <a href="privacy/">Privacy Policy</a>
         <a href="terms/">Terms &amp; Disclaimer</a>
@@ -1033,6 +1249,122 @@
     window.addEventListener("DOMContentLoaded", () => {
       runTvBootSequence();
     });
+
+    // =========================================================
+    // LISTING GALLERY SLIDER ENGINE
+    // =========================================================
+    const gallerySlides = [
+      {
+        src: "assets/listing/slide_02_pure_tv.webp",
+        badge: "MAIN TV LAUNCHER",
+        title: "Pure television. Zero distractions.",
+        alt: "Pear TV - Pure television. Zero distractions."
+      },
+      {
+        src: "assets/listing/slide_03_quick_share.webp",
+        badge: "BUILT-IN QUICK SHARE",
+        title: "Beam anything to your screen.",
+        alt: "Pear TV - Built-in Quick Share"
+      },
+      {
+        src: "assets/listing/slide_05_storage.webp",
+        badge: "STORAGE & PERFORMANCE",
+        title: "More space. Peak speed.",
+        alt: "Pear TV - Storage & Performance"
+      },
+      {
+        src: "assets/listing/slide_06_files.webp",
+        badge: "BUILT-IN FILE SYSTEM",
+        title: "Your files. Finally organized.",
+        alt: "Pear TV - Remote File System"
+      },
+      {
+        src: "assets/listing/slide_04_suite.webp",
+        badge: "THE COMPLETE SUITE",
+        title: "Everything your TV needs.",
+        alt: "Pear TV - Complete TV Suite"
+      },
+      {
+        src: "assets/listing/slide_01_splash.webp",
+        badge: "MINIMALIST STARTUP",
+        title: "The Fast, Clean Android TV Launcher.",
+        alt: "Pear TV - Startup Splash"
+      }
+    ];
+
+    let currentGalleryIndex = 0;
+    const galleryImg = document.getElementById("galleryMainImg");
+    const galleryBadge = document.getElementById("galleryBadge");
+    const galleryTitle = document.getElementById("galleryTitle");
+    const galleryDotsContainer = document.getElementById("galleryDots");
+    const galleryPills = document.querySelectorAll(".thumb-pill");
+    const btnGalleryPrev = document.getElementById("galleryBtnPrev");
+    const btnGalleryNext = document.getElementById("galleryBtnNext");
+
+    function renderGalleryDots() {
+      if (!galleryDotsContainer) return;
+      galleryDotsContainer.innerHTML = "";
+      gallerySlides.forEach((_, idx) => {
+        const dot = document.createElement("div");
+        dot.className = "gallery-dot" + (idx === currentGalleryIndex ? " active" : "");
+        dot.addEventListener("click", () => showGallerySlide(idx));
+        galleryDotsContainer.appendChild(dot);
+      });
+    }
+
+    function showGallerySlide(idx) {
+      currentGalleryIndex = (idx + gallerySlides.length) % gallerySlides.length;
+      const slide = gallerySlides[currentGalleryIndex];
+      if (!galleryImg) return;
+
+      galleryImg.style.opacity = "0.2";
+      galleryImg.style.transform = "scale(0.985)";
+
+      setTimeout(() => {
+        galleryImg.src = slide.src;
+        galleryImg.alt = slide.alt;
+        if (galleryBadge) galleryBadge.textContent = slide.badge;
+        if (galleryTitle) galleryTitle.textContent = slide.title;
+        galleryImg.style.opacity = "1";
+        galleryImg.style.transform = "scale(1)";
+      }, 150);
+
+      // Update Dots
+      const dots = galleryDotsContainer.querySelectorAll(".gallery-dot");
+      dots.forEach((d, i) => {
+        d.classList.toggle("active", i === currentGalleryIndex);
+      });
+
+      // Update Thumb Pills
+      galleryPills.forEach((p, i) => {
+        p.classList.toggle("active", i === currentGalleryIndex);
+      });
+    }
+
+    if (btnGalleryPrev && btnGalleryNext) {
+      btnGalleryPrev.addEventListener("click", () => showGallerySlide(currentGalleryIndex - 1));
+      btnGalleryNext.addEventListener("click", () => showGallerySlide(currentGalleryIndex + 1));
+    }
+
+    galleryPills.forEach((pill, idx) => {
+      pill.addEventListener("click", () => showGallerySlide(idx));
+    });
+
+    renderGalleryDots();
+
+    // Auto-advance every 6 seconds unless hovered
+    let autoSlideTimer = setInterval(() => {
+      showGallerySlide(currentGalleryIndex + 1);
+    }, 6000);
+
+    const showcaseContainer = document.querySelector(".gallery-showcase-container");
+    if (showcaseContainer) {
+      showcaseContainer.addEventListener("mouseenter", () => clearInterval(autoSlideTimer));
+      showcaseContainer.addEventListener("mouseleave", () => {
+        clearInterval(autoSlideTimer);
+        autoSlideTimer = setInterval(() => showGallerySlide(currentGalleryIndex + 1), 6000);
+      });
+    }
   </script>
 </body>
 </html>
