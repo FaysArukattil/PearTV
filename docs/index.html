@@ -254,280 +254,263 @@
       transform: translateY(-2px);
     }
 
-    /* =========================================================
-       OFFICIAL STORE LISTING SHOWCASE (SHOW ALL AT ONCE)
+        /* =========================================================
+       OFFICIAL STORE LISTING SHOWCASE (SYMMETRIC SCREENSHOT REEL)
        ========================================================= */
     .showcase-section {
-      padding: 50px 40px 70px;
+      padding: 55px 40px 75px;
       position: relative;
       z-index: 10;
     }
-    .showcase-header {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-    .section-pill {
-      display: inline-block;
-      font-size: 0.75rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--primary-light);
-      background: rgba(10, 132, 255, 0.12);
-      border: 1px solid rgba(10, 132, 255, 0.25);
-      padding: 5px 14px;
-      border-radius: 999px;
-      margin-bottom: 12px;
-    }
-    .section-title {
-      font-size: 2.3rem;
-      font-weight: 800;
-      color: #FFFFFF;
-      letter-spacing: -0.02em;
-      margin-bottom: 10px;
-    }
-
-    /* Toolbar for Grid vs Reel toggle and Controls */
-    .showcase-toolbar {
+    .showcase-header-row {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 28px;
-      flex-wrap: wrap;
-      gap: 14px;
+      align-items: flex-end;
       max-width: 1260px;
-      margin-left: auto;
-      margin-right: auto;
+      margin: 0 auto 24px;
+      flex-wrap: wrap;
+      gap: 20px;
     }
-    .view-toggle {
-      display: inline-flex;
+    .showcase-header-left {
+      max-width: 720px;
+    }
+    .showcase-header-left .section-title {
+      margin-bottom: 6px;
+      text-align: left;
+    }
+    .showcase-header-left .section-subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      line-height: 1.5;
+    }
+    .showcase-header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .reel-counter-badge {
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--text-muted);
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 4px;
-      border-radius: 999px;
-      gap: 4px;
-    }
-    .toggle-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-family: inherit;
-      font-size: 0.85rem;
-      font-weight: 700;
       padding: 7px 16px;
       border-radius: 999px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
+      white-space: nowrap;
     }
-    .toggle-btn:hover {
+    .reel-counter-badge strong {
       color: #FFFFFF;
     }
-    .toggle-btn.active {
-      background: #FFFFFF;
-      color: #000000;
-      box-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
-    }
-    .toolbar-info {
+    .reel-ctrl-btns {
       display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .badge-count {
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--text-muted);
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 6px 14px;
-      border-radius: 999px;
-    }
-    .reel-nav-buttons {
-      display: none;
       gap: 8px;
     }
-    .showcase-container.view-reel ~ .showcase-toolbar .reel-nav-buttons,
-    .reel-nav-buttons.visible {
-      display: flex;
-    }
     .reel-arrow-btn {
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       color: #FFFFFF;
-      font-size: 1.3rem;
+      font-size: 1.4rem;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .reel-arrow-btn:hover {
       background: #FFFFFF;
       color: #000000;
-      transform: scale(1.06);
+      transform: scale(1.08);
+      box-shadow: 0 4px 18px rgba(255, 255, 255, 0.35);
     }
 
-    /* Main Showcase Container */
-    .showcase-container {
+    /* Continuous Horizontal Store Reel (100% Symmetric) */
+    .reel-viewport {
       max-width: 1260px;
       margin: 0 auto;
-      transition: all 0.3s ease;
+      position: relative;
     }
-
-    /* Grid Mode (Default: Show everyone at once in sharp, crisp cards) */
-    .showcase-container.view-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
-    }
-
-    /* Reel / Horizontal Scroll Mode */
-    .showcase-container.view-reel {
+    .store-reel-track {
       display: flex;
+      gap: 24px;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
-      gap: 20px;
-      padding-bottom: 16px;
+      padding: 16px 8px 24px;
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+      scrollbar-width: none;
     }
-    .showcase-container.view-reel::-webkit-scrollbar {
-      height: 6px;
-    }
-    .showcase-container.view-reel::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 999px;
-    }
-    .showcase-container.view-reel::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 999px;
+    .store-reel-track::-webkit-scrollbar {
+      display: none;
     }
 
-    /* Individual Store Listing Card */
-    .listing-card {
-      background: var(--surface);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+    /* Screenshot Card (Pure Visual Focus - NO text block below!) */
+    .store-card {
+      flex: 0 0 460px;
+      aspect-ratio: 1024 / 571;
       border-radius: 20px;
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s, box-shadow 0.25s;
-      cursor: pointer;
-      position: relative;
-    }
-    .showcase-container.view-reel .listing-card {
-      flex: 0 0 calc(33.333% - 14px);
-      min-width: 320px;
-      scroll-snap-align: start;
-    }
-    .listing-card:hover {
-      transform: translateY(-5px);
-      border-color: rgba(10, 132, 255, 0.5);
-      box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.9), 0 0 30px rgba(10, 132, 255, 0.18);
-    }
-
-    /* Card Image Stage (Enforces Native Aspect Ratio without pixel blowup) */
-    .card-media {
-      position: relative;
-      aspect-ratio: 1024 / 571;
-      width: 100%;
       background: #000000;
-      overflow: hidden;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.85);
+      cursor: pointer;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s, box-shadow 0.3s;
+      scroll-snap-align: center;
+      position: relative;
+      user-select: none;
     }
-    .card-media img {
+    .store-card img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
       transition: transform 0.35s ease;
     }
-    .listing-card:hover .card-media img {
-      transform: scale(1.03);
+    .store-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(255, 255, 255, 0.35);
     }
-    .card-zoom-hint {
+    .store-card:hover img {
+      transform: scale(1.02);
+    }
+    .store-card.active {
+      border-color: var(--primary);
+      transform: scale(1.03);
+      box-shadow: 0 25px 60px -10px rgba(0, 0, 0, 0.95), 0 0 35px rgba(10, 132, 255, 0.45);
+      z-index: 5;
+    }
+
+    .card-zoom-badge {
       position: absolute;
-      top: 12px;
+      bottom: 12px;
       right: 12px;
       background: rgba(0, 0, 0, 0.75);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #FFFFFF;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      padding: 4px 12px;
       font-size: 0.72rem;
       font-weight: 700;
-      padding: 4px 10px;
-      border-radius: 999px;
+      color: #FFFFFF;
       opacity: 0;
-      transform: translateY(-4px);
+      transform: translateY(4px);
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
       gap: 5px;
       pointer-events: none;
     }
-    .listing-card:hover .card-zoom-hint {
+    .store-card:hover .card-zoom-badge {
       opacity: 1;
       transform: translateY(0);
     }
 
-    /* Card Body / Caption */
-    .card-body {
-      padding: 20px 22px 24px;
+    /* Selected Screenshot Detail Panel (Only shows details for the selected screenshot) */
+    .selected-detail-panel {
+      max-width: 1040px;
+      margin: 10px auto 0;
+      background: rgba(16, 17, 22, 0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 22px;
+      padding: 22px 28px;
       display: flex;
-      flex-direction: column;
-      flex-grow: 1;
-      background: linear-gradient(180deg, var(--surface) 0%, #0B0C10 100%);
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
     }
-    .card-badge-row {
+    .detail-text-col {
+      flex: 1;
+      min-width: 260px;
+      transition: opacity 0.25s ease;
+    }
+    .detail-tag-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
+      gap: 10px;
+      margin-bottom: 8px;
     }
-    .card-num {
+    .detail-badge {
       font-size: 0.74rem;
-      font-weight: 900;
-      color: #FFFFFF;
-      background: rgba(255, 255, 255, 0.12);
-      border-radius: 6px;
-      padding: 2px 7px;
-    }
-    .card-badge {
-      font-size: 0.72rem;
       font-weight: 800;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--primary-light);
       background: rgba(10, 132, 255, 0.12);
       border: 1px solid rgba(10, 132, 255, 0.25);
-      padding: 2px 9px;
+      padding: 3px 11px;
       border-radius: 6px;
     }
-    .card-title {
-      font-size: 1.18rem;
+    .detail-title {
+      font-size: 1.25rem;
       font-weight: 800;
       color: #FFFFFF;
       letter-spacing: -0.015em;
-      margin-bottom: 8px;
-      line-height: 1.35;
+      margin-bottom: 6px;
     }
-    .card-desc {
-      font-size: 0.9rem;
+    .detail-desc {
+      font-size: 0.92rem;
       color: var(--text-muted);
       line-height: 1.55;
     }
+    .detail-actions-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    .btn-fullscreen {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #FFFFFF;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      padding: 9px 20px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
+    }
+    .btn-fullscreen:hover {
+      background: #FFFFFF;
+      color: #000000;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 18px rgba(255, 255, 255, 0.35);
+    }
+    .detail-dots-row {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+    .detail-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .detail-dot:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .detail-dot.active {
+      width: 24px;
+      border-radius: 999px;
+      background: var(--primary);
+      box-shadow: 0 0 10px var(--primary);
+    }
 
-    /* =========================================================
-       FULLSCREEN LIGHTBOX MODAL
-       ========================================================= */
+    /* Lightbox Modal */
     .lightbox-modal {
       position: fixed;
       top: 0;
@@ -646,8 +629,13 @@
       font-weight: 800;
       color: #FFFFFF;
     }
+    .lightbox-desc {
+      font-size: 0.94rem;
+      color: var(--text-muted);
+      max-width: 680px;
+    }
 
-    /* =========================================================
+/* =========================================================
        CORE ARCHITECTURE FEATURES
        ========================================================= */
     .features-section {
@@ -839,18 +827,18 @@
       color: rgba(255, 255, 255, 0.35);
     }
 
-    /* =========================================================
+        /* =========================================================
        COMPREHENSIVE RESPONSIVENESS (DESKTOP, TABLET, MOBILE)
        ========================================================= */
     @media (max-width: 1080px) {
-      .showcase-container.view-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
       .upstream-grid {
         grid-template-columns: repeat(2, 1fr);
       }
       .hero-title {
         font-size: 2.8rem;
+      }
+      .store-card {
+        flex: 0 0 400px;
       }
     }
 
@@ -895,14 +883,25 @@
       .showcase-section,
       .features-section,
       .upstream-section {
-        padding: 50px 20px;
+        padding: 45px 18px;
       }
       .section-title {
         font-size: 1.95rem;
       }
-      .showcase-container.view-reel .listing-card {
-        flex: 0 0 calc(50% - 10px);
-        min-width: 280px;
+      .store-card {
+        flex: 0 0 350px;
+      }
+      .selected-detail-panel {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px;
+      }
+      .detail-actions-col {
+        align-items: flex-start;
+        flex-direction: row;
+        justify-content: space-between;
+        width: 100%;
       }
       .lightbox-nav-btn.prev { left: 10px; }
       .lightbox-nav-btn.next { right: 10px; }
@@ -957,30 +956,46 @@
       .showcase-section,
       .features-section,
       .upstream-section {
-        padding: 40px 14px;
+        padding: 35px 12px;
+      }
+      .showcase-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+      }
+      .showcase-header-right {
+        width: 100%;
+        justify-content: space-between;
       }
       .section-title {
         font-size: 1.65rem;
       }
-      .showcase-toolbar {
+      .store-card {
+        flex: 0 0 84vw;
+        border-radius: 16px;
+      }
+      .selected-detail-panel {
+        padding: 18px 16px;
+        border-radius: 18px;
+      }
+      .detail-title {
+        font-size: 1.12rem;
+      }
+      .detail-desc {
+        font-size: 0.88rem;
+      }
+      .detail-actions-col {
         flex-direction: column;
         align-items: stretch;
+        gap: 12px;
       }
-      .view-toggle {
-        width: 100%;
+      .btn-fullscreen {
         justify-content: center;
-      }
-      .toolbar-info {
-        justify-content: space-between;
         width: 100%;
       }
-      .showcase-container.view-grid {
-        grid-template-columns: 1fr;
-        gap: 18px;
-      }
-      .showcase-container.view-reel .listing-card {
-        flex: 0 0 86vw;
-        min-width: 250px;
+      .detail-dots-row {
+        justify-content: center;
+        width: 100%;
       }
       .features-grid,
       .upstream-grid {
@@ -1014,7 +1029,7 @@
         gap: 16px;
       }
     }
-  </style>
+</style>
 </head>
 <body>
 
@@ -1091,151 +1106,91 @@
       </div>
     </div>
 
-    <!-- ==============================================================
-         OFFICIAL PLAY STORE LISTING SHOWCASE (SHOW ALL AT ONCE)
+        <!-- ==============================================================
+         OFFICIAL PLAY STORE LISTING SHOWCASE (SYMMETRIC SCREENSHOT REEL)
          ============================================================== -->
     <div class="showcase-section" id="showcase">
-      <div class="showcase-header">
-        <span class="section-pill">Official Play Store Listing</span>
-        <h2 class="section-title">Designed For Television. Crystal Clear On Every Screen.</h2>
-        <p class="hero-subtitle" style="margin-bottom: 0;">All 7 screenshots from our Google Play release. Every pixel rendered at sharp retina density with zero loss in quality.</p>
-      </div>
-
-      <!-- Interactive Toolbar -->
-      <div class="showcase-toolbar">
-        <div class="view-toggle">
-          <button class="toggle-btn active" id="btnViewGrid" onclick="setViewMode('grid')">
-            <span>⊞</span> Show All At Once
-          </button>
-          <button class="toggle-btn" id="btnViewReel" onclick="setViewMode('reel')">
-            <span>↔</span> Store Reel
-          </button>
+      <div class="showcase-header-row">
+        <div class="showcase-header-left">
+          <span class="section-pill">Official Play Store Listing</span>
+          <h2 class="section-title">The Pure TV Experience</h2>
+          <p class="section-subtitle">Seven verified store screenshots. Pure, remote-first speed and zero ads. Click or swipe through the gallery below.</p>
         </div>
 
-        <div class="toolbar-info">
-          <span class="badge-count">7 Screenshots • Native Resolution</span>
-          <div class="reel-nav-buttons" id="reelNavButtons">
-            <button class="reel-arrow-btn" id="btnReelPrev" aria-label="Scroll left">&#8249;</button>
-            <button class="reel-arrow-btn" id="btnReelNext" aria-label="Scroll right">&#8250;</button>
+        <div class="showcase-header-right">
+          <span class="reel-counter-badge">Slide <strong id="currentSlideNum">1</strong> of 7</span>
+          <div class="reel-ctrl-btns">
+            <button class="reel-arrow-btn" id="btnReelPrev" aria-label="Previous screenshot">&#8249;</button>
+            <button class="reel-arrow-btn" id="btnReelNext" aria-label="Next screenshot">&#8250;</button>
           </div>
         </div>
       </div>
 
-      <!-- Showcase Cards Track -->
-      <div class="showcase-container view-grid" id="showcaseTrack">
+      <!-- Symmetric Horizontal Screenshot Reel -->
+      <div class="reel-viewport">
+        <div class="store-reel-track" id="storeReelTrack">
 
-        <!-- Slide 1: Main TV Launcher -->
-        <div class="listing-card" onclick="openLightbox(0)">
-          <div class="card-media">
+          <!-- Card 1 -->
+          <div class="store-card active" data-index="0" onclick="handleCardClick(0)">
             <img src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">01</span>
-              <span class="card-badge">MAIN TV LAUNCHER</span>
-            </div>
-            <h3 class="card-title">Pure television. Zero distractions.</h3>
-            <p class="card-desc">Ad-free homescreen with customized rows, quick launches, and instant D-pad navigation.</p>
-          </div>
-        </div>
 
-        <!-- Slide 2: 4K Aerial Screensavers -->
-        <div class="listing-card" onclick="openLightbox(1)">
-          <div class="card-media">
+          <!-- Card 2 -->
+          <div class="store-card" data-index="1" onclick="handleCardClick(1)">
             <img src="assets/listing/slide_07_screensavers.webp" alt="Pear TV - 40+ Aerial Screensavers" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">02</span>
-              <span class="card-badge">40+ AERIAL SCREENSAVERS</span>
-            </div>
-            <h3 class="card-title">Cinema on standby. Iconic aerial footage.</h3>
-            <p class="card-desc">Apple TV 4K cinematography streaming directly with real-time location tags and OLED protection.</p>
-          </div>
-        </div>
 
-        <!-- Slide 3: Quick Share -->
-        <div class="listing-card" onclick="openLightbox(2)">
-          <div class="card-media">
+          <!-- Card 3 -->
+          <div class="store-card" data-index="2" onclick="handleCardClick(2)">
             <img src="assets/listing/slide_03_quick_share.webp" alt="Pear TV - Built-in Quick Share" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">03</span>
-              <span class="card-badge">BUILT-IN QUICK SHARE</span>
-            </div>
-            <h3 class="card-title">Beam anything to your screen.</h3>
-            <p class="card-desc">Integrated REA receiver turns your TV into a native Quick Share target for your Android phone.</p>
-          </div>
-        </div>
 
-        <!-- Slide 4: Storage & Performance -->
-        <div class="listing-card" onclick="openLightbox(3)">
-          <div class="card-media">
-            <img src="assets/listing/slide_05_storage.webp" alt="Pear TV - Storage & Performance" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+          <!-- Card 4 -->
+          <div class="store-card" data-index="3" onclick="handleCardClick(3)">
+            <img src="assets/listing/slide_05_storage.webp" alt="Pear TV - Storage &amp; Performance" loading="lazy">
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">04</span>
-              <span class="card-badge">STORAGE &amp; PERFORMANCE</span>
-            </div>
-            <h3 class="card-title">More space. Peak speed.</h3>
-            <p class="card-desc">1-Click RAM memory booster, internal &amp; USB drive diagnostics, and cache manager.</p>
-          </div>
-        </div>
 
-        <!-- Slide 5: Built-in File System -->
-        <div class="listing-card" onclick="openLightbox(4)">
-          <div class="card-media">
+          <!-- Card 5 -->
+          <div class="store-card" data-index="4" onclick="handleCardClick(4)">
             <img src="assets/listing/slide_06_files.webp" alt="Pear TV - Built-in File System" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">05</span>
-              <span class="card-badge">BUILT-IN FILE SYSTEM</span>
-            </div>
-            <h3 class="card-title">Your files. Finally organized.</h3>
-            <p class="card-desc">Samsung My Files categorization, USB explorer, direct installer, and video player.</p>
-          </div>
-        </div>
 
-        <!-- Slide 6: The Complete Suite -->
-        <div class="listing-card" onclick="openLightbox(5)">
-          <div class="card-media">
+          <!-- Card 6 -->
+          <div class="store-card" data-index="5" onclick="handleCardClick(5)">
             <img src="assets/listing/slide_04_suite.webp" alt="Pear TV - Complete TV Suite" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">06</span>
-              <span class="card-badge">THE COMPLETE SUITE</span>
-            </div>
-            <h3 class="card-title">Everything your TV needs.</h3>
-            <p class="card-desc">Launcher, debloater, Quick Share, storage manager, and screensavers in a 5MB bundle.</p>
-          </div>
-        </div>
 
-        <!-- Slide 7: Minimalist Startup -->
-        <div class="listing-card" onclick="openLightbox(6)">
-          <div class="card-media">
+          <!-- Card 7 -->
+          <div class="store-card" data-index="6" onclick="handleCardClick(6)">
             <img src="assets/listing/slide_01_splash.webp" alt="Pear TV - Minimalist Startup" loading="lazy">
-            <div class="card-zoom-hint"><span>🔍</span> Click to view</div>
+            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
-          <div class="card-body">
-            <div class="card-badge-row">
-              <span class="card-num">07</span>
-              <span class="card-badge">MINIMALIST STARTUP</span>
-            </div>
-            <h3 class="card-title">The Fast, Clean Android TV Launcher.</h3>
-            <p class="card-desc">Instant cold-boot response loading directly into your living room with tvOS elegance.</p>
+
+        </div>
+      </div>
+
+      <!-- Selected Screenshot Details Panel (Only shown for active screenshot) -->
+      <div class="selected-detail-panel" id="detailPanel">
+        <div class="detail-text-col" id="detailTextCol">
+          <div class="detail-tag-row">
+            <span class="detail-badge" id="detailBadge">MAIN TV LAUNCHER</span>
           </div>
+          <h3 class="detail-title" id="detailTitle">Pure television. Zero distractions.</h3>
+          <p class="detail-desc" id="detailDesc">Ad-free homescreen with customized rows, quick launches, and instant D-pad navigation.</p>
         </div>
 
+        <div class="detail-actions-col">
+          <button class="btn-fullscreen" onclick="openCurrentFullscreen()">
+            <span>🔍 View Fullscreen</span>
+          </button>
+          <div class="detail-dots-row" id="detailDotsRow"></div>
+        </div>
       </div>
     </div>
 
@@ -1362,107 +1317,168 @@
       <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close modal">&times;</button>
       <div class="lightbox-stage">
         <img id="lightboxImg" src="" alt="Pear TV screenshot" class="lightbox-img">
-        <button class="lightbox-nav-btn prev" onclick="navigateLightbox(-1)" aria-label="Previous">&lsaquo;</button>
-        <button class="lightbox-nav-btn next" onclick="navigateLightbox(1)" aria-label="Next">&rsaquo;</button>
+        <button class="lightbox-nav-btn prev" onclick="navigateLightbox(-1)" aria-label="Previous screenshot">&lsaquo;</button>
+        <button class="lightbox-nav-btn next" onclick="navigateLightbox(1)" aria-label="Next screenshot">&rsaquo;</button>
       </div>
       <div class="lightbox-meta">
         <span class="lightbox-badge" id="lightboxBadge">MAIN TV LAUNCHER</span>
         <h3 class="lightbox-title" id="lightboxTitle">Pure television. Zero distractions.</h3>
+        <p class="lightbox-desc" id="lightboxDesc"></p>
       </div>
     </div>
   </div>
 
-  <!-- Interactive JavaScript Engine -->
+  <!-- Interactive Screenshot Reel & Lightbox Engine -->
   <script>
     const slidesData = [
       {
         src: 'assets/listing/slide_02_pure_tv.webp',
         badge: 'MAIN TV LAUNCHER',
         title: 'Pure television. Zero distractions.',
-        alt: 'Pear TV - Pure television. Zero distractions.'
+        desc: 'Ad-free homescreen with customized rows, quick launches, and instant D-pad navigation.'
       },
       {
         src: 'assets/listing/slide_07_screensavers.webp',
         badge: '40+ AERIAL SCREENSAVERS',
         title: 'Cinema on standby. Iconic aerial footage.',
-        alt: 'Pear TV - 40+ Aerial Screensavers'
+        desc: 'Apple TV 4K cinematography streaming directly with real-time location tags and OLED protection.'
       },
       {
         src: 'assets/listing/slide_03_quick_share.webp',
         badge: 'BUILT-IN QUICK SHARE',
         title: 'Beam anything to your screen.',
-        alt: 'Pear TV - Built-in Quick Share'
+        desc: 'Integrated REA receiver turns your TV into an authentic Nearby Share & Quick Share target.'
       },
       {
         src: 'assets/listing/slide_05_storage.webp',
         badge: 'STORAGE & PERFORMANCE',
         title: 'More space. Peak speed.',
-        alt: 'Pear TV - Storage & Performance'
+        desc: '1-Click RAM memory booster, internal & USB drive diagnostics, and cache manager.'
       },
       {
         src: 'assets/listing/slide_06_files.webp',
         badge: 'BUILT-IN FILE SYSTEM',
         title: 'Your files. Finally organized.',
-        alt: 'Pear TV - Remote File System'
+        desc: 'Samsung My Files categorization, USB explorer, direct installer, and video player.'
       },
       {
         src: 'assets/listing/slide_04_suite.webp',
         badge: 'THE COMPLETE SUITE',
         title: 'Everything your TV needs.',
-        alt: 'Pear TV - Complete TV Suite'
+        desc: 'Launcher, debloater, Quick Share, storage manager, and screensavers in a 5MB bundle.'
       },
       {
         src: 'assets/listing/slide_01_splash.webp',
         badge: 'MINIMALIST STARTUP',
         title: 'The Fast, Clean Android TV Launcher.',
-        alt: 'Pear TV - Startup Splash'
+        desc: 'Instant cold-boot response loading directly into your living room with tvOS elegance.'
       }
     ];
 
-    // Toggle Grid / Reel View
-    const showcaseTrack = document.getElementById('showcaseTrack');
-    const btnViewGrid = document.getElementById('btnViewGrid');
-    const btnViewReel = document.getElementById('btnViewReel');
-    const reelNavButtons = document.getElementById('reelNavButtons');
+    let currentSlideIdx = 0;
+    const reelTrack = document.getElementById('storeReelTrack');
+    const storeCards = document.querySelectorAll('.store-card');
+    const currentSlideNum = document.getElementById('currentSlideNum');
+    const detailBadge = document.getElementById('detailBadge');
+    const detailTitle = document.getElementById('detailTitle');
+    const detailDesc = document.getElementById('detailDesc');
+    const detailTextCol = document.getElementById('detailTextCol');
+    const detailDotsRow = document.getElementById('detailDotsRow');
+    const btnReelPrev = document.getElementById('btnReelPrev');
+    const btnReelNext = document.getElementById('btnReelNext');
 
-    function setViewMode(mode) {
-      if (mode === 'grid') {
-        showcaseTrack.classList.remove('view-reel');
-        showcaseTrack.classList.add('view-grid');
-        btnViewGrid.classList.add('active');
-        btnViewReel.classList.remove('active');
-        reelNavButtons.classList.remove('visible');
-      } else {
-        showcaseTrack.classList.remove('view-grid');
-        showcaseTrack.classList.add('view-reel');
-        btnViewGrid.classList.remove('active');
-        btnViewReel.classList.add('active');
-        reelNavButtons.classList.add('visible');
+    // Build Dots
+    function buildDetailDots() {
+      if (!detailDotsRow) return;
+      detailDotsRow.innerHTML = '';
+      slidesData.forEach((_, idx) => {
+        const dot = document.createElement('div');
+        dot.className = 'detail-dot' + (idx === currentSlideIdx ? ' active' : '');
+        dot.setAttribute('title', 'Jump to screenshot ' + (idx + 1));
+        dot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectSlide(idx);
+        });
+        detailDotsRow.appendChild(dot);
+      });
+    }
+
+    // Select Slide
+    function selectSlide(idx, autoScroll = true) {
+      currentSlideIdx = (idx + slidesData.length) % slidesData.length;
+      const data = slidesData[currentSlideIdx];
+
+      // Update Active Card
+      storeCards.forEach((c, i) => {
+        c.classList.toggle('active', i === currentSlideIdx);
+      });
+
+      // Update Counter
+      if (currentSlideNum) currentSlideNum.textContent = (currentSlideIdx + 1);
+
+      // Smooth Fade Text Update
+      if (detailTextCol) {
+        detailTextCol.style.opacity = '0.3';
+        setTimeout(() => {
+          if (detailBadge) detailBadge.textContent = data.badge;
+          if (detailTitle) detailTitle.textContent = data.title;
+          if (detailDesc) detailDesc.textContent = data.desc;
+          detailTextCol.style.opacity = '1';
+        }, 120);
+      }
+
+      // Update Dots
+      const dots = detailDotsRow.querySelectorAll('.detail-dot');
+      dots.forEach((d, i) => {
+        d.classList.toggle('active', i === currentSlideIdx);
+      });
+
+      // Smooth Scroll into Center View
+      if (autoScroll && storeCards[currentSlideIdx]) {
+        storeCards[currentSlideIdx].scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest'
+        });
       }
     }
 
-    // Reel Scroll Buttons
-    const btnReelPrev = document.getElementById('btnReelPrev');
-    const btnReelNext = document.getElementById('btnReelNext');
-    if (btnReelPrev && btnReelNext) {
+    // Handle Card Click: Select, or if already selected, open Lightbox
+    function handleCardClick(idx) {
+      if (currentSlideIdx === idx) {
+        openLightbox(idx);
+      } else {
+        selectSlide(idx);
+      }
+    }
+
+    // Navigation Buttons
+    if (btnReelPrev) {
       btnReelPrev.addEventListener('click', () => {
-        showcaseTrack.scrollBy({ left: -380, behavior: 'smooth' });
+        selectSlide(currentSlideIdx - 1);
       });
+    }
+    if (btnReelNext) {
       btnReelNext.addEventListener('click', () => {
-        showcaseTrack.scrollBy({ left: 380, behavior: 'smooth' });
+        selectSlide(currentSlideIdx + 1);
       });
     }
 
-    // Lightbox Modal Logic
-    let currentLightboxIdx = 0;
+    // Open Current Slide in Lightbox
+    function openCurrentFullscreen() {
+      openLightbox(currentSlideIdx);
+    }
+
+    // Lightbox Logic
     const lightboxModal = document.getElementById('lightboxModal');
     const lightboxImg = document.getElementById('lightboxImg');
     const lightboxBadge = document.getElementById('lightboxBadge');
     const lightboxTitle = document.getElementById('lightboxTitle');
+    const lightboxDesc = document.getElementById('lightboxDesc');
 
     function openLightbox(idx) {
-      currentLightboxIdx = (idx + slidesData.length) % slidesData.length;
-      updateLightboxContent();
+      currentSlideIdx = (idx + slidesData.length) % slidesData.length;
+      updateLightboxDisplay();
       lightboxModal.classList.add('active');
       document.body.style.overflow = 'hidden';
     }
@@ -1474,16 +1490,18 @@
     }
 
     function navigateLightbox(dir) {
-      currentLightboxIdx = (currentLightboxIdx + dir + slidesData.length) % slidesData.length;
-      updateLightboxContent();
+      currentSlideIdx = (currentSlideIdx + dir + slidesData.length) % slidesData.length;
+      updateLightboxDisplay();
+      selectSlide(currentSlideIdx, true);
     }
 
-    function updateLightboxContent() {
-      const data = slidesData[currentLightboxIdx];
+    function updateLightboxDisplay() {
+      const data = slidesData[currentSlideIdx];
       lightboxImg.src = data.src;
-      lightboxImg.alt = data.alt;
-      lightboxBadge.textContent = ;
+      lightboxImg.alt = data.title;
+      lightboxBadge.textContent = data.badge + ' (' + (currentSlideIdx + 1) + ' of ' + slidesData.length + ')';
       lightboxTitle.textContent = data.title;
+      if (lightboxDesc) lightboxDesc.textContent = data.desc;
     }
 
     window.addEventListener('keydown', (e) => {
@@ -1492,6 +1510,10 @@
       if (e.key === 'ArrowLeft') navigateLightbox(-1);
       if (e.key === 'ArrowRight') navigateLightbox(1);
     });
+
+    // Initialize
+    buildDetailDots();
+    selectSlide(0, false);
   </script>
 </body>
 </html>
