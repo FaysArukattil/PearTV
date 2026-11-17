@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pear TV — The Pure, Ad-Free Apple Experience For Your Android TV</title>
-  <meta name="description" content="Pear TV is an open-source, ultra-fast, and ad-free launcher for Android TV and Google TV with built-in Quick Share (via REA), system debloater (via CleanYourTV), storage manager, and 4K aerial screensavers.">
+  <meta name="description" content="Pear TV is an open-source, ultra-fast, and ad-free launcher for Android TV and Google TV with native Quick Share receiver, system debloater (via CleanYourTV), storage manager, and 4K aerial screensavers.">
   <link rel="icon" type="image/png" href="assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -898,39 +898,39 @@
       <div class="reel-viewport">
         <div class="store-reel-track" id="storeReelTrack">
 
-          <!-- Card 1 -->
+          <!-- Card 1: Minimalist Startup (Made First) -->
           <div class="store-card active" data-index="0" onclick="handleCardClick(0)">
+            <img src="assets/listing/slide_01_splash.webp" alt="Pear TV - Minimalist Startup" loading="lazy">
+          </div>
+
+          <!-- Card 2: Main TV Launcher -->
+          <div class="store-card" data-index="1" onclick="handleCardClick(1)">
             <img src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." loading="lazy">
           </div>
 
-          <!-- Card 2 -->
-          <div class="store-card" data-index="1" onclick="handleCardClick(1)">
+          <!-- Card 3: 4K Aerial Screensavers -->
+          <div class="store-card" data-index="2" onclick="handleCardClick(2)">
             <img src="assets/listing/slide_07_screensavers.webp" alt="Pear TV - 40+ Aerial Screensavers" loading="lazy">
           </div>
 
-          <!-- Card 3 -->
-          <div class="store-card" data-index="2" onclick="handleCardClick(2)">
+          <!-- Card 4: Built-in Quick Share -->
+          <div class="store-card" data-index="3" onclick="handleCardClick(3)">
             <img src="assets/listing/slide_03_quick_share.webp" alt="Pear TV - Built-in Quick Share" loading="lazy">
           </div>
 
-          <!-- Card 4 -->
-          <div class="store-card" data-index="3" onclick="handleCardClick(3)">
+          <!-- Card 5: Storage & Performance -->
+          <div class="store-card" data-index="4" onclick="handleCardClick(4)">
             <img src="assets/listing/slide_05_storage.webp" alt="Pear TV - Storage &amp; Performance" loading="lazy">
           </div>
 
-          <!-- Card 5 -->
-          <div class="store-card" data-index="4" onclick="handleCardClick(4)">
+          <!-- Card 6: Built-in File System -->
+          <div class="store-card" data-index="5" onclick="handleCardClick(5)">
             <img src="assets/listing/slide_06_files.webp" alt="Pear TV - Built-in File System" loading="lazy">
           </div>
 
-          <!-- Card 6 -->
-          <div class="store-card" data-index="5" onclick="handleCardClick(5)">
-            <img src="assets/listing/slide_04_suite.webp" alt="Pear TV - Complete TV Suite" loading="lazy">
-          </div>
-
-          <!-- Card 7 -->
+          <!-- Card 7: The Complete Suite -->
           <div class="store-card" data-index="6" onclick="handleCardClick(6)">
-            <img src="assets/listing/slide_01_splash.webp" alt="Pear TV - Minimalist Startup" loading="lazy">
+            <img src="assets/listing/slide_04_suite.webp" alt="Pear TV - Complete TV Suite" loading="lazy">
           </div>
 
         </div>
@@ -940,10 +940,10 @@
       <div class="selected-detail-panel" id="detailPanel">
         <div class="detail-text-col" id="detailTextCol">
           <div class="detail-tag-row">
-            <span class="detail-badge" id="detailBadge">MAIN TV LAUNCHER</span>
+            <span class="detail-badge" id="detailBadge">MINIMALIST STARTUP</span>
           </div>
-          <h3 class="detail-title" id="detailTitle">Pure television. Zero distractions.</h3>
-          <p class="detail-desc" id="detailDesc">Ad-free homescreen with customized rows, quick launches, and instant D-pad navigation.</p>
+          <h3 class="detail-title" id="detailTitle">The Fast, Clean Android TV Launcher.</h3>
+          <p class="detail-desc" id="detailDesc">Instant cold-boot response loading directly into your living room with tvOS elegance.</p>
         </div>
 
         <div class="detail-dots-row" id="detailDotsRow"></div>
@@ -965,11 +965,11 @@
           <p>Powered by the CleanYourTV engine. Safely freeze or disable carrier and OEM bloatware directly from your remote via local ADB or Shizuku, with zero risk of bricking your device.</p>
         </div>
 
-        <!-- Feature 2: REA Quick Share -->
+        <!-- Feature 2: Native Quick Share -->
         <div class="feature-card">
           <div class="feature-icon-box">📲</div>
           <h3>Wireless Quick Share</h3>
-          <p>Integrated REA engine turns your TV into an authentic Nearby Share / Quick Share receiver. Send photos, videos, and files directly from your phone with no third-party cloud apps.</p>
+          <p>Built directly to work with Android Quick Share. Turn your TV into an authentic, instant wireless receiver to beam photos, videos, and files directly from your phone with no cloud apps.</p>
         </div>
 
         <!-- Feature 3: Aerial Screensavers -->
@@ -1001,32 +1001,32 @@
         <div class="upstream-card">
           <div>
             <div class="upstream-meta">
-              <span class="upstream-author">👤 samolego</span>
-              <span class="upstream-tag">Core Engine</span>
+              <span class="upstream-author">👤 gathin23</span>
+              <span class="upstream-tag">Debloater Architecture</span>
             </div>
             <h3>🧹 CleanYourTV</h3>
             <p class="upstream-courtesy">
-              Special thanks to <strong>samolego</strong> for creating <em>CleanYourTV</em>. His work inspired and powered Pear TV's native on-device TV debloater, enabling safe remote-driven ADB and Shizuku package disabling with curated safety tiers.
+              Special thanks to <strong>gathin23</strong> for creating <em>CleanYourTV</em> (<a href="https://github.com/gathin23/cleanyourtv" target="_blank" rel="noopener">github.com/gathin23/cleanyourtv</a>). His work inspired and powered Pear TV's native on-device TV debloater, enabling safe remote-driven ADB and Shizuku package disabling with curated safety tiers.
             </p>
           </div>
-          <a href="https://github.com/samolego/CleanYourTV" target="_blank" rel="noopener" class="upstream-btn">
+          <a href="https://github.com/gathin23/cleanyourtv" target="_blank" rel="noopener" class="upstream-btn">
             <span>View CleanYourTV on GitHub</span> &rarr;
           </a>
         </div>
 
-        <!-- Card 2: REA Quick Share -->
+        <!-- Card 2: REA Research Reference -->
         <div class="upstream-card">
           <div>
             <div class="upstream-meta">
-              <span class="upstream-author">👤 Martmists-GH</span>
-              <span class="upstream-tag">Core Engine</span>
+              <span class="upstream-author">👤 morluto</span>
+              <span class="upstream-tag">Reverse-Engineering Research Tool</span>
             </div>
-            <h3>📲 REA Quick Share</h3>
+            <h3>📲 REA (Quick Share Research)</h3>
             <p class="upstream-courtesy">
-              Immense gratitude to <strong>Martmists-GH</strong> for developing <em>rea</em> (Reverse Engineered Android Nearby Share / Quick Share). His reverse engineering work powers Pear TV's high-speed BLE advertisement and local Wi-Fi receiver server.
+              Special appreciation to <strong>morluto</strong> for the open-source <strong>REA</strong> project (<a href="https://github.com/morluto/rea" target="_blank" rel="noopener">github.com/morluto/rea</a>). REA served as an essential reverse-engineering research and learning tool to understand how Android's Quick Share protocol operates under the hood, allowing us to build our own interoperable native receiver that communicates seamlessly with Quick Share on Android devices.
             </p>
           </div>
-          <a href="https://github.com/Martmists-GH/rea" target="_blank" rel="noopener" class="upstream-btn">
+          <a href="https://github.com/morluto/rea" target="_blank" rel="noopener" class="upstream-btn">
             <span>View REA on GitHub</span> &rarr;
           </a>
         </div>
@@ -1035,12 +1035,12 @@
         <div class="upstream-card">
           <div>
             <div class="upstream-meta">
-              <span class="upstream-author">👤 John Coates &amp; Apple</span>
-              <span class="upstream-tag">Inspiration</span>
+              <span class="upstream-author">👤 John Coates &amp; Apple CDN</span>
+              <span class="upstream-tag">Inspiration &amp; Apple CDN</span>
             </div>
             <h3>🍎 Aerial Cinematography</h3>
             <p class="upstream-courtesy">
-              Inspired by <strong>John Coates</strong>' pioneering work on Aerial screensavers and <strong>Apple</strong>'s breathtaking drone footage feeds across NYC, Dubai, Hawaii, and International Space Station flyovers.
+              Inspired by <strong>John Coates</strong>' pioneering open-source work on the <a href="https://github.com/JohnCoates/Aerial" target="_blank" rel="noopener">Aerial Mac screensaver</a>. Videos are streamed directly from <strong>Apple's public content delivery network (CDN)</strong>, delivering breathtaking drone footage feeds across NYC, Dubai, Greenland, and Hawaii.
             </p>
           </div>
           <a href="https://github.com/JohnCoates/Aerial" target="_blank" rel="noopener" class="upstream-btn">
@@ -1073,6 +1073,12 @@
   <script>
     const slidesData = [
       {
+        src: 'assets/listing/slide_01_splash.webp',
+        badge: 'MINIMALIST STARTUP',
+        title: 'The Fast, Clean Android TV Launcher.',
+        desc: 'Instant cold-boot response loading directly into your living room with tvOS elegance.'
+      },
+      {
         src: 'assets/listing/slide_02_pure_tv.webp',
         badge: 'MAIN TV LAUNCHER',
         title: 'Pure television. Zero distractions.',
@@ -1082,13 +1088,13 @@
         src: 'assets/listing/slide_07_screensavers.webp',
         badge: '40+ AERIAL SCREENSAVERS',
         title: 'Cinema on standby. Iconic aerial footage.',
-        desc: 'Apple TV 4K cinematography streaming directly with real-time location tags and OLED protection.'
+        desc: 'Apple TV 4K cinematography streaming directly from Apple CDN with location tags and OLED protection.'
       },
       {
         src: 'assets/listing/slide_03_quick_share.webp',
         badge: 'BUILT-IN QUICK SHARE',
         title: 'Beam anything to your screen.',
-        desc: 'Integrated REA receiver turns your TV into an authentic Nearby Share & Quick Share target.'
+        desc: 'Native wireless receiver engineered to interoperate seamlessly with Android Quick Share and Nearby Share.'
       },
       {
         src: 'assets/listing/slide_05_storage.webp',
@@ -1107,12 +1113,6 @@
         badge: 'THE COMPLETE SUITE',
         title: 'Everything your TV needs.',
         desc: 'Launcher, debloater, Quick Share, storage manager, and screensavers in a 5MB bundle.'
-      },
-      {
-        src: 'assets/listing/slide_01_splash.webp',
-        badge: 'MINIMALIST STARTUP',
-        title: 'The Fast, Clean Android TV Launcher.',
-        desc: 'Instant cold-boot response loading directly into your living room with tvOS elegance.'
       }
     ];
 
@@ -1138,6 +1138,7 @@
         dot.setAttribute('title', 'Select screenshot ' + (idx + 1));
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
+          resetAutoPlayTimer();
           selectSlide(idx);
         });
         detailDotsRow.appendChild(dot);
@@ -1169,7 +1170,7 @@
       }
 
       // Update Dots
-      const dots = detailDotsRow.querySelectorAll('.detail-dot');
+      const dots = detailDotsRow ? detailDotsRow.querySelectorAll('.detail-dot') : [];
       dots.forEach((d, i) => {
         d.classList.toggle('active', i === currentSlideIdx);
       });
@@ -1186,30 +1187,71 @@
 
     // Handle Card Click (Selects the card cleanly)
     function handleCardClick(idx) {
+      resetAutoPlayTimer();
       selectSlide(idx);
     }
 
     // Navigation Buttons
     if (btnReelPrev) {
       btnReelPrev.addEventListener('click', () => {
+        resetAutoPlayTimer();
         selectSlide(currentSlideIdx - 1);
       });
     }
     if (btnReelNext) {
       btnReelNext.addEventListener('click', () => {
+        resetAutoPlayTimer();
         selectSlide(currentSlideIdx + 1);
       });
     }
 
     // Keyboard navigation (Arrow keys)
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft') selectSlide(currentSlideIdx - 1);
-      if (e.key === 'ArrowRight') selectSlide(currentSlideIdx + 1);
+      if (e.key === 'ArrowLeft') {
+        resetAutoPlayTimer();
+        selectSlide(currentSlideIdx - 1);
+      }
+      if (e.key === 'ArrowRight') {
+        resetAutoPlayTimer();
+        selectSlide(currentSlideIdx + 1);
+      }
     });
+
+    // Automatic Slideshow Animation
+    const AUTO_PLAY_INTERVAL = 4000;
+    let autoPlayTimer = null;
+
+    function startAutoPlay() {
+      stopAutoPlay();
+      autoPlayTimer = setInterval(() => {
+        selectSlide(currentSlideIdx + 1);
+      }, AUTO_PLAY_INTERVAL);
+    }
+
+    function stopAutoPlay() {
+      if (autoPlayTimer) {
+        clearInterval(autoPlayTimer);
+        autoPlayTimer = null;
+      }
+    }
+
+    function resetAutoPlayTimer() {
+      stopAutoPlay();
+      startAutoPlay();
+    }
+
+    // Pause on user hover or touch
+    if (reelTrack) {
+      reelTrack.addEventListener('mouseenter', stopAutoPlay);
+      reelTrack.addEventListener('mouseleave', startAutoPlay);
+      reelTrack.addEventListener('touchstart', stopAutoPlay, { passive: true });
+      reelTrack.addEventListener('touchend', startAutoPlay, { passive: true });
+    }
 
     // Initialize
     buildDetailDots();
     selectSlide(0, false);
+    startAutoPlay();
   </script>
 </body>
 </html>

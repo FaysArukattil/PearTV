@@ -71,7 +71,7 @@
 - **Adaptive 16:9 App Banners**: Sideloaded or phone apps without native Android TV banners are automatically converted into 16:9 gradient plates with centered high-res icons.
 
 ### 📲 Built-in Wireless Quick Share Receiver
-- Powered by the reverse-engineered **REA** Quick Share / Nearby Share protocol.
+- Native receiver engineered to interoperate with Android Quick Share, developed using reverse-engineering protocol research from REA.
 - Turns your TV into an authentic, discoverable Quick Share receiver over Wi-Fi and Bluetooth.
 - Instant, lossless transfers for APKs, movies, audio, and documents directly from Android's native share sheet.
 
@@ -173,10 +173,10 @@ Pear TV stands on the shoulders of brilliant open-source pioneers. We express ou
    *Pear TV's system app debloater, safety classification heuristics, local ADB & Shizuku package execution, and automatic rollback journal were built using the proven architecture from the CleanYourTV project.*
 
 2. **[REA Project](https://github.com/morluto/rea)** by **[morluto](https://github.com/morluto)**  
-   *Pear TV's wireless file receiving capability was developed using REA's reverse-engineered Quick Share / Nearby Share protocol, enabling peer-to-peer file transfers from phones to the TV over local Wi-Fi and Bluetooth.*
+   *The REA project served as an invaluable reverse-engineering research and learning tool to understand Android's Quick Share / Nearby Share protocol specs, enabling Pear TV to engineer its own native Kotlin receiver that works seamlessly with Quick Share on Android devices.*
 
 3. **[Aerial Screensavers](https://github.com/JohnCoates/Aerial)** by **[John Coates](https://github.com/JohnCoates)**  
-   *Pear TV's ambient screensaver mode streams Apple's public tvOS video feeds to deliver 4K landscape flyovers and OLED burn-in protection to the living room.*
+   *Inspired by John Coates' open-source Aerial project, Pear TV streams high-definition aerial footage directly from Apple's public CDN to deliver iconic landscape flyovers and OLED burn-in protection to your living room.*
 
 ---
 
