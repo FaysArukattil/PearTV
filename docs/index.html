@@ -575,76 +575,107 @@
        COURTEOUS OPEN SOURCE ACKNOWLEDGEMENTS
        ========================================================= */
     .upstream-section {
-      padding: 70px 40px;
+      padding: 80px 40px;
       border-top: 1px solid rgba(255, 255, 255, 0.08);
       background: rgba(0, 0, 0, 0.4);
       position: relative;
       z-index: 5;
     }
-    .upstream-card-list {
-      max-width: 1000px;
+    .upstream-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      max-width: 1200px;
       margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
     }
-    .upstream-item {
+    .upstream-card {
       background: var(--surface);
       border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 20px;
-      padding: 26px 30px;
+      border-radius: 24px;
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+    .upstream-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(10, 132, 255, 0.4);
+      box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 30px rgba(10, 132, 255, 0.15);
+    }
+    .upstream-meta {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 24px;
-      transition: all 0.2s;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 8px;
     }
-    .upstream-item:hover {
-      border-color: rgba(255, 255, 255, 0.2);
-      background: var(--surface-elevated);
+    .upstream-author {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 4px 12px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
     .upstream-tag {
       display: inline-block;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       font-weight: 800;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--primary-light);
       background: rgba(10, 132, 255, 0.12);
       border: 1px solid rgba(10, 132, 255, 0.25);
-      padding: 3px 10px;
+      padding: 4px 10px;
       border-radius: 6px;
-      margin-bottom: 8px;
     }
-    .upstream-item h4 {
-      font-size: 1.15rem;
-      font-weight: 700;
+    .upstream-card h3 {
+      font-size: 1.35rem;
+      font-weight: 800;
       color: #FFFFFF;
-      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
     .upstream-courtesy {
       font-size: 0.92rem;
       color: var(--text-muted);
-      line-height: 1.6;
+      line-height: 1.65;
+      margin-bottom: 24px;
     }
     .upstream-courtesy strong {
       color: #FFFFFF;
     }
-    .upstream-item .link {
-      white-space: nowrap;
+    .upstream-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 11px 18px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      color: #FFFFFF;
       font-weight: 700;
       font-size: 0.88rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 16px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 999px;
+      text-decoration: none;
+      transition: all 0.2s;
     }
-    .upstream-item .link:hover {
-      background: rgba(255, 255, 255, 0.12);
-      color: #FFFFFF;
+    .upstream-btn:hover {
+      background: #FFFFFF;
+      color: #000000;
+      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.3);
     }
 
     /* Footer */
@@ -682,7 +713,7 @@
       .hero-viewport { padding: 40px 16px 40px; }
       .hero-title { font-size: 2.2rem; }
       .hero-subtitle { font-size: 1rem; }
-      .upstream-item { flex-direction: column; align-items: flex-start; }
+      .upstream-grid { grid-template-columns: 1fr; }
       .features-section, .upstream-section { padding: 50px 20px; }
     }
   </style>
@@ -865,44 +896,54 @@
     <!-- Upstream Acknowledgements (Courteous Thank-You Section) -->
     <div class="upstream-section" id="upstream">
       <div class="section-header">
-        <span class="section-pill">Open Source Community</span>
-        <h2 class="section-title">Special Thanks &amp; Acknowledgements</h2>
+        <span class="section-pill">Community Foundations</span>
+        <h2 class="section-title">Built With Courtesy &amp; Gratitude</h2>
+        <p class="hero-subtitle" style="margin-bottom: 0;">Pear TV is 100% free and open-source. We want to express our sincere appreciation and courtesy to the creators whose pioneering projects directly powered core features of Pear TV:</p>
       </div>
 
-      <div class="upstream-card-list">
+      <div class="upstream-grid">
         <!-- CleanYourTV -->
-        <div class="upstream-item">
+        <div class="upstream-card">
           <div>
-            <div class="upstream-tag">Feature: System Debloater &amp; App Manager</div>
-            <h4>🧹 CleanYourTV Project</h4>
-            <p class="upstream-courtesy">Our sincere thanks to <strong>gathin23</strong>. Pear TV's system app debloater, safety classification heuristics, local ADB &amp; Shizuku package execution, and automatic rollback journal were built using the proven architecture from the CleanYourTV project.</p>
+            <div class="upstream-meta">
+              <span class="upstream-author">👤 gathin23</span>
+              <span class="upstream-tag">System Debloater</span>
+            </div>
+            <h3><span>🧹</span> CleanYourTV</h3>
+            <p class="upstream-courtesy">Our sincere thanks to <strong>gathin23</strong>. Pear TV's built-in debloater engine, safe system package classification heuristics, local ADB &amp; Shizuku package execution, and automatic rollback journal were built using the proven architecture from CleanYourTV.</p>
           </div>
-          <a href="https://github.com/gathin23/cleanyourtv" target="_blank" rel="noopener" class="link">
-            Visit github.com/gathin23/cleanyourtv &rarr;
+          <a href="https://github.com/gathin23/cleanyourtv" target="_blank" rel="noopener" class="upstream-btn">
+            <span>View CleanYourTV</span> &rarr;
           </a>
         </div>
 
         <!-- REA -->
-        <div class="upstream-item">
+        <div class="upstream-card">
           <div>
-            <div class="upstream-tag">Feature: Wireless Quick Share Receiver</div>
-            <h4>📲 REA (Quick Share Protocol)</h4>
+            <div class="upstream-meta">
+              <span class="upstream-author">👤 morluto</span>
+              <span class="upstream-tag">Wireless Quick Share</span>
+            </div>
+            <h3><span>📲</span> REA Project</h3>
             <p class="upstream-courtesy">A huge thank you to <strong>morluto</strong>. Pear TV's wireless file receiving capability was developed using REA's reverse-engineered Quick Share / Nearby Share protocol, enabling direct peer-to-peer file transfers from phones to the TV over local Wi-Fi and Bluetooth.</p>
           </div>
-          <a href="https://github.com/morluto/rea" target="_blank" rel="noopener" class="link">
-            Visit github.com/morluto/rea &rarr;
+          <a href="https://github.com/morluto/rea" target="_blank" rel="noopener" class="upstream-btn">
+            <span>View REA on GitHub</span> &rarr;
           </a>
         </div>
 
         <!-- Apple Aerials -->
-        <div class="upstream-item">
+        <div class="upstream-card">
           <div>
-            <div class="upstream-tag">Feature: 4K Aerial Screensavers</div>
-            <h4>🍎 Apple Aerial Screensavers</h4>
+            <div class="upstream-meta">
+              <span class="upstream-author">👤 John Coates</span>
+              <span class="upstream-tag">4K Aerial Screensavers</span>
+            </div>
+            <h3><span>🍎</span> Aerial Screensavers</h3>
             <p class="upstream-courtesy">Heartfelt appreciation to <strong>John Coates</strong> and the Aerial project community. Pear TV's ambient screensaver mode streams Apple's public tvOS video feeds to deliver 4K landscape flyovers and OLED burn-in protection to the living room.</p>
           </div>
-          <a href="https://github.com/JohnCoates/Aerial" target="_blank" rel="noopener" class="link">
-            Visit Aerial Screensaver Project &rarr;
+          <a href="https://github.com/JohnCoates/Aerial" target="_blank" rel="noopener" class="upstream-btn">
+            <span>View Aerial Project</span> &rarr;
           </a>
         </div>
       </div>
