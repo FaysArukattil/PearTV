@@ -373,8 +373,18 @@
       body { padding: 12px 10px; }
       .window-frame { border-radius: 24px; }
       .hero-viewport { padding: 24px 20px 48px; }
-      .navbar { flex-direction: column; gap: 16px; margin-bottom: 32px; }
-      .page-title { font-size: 32px; }
+      .navbar { flex-wrap: wrap; gap: 14px; margin-bottom: 28px; }
+      .nav-pill-center {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        justify-content: flex-start;
+      }
+      .nav-pill-center::-webkit-scrollbar { display: none; }
+      .page-title { font-size: 28px; }
       .content-container { padding: 24px 18px 48px; }
       .section-card { padding: 24px 20px; }
     }
