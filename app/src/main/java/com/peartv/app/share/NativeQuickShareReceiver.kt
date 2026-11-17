@@ -14,6 +14,7 @@ import com.peartv.app.HomeActivity
 import com.peartv.app.R
 import dev.bluehouse.bada.discovery.Discovery
 import dev.bluehouse.bada.discovery.ble.BleQuickShareAdvertiser
+import dev.bluehouse.bada.discovery.bootstrap.BleGattInitialControlServer
 import dev.bluehouse.bada.discovery.medium.MediumRegistries
 import dev.bluehouse.bada.protocol.connection.InboundConnection
 import dev.bluehouse.bada.protocol.connection.InboundConnectionState
@@ -62,6 +63,7 @@ class NativeQuickShareReceiver : Service() {
     private var tcpServer: TcpReceiverServer? = null
     private var advertiseHandle: dev.bluehouse.bada.discovery.AdvertiseHandle? = null
     private var bleAdvertiser: BleQuickShareAdvertiser? = null
+    private var bleGattServer: BleGattInitialControlServer? = null
     private var airDropServer: AirDropServer? = null
     private var discovery: Discovery? = null
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
@@ -172,12 +174,35 @@ class NativeQuickShareReceiver : Service() {
             try {
                 val port = server.start()
 
-                // 1. Immediately start BLE pulse advertiser in LOW_LATENCY mode (parallel, no blocking)
+                // 1. Start BLE GATT initial control server: CRUCIAL for Off-LAN (no common Wi-Fi) transfers.
+                // Nearby senders not on the same Wi-Fi connect via Weave GATT to initiate discovery & bootstrap
+                // bandwidth upgrade to Wi-Fi Direct / Local Hotspot at maximum hardware speed.
+                try {
+                    val gatt = BleGattInitialControlServer(
+                        context = ctx,
+                        endpointIdProvider = { currentEpId },
+                        publishAdvertisementSlotService = true
+                    )
+                    val gattStarted = gatt.start(endpointInfo) { transport ->
+                        Log.i(TAG, "Quick Share off-LAN: accepted connected BLE GATT transport -> routing to protocol server")
+                        server.acceptConnectedTransport(transport)
+                    }
+                    if (gattStarted) {
+                        bleGattServer = gatt
+                        Log.i(TAG, "Quick Share BLE GATT server active on 0xFEF3 (endpoint=${String(currentEpId)})")
+                    } else {
+                        Log.w(TAG, "Quick Share BLE GATT server start returned false")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to start BleGattInitialControlServer: ${e.message}", e)
+                }
+
+                // 2. Immediately start BLE pulse advertiser in LOW_LATENCY mode (parallel, no blocking)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     tryStartBleAdvertise(ctx, endpointInfo, currentEpId)
                 }
 
-                // 2. mDNS advertisement – returns a closeable handle
+                // 3. mDNS advertisement – returns a closeable handle
                 try {
                     val disc = Discovery(ctx, instanceEndpointIdProvider = { currentEpId })
                     discovery = disc
@@ -285,6 +310,13 @@ class NativeQuickShareReceiver : Service() {
 
         bleAdvertiser?.stop()
         bleAdvertiser = null
+
+        try {
+            bleGattServer?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error stopping bleGattServer: ${e.message}")
+        }
+        bleGattServer = null
 
         airDropServer?.stop()
         airDropServer = null
@@ -419,9 +451,8 @@ class NativeQuickShareReceiver : Service() {
         val transfer = _state.value.incomingTransfer
         if (transfer?.connection != null) {
             transfer.connection.submitUserConsent(accepted)
-        } else {
-            transfer?.onConsent?.invoke(accepted)
         }
+        transfer?.onConsent?.invoke(accepted)
         if (accepted) {
             _state.update { s ->
                 s.copy(incomingTransfer = s.incomingTransfer?.copy(phase = TransferPhase.RECEIVING))

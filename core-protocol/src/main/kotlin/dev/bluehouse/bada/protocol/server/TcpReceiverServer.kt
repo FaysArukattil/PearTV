@@ -5,6 +5,7 @@
  */
 package dev.bluehouse.bada.protocol.server
 
+import dev.bluehouse.bada.protocol.connection.BandwidthUpgradeOrchestrator
 import dev.bluehouse.bada.protocol.connection.InboundConnection
 import dev.bluehouse.bada.protocol.connection.InboundResult
 import dev.bluehouse.bada.protocol.medium.Medium
@@ -492,7 +493,7 @@ public class TcpReceiverServer(
                     secureRandom = secureRandomProvider(),
                     mediumRegistry = mediumRegistry,
                     logger = logger,
-                    upgradeAcceptTimeoutMillis = 2500L,
+                    upgradeAcceptTimeoutMillis = BandwidthUpgradeOrchestrator.UPGRADE_TIMEOUT_MILLIS,
                 )
 
             // Emit the active connection BEFORE invoking run() so

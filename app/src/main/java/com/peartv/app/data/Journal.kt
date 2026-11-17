@@ -17,6 +17,10 @@ class Journal(ctx: Context) {
         get() = sp.getBoolean("onboarded", false)
         set(v) = sp.edit().putBoolean("onboarded", v).apply()
 
+    var quickShareEnabled: Boolean
+        get() = sp.getBoolean("quick_share_enabled", false)
+        set(v) = sp.edit().putBoolean("quick_share_enabled", v).apply()
+
     fun baseline(): Set<String> = HashSet(sp.getStringSet("baseline", emptySet()) ?: emptySet())
 
     fun saveBaselineIfMissing(pkgs: Set<String>) {

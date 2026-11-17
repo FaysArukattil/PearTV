@@ -336,30 +336,33 @@ fun HomeScreen(vm: LauncherViewModel) {
     val isIncomingTransfer = s.nativeQuickShareState.incomingTransfer != null
 
     TvCanvas {
-        // When getstarted wizard is active on first run, NEVER show or leak the home screen behind it
-        if (s.showCleanTvWizard) {
-            CleanTvWizardDialog(
-                deviceLabel = s.detectedDeviceLabel,
-                majorOptions = s.majorOptions,
-                onToggleOption = vm::toggleMajorOption,
-                onOpenDeveloperOptions = vm::openDeveloperOptions,
-                onAuthorizeAdb = vm::authorizeAdb,
-                onConfirm = vm::executeOneClickCleanTv,
-                onDismiss = vm::dismissCleanTvWizard,
-                showPermissions = true,
-                scanDone = s.wizardScanDone,
-                bloatLabels = s.wizardTargetLabels
-            )
-            return@TvCanvas
-        }
-
-        Box(Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDisableModalTraps provides isIncomingTransfer) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .focusProperties { canFocus = !isIncomingTransfer }
-                ) {
+        CompositionLocalProvider(LocalDisableModalTraps provides isIncomingTransfer) {
+            Box(Modifier.fillMaxSize()) {
+                if (s.showCleanTvWizard) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusProperties { canFocus = !isIncomingTransfer }
+                    ) {
+                        CleanTvWizardDialog(
+                            deviceLabel = s.detectedDeviceLabel,
+                            majorOptions = s.majorOptions,
+                            onToggleOption = vm::toggleMajorOption,
+                            onOpenDeveloperOptions = vm::openDeveloperOptions,
+                            onAuthorizeAdb = vm::authorizeAdb,
+                            onConfirm = vm::executeOneClickCleanTv,
+                            onDismiss = vm::dismissCleanTvWizard,
+                            showPermissions = true,
+                            scanDone = s.wizardScanDone,
+                            bloatLabels = s.wizardTargetLabels
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusProperties { canFocus = !isIncomingTransfer }
+                    ) {
                     val activePage = when {
                         s.showScreensaver    -> "screensaver"
                         s.showTvPlayer       -> "tvplayer"
@@ -923,6 +926,7 @@ fun HomeScreen(vm: LauncherViewModel) {
             )
         }
     }
+}
 
 
 

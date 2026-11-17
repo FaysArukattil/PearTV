@@ -358,6 +358,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                     com.peartv.app.files.FileManagerHelper.ensureQuickShareDir()
                 } catch (_: Exception) {}
             }
+            if (journal.quickShareEnabled) {
+                turnOnQuickShare()
+            }
 
             delay(1500)
             syncAccountsToApps()
@@ -1518,6 +1521,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun turnOnQuickShare() {
+        journal.quickShareEnabled = true
         if (!com.peartv.app.files.FileManagerHelper.hasStoragePermission(ctx)) {
             com.peartv.app.files.FileManagerHelper.requestStoragePermission(ctx)
         }
@@ -1528,6 +1532,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun turnOffQuickShare() {
+        journal.quickShareEnabled = false
         qsAutoOffJob?.cancel()
         qsAutoOffJob = null
         stopQsCountdownTicker()
@@ -1585,6 +1590,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
                                 if (incoming != null) {
                                     resetQuickShareInactivityTimer()
+                                    if (_state.value.showScreensaver) {
+                                        closeScreensaver()
+                                    }
                                 }
 
                                 if (incoming?.phase == com.peartv.app.share.TransferPhase.COMPLETED) {
@@ -1623,12 +1631,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun acceptNativeTransfer() {
         nativeQsService?.submitConsent(true)
+        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(true)
         _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(true)
         resetQuickShareInactivityTimer()
     }
 
     fun rejectNativeTransfer() {
         nativeQsService?.submitConsent(false)
+        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(false)
         _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
         resetQuickShareInactivityTimer()
         _state.update { current ->
@@ -1640,6 +1650,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissIncomingTransfer() {
         nativeQsService?.submitConsent(false)
+        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(false)
         _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
         _state.update { current ->
             current.copy(
