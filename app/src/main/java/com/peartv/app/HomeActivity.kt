@@ -74,9 +74,32 @@ class HomeActivity : ComponentActivity() {
             intent.action == "com.peartv.app.action.GET_STARTED" ||
             intent.getBooleanExtra("wizard", false) ||
             intent.action == "com.peartv.app.action.WIZARD") {
-            vm.openCleanTvWizard()
+            val stepExtra = intent.getIntExtra("wizard_step", 0)
+            vm.setWizardStep(stepExtra)
+            return
         }
-        if (intent.getStringExtra("screen") == "file_manager" || intent.action == "com.peartv.app.action.FILE_MANAGER") {
+        val screen = intent.getStringExtra("screen")
+        if (screen != null && screen != "wizard") {
+            vm.dismissCleanTvWizard()
+            vm.goHome()
+        }
+        when (screen) {
+            "home" -> Unit
+            "quick_share" -> vm.openQuickShareControl()
+            "storage" -> vm.openStorageManager()
+            "storage_apps" -> vm.openCleanTvScreen()
+            "screensaver" -> vm.openScreensaver()
+            "screensaver_settings" -> vm.openScreensaverSettings()
+            "system_monitor" -> vm.openSystemMonitor()
+            "personalization" -> vm.openPersonalization()
+            "file_manager" -> {
+                val initialPath = intent.getStringExtra("path")
+                val initialDir = if (initialPath != null) java.io.File(initialPath) else null
+                val highlight = intent.getStringExtra("highlight")
+                vm.openFileManager(initialDir = initialDir, highlightFile = highlight)
+            }
+        }
+        if (intent.action == "com.peartv.app.action.FILE_MANAGER") {
             val initialPath = intent.getStringExtra("path")
             val initialDir = if (initialPath != null) java.io.File(initialPath) else null
             val highlight = intent.getStringExtra("highlight")
@@ -173,7 +196,9 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         vm.onResume()
-        if (!vm.state.value.showCleanTvWizard) {
+        if (intent?.hasExtra("screen") == true || intent?.hasExtra("wizard") == true || intent?.hasExtra("get_started") == true || vm.state.value.showCleanTvWizard) {
+            // Keep the requested screen/modal open
+        } else {
             vm.goHome()
         }
     }

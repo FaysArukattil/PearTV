@@ -94,7 +94,7 @@ fun StorageManagerScreen(
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // Navigation state
-    var selectedCategory by remember { mutableStateOf(initialCategory) }
+    var selectedCategory by remember(initialCategory) { mutableStateOf(initialCategory) }
 
     // Apps selection state (inside APPS category)
     var selectedApp by remember { mutableStateOf<AppStorageDetail?>(null) }

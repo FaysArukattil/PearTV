@@ -207,6 +207,7 @@ data class LauncherState(
     val debloatProgress: String? = null,
     val showCleanTvConfirm: Boolean = false,
     val showCleanTvWizard: Boolean = false,
+    val wizardStep: Int = 0,
     val wizardScanDone: Boolean = false,
     val wizardTargetLabels: List<String> = emptyList(),
     val majorOptions: List<MajorDebloatOption> = DebloatPresets.defaultMajorOptions(),
@@ -2086,6 +2087,11 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openCleanTvWizard() {
         _state.update { it.copy(showCleanTvWizard = true) }
+        viewModelScope.launch { prepareWizardScan() }
+    }
+
+    fun setWizardStep(step: Int) {
+        _state.update { it.copy(showCleanTvWizard = true, wizardStep = step.coerceIn(0, 6)) }
         viewModelScope.launch { prepareWizardScan() }
     }
 

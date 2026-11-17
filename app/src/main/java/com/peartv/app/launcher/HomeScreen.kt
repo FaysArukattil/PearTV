@@ -345,6 +345,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                             .focusProperties { canFocus = !isIncomingTransfer }
                     ) {
                         CleanTvWizardDialog(
+                            initialStep = s.wizardStep,
                             deviceLabel = s.detectedDeviceLabel,
                             majorOptions = s.majorOptions,
                             onToggleOption = vm::toggleMajorOption,

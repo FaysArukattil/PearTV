@@ -102,6 +102,7 @@ private const val LAST_STEP = 6
  */
 @Composable
 fun CleanTvWizardDialog(
+    initialStep: Int = 0,
     deviceLabel: String = "Android TV",
     majorOptions: List<MajorDebloatOption>,
     onToggleOption: (String) -> Unit,
@@ -132,7 +133,13 @@ fun CleanTvWizardDialog(
     val ctx = LocalContext.current
     val sp = remember { ctx.getSharedPreferences("leantv", Context.MODE_PRIVATE) }
     // Step is persisted: Android can restart the app when a permission is granted.
-    var step by remember { mutableIntStateOf(sp.getInt("wizard_step", 0).coerceIn(0, LAST_STEP)) }
+    val effectiveInitial = if (initialStep > 0) initialStep else sp.getInt("wizard_step", 0).coerceIn(0, LAST_STEP)
+    var step by remember(initialStep) { mutableIntStateOf(effectiveInitial) }
+    LaunchedEffect(initialStep) {
+        if (initialStep in 0..LAST_STEP) {
+            step = initialStep
+        }
+    }
     LaunchedEffect(step) { sp.edit().putInt("wizard_step", step).apply() }
     val next = {
         sp.edit().putBoolean("wizard_pending", false).apply()
