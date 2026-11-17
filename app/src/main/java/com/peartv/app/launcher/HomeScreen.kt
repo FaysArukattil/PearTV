@@ -400,8 +400,8 @@ fun HomeScreen(vm: LauncherViewModel) {
                                 AppleTvScreensaver(
                                     mode = s.screensaverMode,
                                     customPath = s.screensaverCustomPath,
-                                    selectedUrl = screensaverSelectedUrl,
-                                    autoCache = screensaverAutoCache,
+                                    selectedUrl = s.screensaverSelectedUrl ?: screensaverSelectedUrl,
+                                    autoCache = s.screensaverAutoCache,
                                     onDismiss = vm::closeScreensaver
                                 )
                             }

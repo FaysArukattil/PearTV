@@ -146,6 +146,7 @@ fun AppleTvScreensaver(
     var currentTime by remember { mutableStateOf("") }
     var currentDate by remember { mutableStateOf("") }
     var canDismiss by remember { mutableStateOf(false) }
+    var skipTrigger by remember { mutableIntStateOf(0) }
 
     // Live clock ticker
     LaunchedEffect(Unit) {
@@ -180,15 +181,29 @@ fun AppleTvScreensaver(
             .onPreviewKeyEvent { ev ->
                 if (ev.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                     if (canDismiss) {
-                        onDismiss()
-                    }
-                    true
+                        when (ev.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_RIGHT,
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                skipTrigger++
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_LEFT,
+                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                skipTrigger++
+                                true
+                            }
+                            else -> {
+                                onDismiss()
+                                true
+                            }
+                        }
+                    } else true
                 } else false
             }
     ) {
         when (mode) {
             ScreensaverSource.AERIAL -> {
-                AppleAerialVideoPlayer(selectedUrl = selectedUrl, autoCache = autoCache)
+                AppleAerialVideoPlayer(selectedUrl = selectedUrl, autoCache = autoCache, skipTrigger = skipTrigger)
             }
             ScreensaverSource.SLIDESHOW -> {
                 CustomPhotoSlideshow(
@@ -278,6 +293,11 @@ private class AerialPlayerHost(context: Context) {
     private var surface: Surface? = null
     private var surfaceSignal = CompletableDeferred<Unit>()
     private var failSignal = CompletableDeferred<Unit>()
+    private var skipSignal = CompletableDeferred<Unit>()
+
+    fun triggerSkip() {
+        if (!skipSignal.isCompleted) skipSignal.complete(Unit)
+    }
 
     val textureView: TextureView = TextureView(context).apply {
         layoutParams = FrameLayout.LayoutParams(
@@ -319,6 +339,7 @@ private class AerialPlayerHost(context: Context) {
         val rendered = CompletableDeferred<Unit>()
         val fail = CompletableDeferred<Unit>()
         failSignal = fail
+        skipSignal = CompletableDeferred()
 
         val player = MediaPlayer()
         mp = player
@@ -367,21 +388,22 @@ private class AerialPlayerHost(context: Context) {
         return true
     }
 
-    /** Suspends while the current scene plays; returns on timeout, error, lost surface or stalled playback. */
+    /** Suspends while the current scene plays; returns on timeout, error, lost surface, skip trigger or stalled playback. */
     suspend fun holdScene(sceneMs: Long) {
         val fail = failSignal
+        val skip = skipSignal
         var elapsed = 0L
         var lastPos = -1
         var stalledMs = 0L
-        while (elapsed < sceneMs && !fail.isCompleted) {
-            delay(1_000L)
-            elapsed += 1_000L
+        while (elapsed < sceneMs && !fail.isCompleted && !skip.isCompleted) {
+            delay(500L)
+            elapsed += 500L
             val pos = runCatching { mp?.currentPosition }.getOrNull() ?: -1
             if (pos >= 0 && pos != lastPos) {
                 lastPos = pos
                 stalledMs = 0L
             } else {
-                stalledMs += 1_000L
+                stalledMs += 500L
             }
             if (stalledMs >= STALL_LIMIT_MS) break
         }
@@ -429,7 +451,8 @@ private fun aerialCandidates(
 @Composable
 private fun AppleAerialVideoPlayer(
     selectedUrl: String? = null,
-    autoCache: Boolean = true
+    autoCache: Boolean = true,
+    skipTrigger: Int = 0
 ) {
     val ctx = LocalContext.current
     val appCtx = remember { ctx.applicationContext }
@@ -437,6 +460,12 @@ private fun AppleAerialVideoPlayer(
 
     DisposableEffect(host) {
         onDispose { host.releaseAll() }
+    }
+
+    LaunchedEffect(skipTrigger) {
+        if (skipTrigger > 0) {
+            host.triggerSkip()
+        }
     }
 
     val selectedSet = remember(selectedUrl) {

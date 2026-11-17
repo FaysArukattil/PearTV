@@ -88,7 +88,22 @@ class HomeActivity : ComponentActivity() {
             "quick_share" -> vm.openQuickShareControl()
             "storage" -> vm.openStorageManager()
             "storage_apps" -> vm.openCleanTvScreen()
-            "screensaver" -> vm.openScreensaver()
+            "screensaver" -> {
+                val aerial = intent.getStringExtra("aerial")
+                if (!aerial.isNullOrBlank()) {
+                    val matching = com.peartv.app.ui.APPLE_AERIAL_PRESETS.firstOrNull {
+                        it.location.contains(aerial, ignoreCase = true) ||
+                        it.subtext.contains(aerial, ignoreCase = true) ||
+                        it.url.contains(aerial, ignoreCase = true)
+                    }
+                    if (matching != null) {
+                        vm.setScreensaverSelectedUrl(matching.url)
+                    }
+                } else if (intent.getBooleanExtra("aerial_reset", false)) {
+                    vm.setScreensaverSelectedUrl(null)
+                }
+                vm.openScreensaver()
+            }
             "screensaver_settings" -> vm.openScreensaverSettings()
             "system_monitor" -> vm.openSystemMonitor()
             "personalization" -> vm.openPersonalization()
