@@ -64,7 +64,7 @@ fun NativeQuickShareConsentDialog(
     autoOffSeconds: Int? = null,
     serverUrl: String? = null,
     pin: String? = null,
-    deviceName: String = android.os.Build.MODEL,
+    deviceName: String = "Fadi Tv",
     onToggleActive: ((Boolean) -> Unit)? = null,
     onAccept: () -> Unit = {},
     onDecline: () -> Unit = {},
@@ -199,7 +199,7 @@ fun NativeQuickShareConsentDialog(
                         style = Ty.Body.copy(color = Pal.Dim, fontSize = 16.sp)
                     )
                     Text(
-                        text = deviceName.ifBlank { "Pear TV" },
+                        text = deviceName.ifBlank { "Fadi Tv" },
                         style = Ty.Body.copy(
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
@@ -484,7 +484,7 @@ fun NativeQuickShareConsentPopup(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "📁 Downloads / PearTvQuickshare",
+                                text = "Receiving...",
                                 style = Ty.Small.copy(color = Pal.Dim, fontSize = 14.sp)
                             )
                             if (transfer.bytesPerSecond > 0) {
@@ -499,20 +499,8 @@ fun NativeQuickShareConsentPopup(
 
                 // ─── Status messages (terminal states) ───────────────────────
                 when (transfer.phase) {
-                    TransferPhase.COMPLETED -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StatusChip("✓  Transfer Complete!", Pal.Mint)
-                            Text(
-                                text = "Saved in Downloads / PearTvQuickshare",
-                                style = Ty.Small.copy(color = Pal.Dim),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                    TransferPhase.FAILED   -> StatusChip("✗  Transfer Failed or Cancelled", Pal.Coral)
+                    TransferPhase.COMPLETED -> StatusChip("✓  Transfer Complete", Pal.Mint)
+                    TransferPhase.FAILED   -> StatusChip("✗  Transfer Failed", Pal.Coral)
                     TransferPhase.REJECTED -> StatusChip("Declined", Pal.Dim)
                     else -> {}
                 }

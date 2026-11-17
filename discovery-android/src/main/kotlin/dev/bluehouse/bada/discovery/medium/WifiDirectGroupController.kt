@@ -28,6 +28,10 @@ import dev.bluehouse.bada.protocol.medium.UpgradePathCredentials
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.Closeable
@@ -127,7 +131,7 @@ internal class WifiDirectGroupController(
         channel: WifiP2pManager.Channel,
         requested: RequestedWifiDirectCredentials,
     ): Boolean {
-        removeExistingGroupBeforeServerCreate(channel)
+        // Fast path: attempt direct group creation immediately without blocking on removeGroup
         var createOk =
             awaitActionListener("createGroup") { listener ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -137,7 +141,8 @@ internal class WifiDirectGroupController(
                 }
             }
         if (!createOk) {
-            Log.w(TAG, "WifiP2pManager.createGroup fast path failed — trying primed retry")
+            Log.w(TAG, "WifiP2pManager.createGroup fast path failed — removing stale group & retrying")
+            removeExistingGroupBeforeServerCreate(channel)
             primeP2pChannel(channel)
             createOk =
                 awaitActionListener("createGroupRetry") { listener ->
@@ -180,15 +185,59 @@ internal class WifiDirectGroupController(
         }
     }
 
+    @RequiresPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
     private suspend fun awaitServerCredentials(
         channel: WifiP2pManager.Channel,
         connectionChanged: ConnectionChangedReceiver,
         requested: RequestedWifiDirectCredentials,
         serverPort: Int,
-    ): UpgradePathCredentials.WifiDirect? {
-        val info = awaitGroupOwnerInfo(connectionChanged)
-        val group = awaitCreatedGroupInfo(channel)
-        return if (info == null || group == null) {
+    ): UpgradePathCredentials.WifiDirect? = coroutineScope {
+        var resolvedInfo: WifiP2pInfo? = null
+        var resolvedGroup: WifiP2pGroup? = null
+
+        val broadcastJob = launch {
+            try {
+                val info = connectionChanged.awaitGroupOwner()
+                if (info.groupFormed && info.isGroupOwner && info.groupOwnerAddress != null) {
+                    resolvedInfo = info
+                }
+            } catch (_: Exception) {}
+        }
+
+        val pollJob = launch {
+            val startTime = System.currentTimeMillis()
+            while (isActive && (System.currentTimeMillis() - startTime) < GROUP_FORMATION_TIMEOUT_MS) {
+                if (resolvedInfo == null) {
+                    val info = awaitConnectionInfo(channel)
+                    if (info != null && info.groupFormed && info.isGroupOwner && info.groupOwnerAddress != null) {
+                        resolvedInfo = info
+                    }
+                }
+                if (resolvedGroup == null) {
+                    val group = awaitGroupInfo(channel)
+                    if (group != null && (group.networkName != null || requested.networkName.isNotEmpty())) {
+                        resolvedGroup = group
+                    }
+                }
+                if (resolvedInfo != null && resolvedGroup != null) {
+                    break
+                }
+                delay(30L)
+            }
+        }
+
+        val deadline = System.currentTimeMillis() + GROUP_FORMATION_TIMEOUT_MS
+        while ((resolvedInfo == null || resolvedGroup == null) && System.currentTimeMillis() < deadline) {
+            delay(15L)
+        }
+
+        broadcastJob.cancel()
+        pollJob.cancel()
+
+        val info = resolvedInfo
+        val group = resolvedGroup ?: awaitCreatedGroupInfo(channel)
+        if (info == null || group == null) {
+            Log.w(TAG, "Wi-Fi Direct credentials timed out: info=$info, group=$group")
             null
         } else {
             buildServerCredentials(info, group, requested, serverPort)
@@ -442,6 +491,20 @@ internal class WifiDirectGroupController(
         ) {
             Log.w(TAG, "WifiP2pManager.$label threw before listener invocation", t)
             deferred.complete(false)
+        }
+        return deferred.await()
+    }
+
+    @RequiresPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
+    private suspend fun awaitConnectionInfo(channel: WifiP2pManager.Channel): WifiP2pInfo? {
+        val deferred = CompletableDeferred<WifiP2pInfo?>()
+        try {
+            manager.requestConnectionInfo(channel) { info -> deferred.complete(info) }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") t: Throwable,
+        ) {
+            Log.w(TAG, "WifiP2pManager.requestConnectionInfo threw", t)
+            deferred.complete(null)
         }
         return deferred.await()
     }

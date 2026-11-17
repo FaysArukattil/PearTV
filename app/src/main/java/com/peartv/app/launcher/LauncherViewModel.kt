@@ -1642,17 +1642,41 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val quickShareDeviceName: String
+        get() = try {
+            android.provider.Settings.Global.getString(
+                ctx.contentResolver,
+                android.provider.Settings.Global.DEVICE_NAME
+            )?.takeIf { it.isNotBlank() }
+                ?: android.provider.Settings.Secure.getString(
+                    ctx.contentResolver,
+                    "bluetooth_name"
+                )?.takeIf { it.isNotBlank() }
+                ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.name?.takeIf { it.isNotBlank() }
+                ?: "Fadi Tv"
+        } catch (_: Exception) {
+            "Fadi Tv"
+        }
+
     fun acceptNativeTransfer() {
-        nativeQsService?.submitConsent(true)
-        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(true)
-        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(true)
+        if (nativeQsService != null) {
+            nativeQsService?.submitConsent(true)
+        } else {
+            val transfer = _state.value.nativeQuickShareState.incomingTransfer
+            transfer?.connection?.submitUserConsent(true)
+            transfer?.onConsent?.invoke(true)
+        }
         resetQuickShareInactivityTimer()
     }
 
     fun rejectNativeTransfer() {
-        nativeQsService?.submitConsent(false)
-        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(false)
-        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
+        if (nativeQsService != null) {
+            nativeQsService?.submitConsent(false)
+        } else {
+            val transfer = _state.value.nativeQuickShareState.incomingTransfer
+            transfer?.connection?.submitUserConsent(false)
+            transfer?.onConsent?.invoke(false)
+        }
         resetQuickShareInactivityTimer()
         _state.update { current ->
             current.copy(
@@ -1662,9 +1686,13 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissIncomingTransfer() {
-        nativeQsService?.submitConsent(false)
-        _state.value.nativeQuickShareState.incomingTransfer?.connection?.submitUserConsent(false)
-        _state.value.nativeQuickShareState.incomingTransfer?.onConsent?.invoke(false)
+        if (nativeQsService != null) {
+            nativeQsService?.submitConsent(false)
+        } else {
+            val transfer = _state.value.nativeQuickShareState.incomingTransfer
+            transfer?.connection?.submitUserConsent(false)
+            transfer?.onConsent?.invoke(false)
+        }
         _state.update { current ->
             current.copy(
                 nativeQuickShareState = current.nativeQuickShareState.copy(incomingTransfer = null)

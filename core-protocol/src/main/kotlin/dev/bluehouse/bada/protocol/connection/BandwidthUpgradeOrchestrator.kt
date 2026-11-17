@@ -821,10 +821,10 @@ internal object BandwidthUpgradeOrchestrator {
 
     internal const val UPGRADE_TIMEOUT_MILLIS: Long = 30_000L
     internal const val OFFER_WAIT_TIMEOUT_MILLIS: Long = 1_500L
-    private const val SERVER_PEER_SAFE_DRAIN_MILLIS: Long = 500L
-    private const val PRIOR_CHANNEL_DISCONNECT_DRAIN_MILLIS: Long = 200L
-    private const val DUAL_CHANNEL_DRAIN_IDLE_ATTEMPTS: Int = 25
-    private const val DUAL_CHANNEL_POLL_DELAY_MILLIS: Long = 10L
+    private const val SERVER_PEER_SAFE_DRAIN_MILLIS: Long = 50L
+    private const val PRIOR_CHANNEL_DISCONNECT_DRAIN_MILLIS: Long = 50L
+    private const val DUAL_CHANNEL_DRAIN_IDLE_ATTEMPTS: Int = 10
+    private const val DUAL_CHANNEL_POLL_DELAY_MILLIS: Long = 5L
 }
 
 /**

@@ -107,13 +107,19 @@ public class InboundSharingFsm(
             return emptyList()
         }
 
-        // Sender-only event — silently ignored.
-        if (event is SharingFsmEvent.UserConsent && state != InboundSharingState.WaitingForUserConsent) {
-            return listOf(
-                SharingFsmEffect.ProtocolError(
-                    "UserConsent received in state=$state (expected WaitingForUserConsent)",
-                ),
-            ).also { state = InboundSharingState.Disconnected }
+        // UserConsent idempotency: if already progressed to ReceivingPayloads or Disconnected,
+        // duplicate submissions (e.g. from UI double-taps or duplicate callbacks) must not fail the transfer.
+        if (event is SharingFsmEvent.UserConsent) {
+            if (state == InboundSharingState.ReceivingPayloads || state == InboundSharingState.Disconnected) {
+                return emptyList()
+            }
+            if (state != InboundSharingState.WaitingForUserConsent) {
+                return listOf(
+                    SharingFsmEffect.ProtocolError(
+                        "UserConsent received in state=$state (expected WaitingForUserConsent)",
+                    ),
+                ).also { state = InboundSharingState.Disconnected }
+            }
         }
 
         // CANCEL handling is uniform across all non-terminal states.

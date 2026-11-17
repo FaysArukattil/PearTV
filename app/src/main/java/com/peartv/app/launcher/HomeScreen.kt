@@ -775,7 +775,7 @@ fun HomeScreen(vm: LauncherViewModel) {
                     autoOffSeconds = s.quickShareAutoOffSeconds,
                     serverUrl = s.quickShareState.serverUrl,
                     pin = s.quickShareState.pin,
-                    deviceName = s.detectedDeviceLabel.ifBlank { android.os.Build.MODEL },
+                    deviceName = vm.quickShareDeviceName,
                     onToggleActive = vm::toggleQuickShare,
                     onAccept = vm::acceptNativeTransfer,
                     onDecline = vm::rejectNativeTransfer,

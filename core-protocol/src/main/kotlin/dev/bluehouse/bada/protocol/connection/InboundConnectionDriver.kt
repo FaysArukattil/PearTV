@@ -189,15 +189,23 @@ internal class InboundConnectionDriver(
         }
 
         // Capture the sender's device name from the embedded endpoint_info
-        // for the consent UI (#22). EndpointInfo.parse returns null on
-        // malformed bytes — that's fine; the UI falls back to a generic
-        // label rather than blocking the consent flow.
+        // or endpoint_name for the consent UI.
         sourceDeviceName =
             initialFrame.v1.connectionRequest
                 .takeIf { it.hasEndpointInfo() }
                 ?.endpointInfo
                 ?.toByteArray()
-                ?.let { EndpointInfo.parse(it)?.deviceName }
+                ?.let { bytes ->
+                    EndpointInfo.parse(bytes)?.deviceName
+                        ?: runCatching {
+                            if (bytes.isNotEmpty() && bytes.all { it in 32..126 }) {
+                                String(bytes, java.nio.charset.StandardCharsets.UTF_8).trim()
+                            } else null
+                        }.getOrNull()
+                }
+                ?: initialFrame.v1.connectionRequest
+                    .takeIf { it.hasEndpointName() && it.endpointName.isNotBlank() }
+                    ?.endpointName
 
         // Decode the peer's advertised mediums (Phase 4 framework). The
         // intersection with our local registry's current-medium-aware
@@ -1232,7 +1240,7 @@ internal class InboundConnectionDriver(
         private const val INITIAL_FRAME_PROBE_ATTEMPTS = 20
         private const val INITIAL_FRAME_PROBE_DELAY_MILLIS = 10L
         private const val MAX_LOGGED_INTRODUCTION_ITEMS = 5
-        private const val POST_UPGRADE_SHARING_DELAY_MILLIS = 750L
+        private const val POST_UPGRADE_SHARING_DELAY_MILLIS = 20L
         private const val PENDING_UPGRADE_POLL_DELAY_MILLIS = 10L
     }
 }

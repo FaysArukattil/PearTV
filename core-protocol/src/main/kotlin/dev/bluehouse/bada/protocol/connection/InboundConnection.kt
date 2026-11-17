@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.Socket
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The receiver-side glue tying together framing, UKEY2, SecureMessage,
@@ -233,6 +234,13 @@ public class InboundConnection(
     private var cancelled: Boolean = false
 
     /**
+     * Guards against duplicate user consent submissions (e.g. from rapid
+     * UI taps or double event dispatch), ensuring only the first consent decision
+     * is enqueued to the FSM.
+     */
+    private val consentSubmitted = AtomicBoolean(false)
+
+    /**
      * Whether the lifecycle has progressed past the unencrypted
      * handshake into the dispatch loop. Latched true by
      * [markHandshakeComplete] once the dispatch loop is ready to drain
@@ -339,6 +347,9 @@ public class InboundConnection(
      * @param accepted `true` to accept; `false` to reject.
      */
     public fun submitUserConsent(accepted: Boolean) {
+        if (!consentSubmitted.compareAndSet(false, true)) {
+            return
+        }
         // trySend never blocks; the channel is UNLIMITED so it never
         // fails for capacity reasons. If the channel is closed (run()
         // already returned), the result is silently dropped, which
