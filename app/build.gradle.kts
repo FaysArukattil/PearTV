@@ -13,13 +13,13 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.peartv.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.peartv.app"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 7
+        targetSdk = 36
+        versionCode = 8
         versionName = "1.1.1"
 
         // Strip non-English locale strings from external libraries (shrinks resources.arsc table)
