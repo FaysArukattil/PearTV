@@ -266,235 +266,6 @@
     }
 
     /* =========================================================
-       REALISTIC TV HARDWARE SHOWCASE (TOP PORTION CENTERPIECE)
-       ========================================================= */
-    .tv-showcase-container {
-      margin: 0 auto;
-      max-width: 980px;
-      width: 100%;
-      position: relative;
-      z-index: 25;
-    }
-    .tv-housing {
-      background: #0D0E12;
-      border-radius: 20px;
-      padding: 10px 10px 14px 10px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      box-shadow: 
-        0 40px 120px -20px rgba(0, 0, 0, 0.98),
-        0 0 100px rgba(10, 132, 255, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.22);
-      position: relative;
-    }
-    .tv-screen {
-      aspect-ratio: 16 / 9;
-      background: #000000;
-      border-radius: 12px;
-      overflow: hidden;
-      position: relative;
-      box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.95);
-    }
-
-    /* Real Pear TV Screen Views */
-    .tv-screen-img {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: top center;
-      display: block;
-      opacity: 0;
-      transform: scale(0.97);
-      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-      z-index: 2;
-    }
-    .tv-screen-img.active {
-      opacity: 1;
-      transform: scale(1);
-    }
-
-    /* Subtle Glass Glare Reflection */
-    .tv-glare {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 35%, transparent 60%);
-      pointer-events: none;
-      z-index: 6;
-    }
-
-    /* TV Boot Splash Screen Overlay */
-    .tv-splash-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: #000000;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 10;
-      transition: opacity 0.4s ease-out, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .tv-splash-overlay.dismissed {
-      opacity: 0;
-      transform: scale(1.06);
-      pointer-events: none;
-    }
-    .tv-splash-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 22px;
-    }
-    .tv-splash-logo {
-      width: 130px;
-      height: 65px;
-      filter: drop-shadow(0 0 35px rgba(255, 255, 255, 0.7));
-      animation: splashPulse 2s infinite ease-in-out;
-    }
-    .tv-splash-logo svg {
-      width: 100%;
-      height: 100%;
-    }
-    @keyframes splashPulse {
-      0%, 100% { transform: scale(1); opacity: 0.95; }
-      50% { transform: scale(1.04); opacity: 1; filter: drop-shadow(0 0 45px rgba(10, 132, 255, 0.8)); }
-    }
-    .tv-splash-progress-track {
-      width: 150px;
-      height: 3px;
-      background: rgba(255, 255, 255, 0.14);
-      border-radius: 999px;
-      overflow: hidden;
-      position: relative;
-    }
-    .tv-splash-progress-bar {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #FFFFFF, var(--primary-light));
-      border-radius: 999px;
-      transition: width 1.8s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .tv-splash-status {
-      font-size: 0.76rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      color: rgba(255, 255, 255, 0.5);
-      text-transform: uppercase;
-    }
-
-    /* TV Hardware Chin & Power LED */
-    .tv-chin {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 7px 18px 2px;
-    }
-    .tv-chin-brand {
-      font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 0.16em;
-      color: rgba(255, 255, 255, 0.35);
-      text-transform: uppercase;
-    }
-    .tv-power-led {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #34D399;
-      box-shadow: 0 0 10px #34D399, 0 0 4px #10B981;
-      transition: background 0.3s;
-    }
-    .tv-power-led.booting {
-      background: var(--primary);
-      box-shadow: 0 0 10px var(--primary);
-      animation: ledBlink 0.6s infinite alternate;
-    }
-    @keyframes ledBlink {
-      from { opacity: 0.4; }
-      to { opacity: 1; }
-    }
-
-    /* TV Dual Feet Stand */
-    .tv-stand-row {
-      display: flex;
-      justify-content: space-between;
-      max-width: 680px;
-      margin: 0 auto;
-      padding: 0 40px;
-    }
-    .tv-stand-foot {
-      width: 44px;
-      height: 15px;
-      background: linear-gradient(180deg, #1A1B22 0%, #08090C 100%);
-      border-bottom-left-radius: 8px;
-      border-bottom-right-radius: 8px;
-      border-left: 1px solid rgba(255, 255, 255, 0.14);
-      border-right: 1px solid rgba(255, 255, 255, 0.14);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.9);
-    }
-
-    /* Interactive TV View Controls */
-    .tv-controls-bar {
-      margin-top: 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .tv-control-btn {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      color: #FFFFFF;
-      padding: 8px 18px;
-      border-radius: 999px;
-      font-size: 0.84rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
-    }
-    .tv-control-btn:hover {
-      background: rgba(255, 255, 255, 0.16);
-      transform: translateY(-1px);
-    }
-    .tv-control-btn.active {
-      background: var(--primary);
-      border-color: var(--primary);
-      box-shadow: 0 4px 14px rgba(10, 132, 255, 0.4);
-    }
-    .tv-badge-pill {
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: #34D399;
-      background: rgba(52, 211, 153, 0.12);
-      border: 1px solid rgba(52, 211, 153, 0.25);
-      padding: 6px 14px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .tv-badge-pill .pulse-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #34D399;
-      box-shadow: 0 0 8px #34D399;
-    }
-
-    /* =========================================================
        CORE ARCHITECTURE FEATURES
        ========================================================= */
     .features-section {
@@ -679,18 +450,13 @@
     }
 
     /* =========================================================
-       OFFICIAL LISTING SHOWCASE & GALLERY
+       OFFICIAL PLAY STORE LISTING SHOWCASE
        ========================================================= */
-    .gallery-section {
-      padding: 80px 40px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      position: relative;
-      z-index: 5;
-    }
     .gallery-showcase-container {
       max-width: 1040px;
-      margin: 0 auto;
+      margin: 10px auto 0;
       position: relative;
+      z-index: 20;
     }
     .gallery-viewport {
       position: relative;
@@ -805,12 +571,11 @@
     .gallery-thumbnails-strip {
       display: flex;
       gap: 10px;
-      margin-top: 20px;
-      overflow-x: auto;
+      margin-top: 22px;
+      justify-content: center;
+      flex-wrap: wrap;
       padding-bottom: 8px;
-      scrollbar-width: none;
     }
-    .gallery-thumbnails-strip::-webkit-scrollbar { display: none; }
     .thumb-pill {
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.12);
@@ -901,7 +666,7 @@
       <div class="nav-pill-center">
         <a href="./" class="active">Home</a>
         <a href="#features">Features</a>
-        <a href="#gallery">Gallery</a>
+        <a href="#showcase">Showcase</a>
         <a href="#upstream">Open Source</a>
         <a href="privacy/">Privacy</a>
         <a href="terms/">Terms</a>
@@ -948,68 +713,53 @@
         </div>
 
         <!-- ==============================================================
-             REALISTIC SMART TV HARDWARE (BOOT SPLASH -> HOMESCREEN ANIMATION)
+             OFFICIAL PLAY STORE LISTING SHOWCASE (HERO CENTERPIECE)
              ============================================================== -->
-        <div class="tv-showcase-container">
-          <div class="tv-housing">
-            <!-- 16:9 TV Display Screen -->
-            <div class="tv-screen">
-              <!-- Real Pear TV Homescreen Image (Animates In) -->
-              <img id="tvHomeScreenImg" src="assets/tv_homescreen.webp" alt="Pear TV Homescreen Interface" class="tv-screen-img active">
-              
-              <!-- Real Pear TV Quick Share Dialog View (Tab Switchable) -->
-              <img id="tvQuickShareImg" src="assets/tv_quickshare.webp" alt="Pear TV Quick Share Dialog Interface" class="tv-screen-img">
-
-              <!-- Subtle Glass Reflection Overlay -->
-              <div class="tv-glare"></div>
-
-              <!-- Initial TV Boot Splash Screen Overlay -->
-              <div id="tvSplashScreen" class="tv-splash-overlay">
-                <div class="tv-splash-content">
-                  <div class="tv-splash-logo">
-                    <svg viewBox="0 0 920 480">
-                      <path fill="#FFFFFF" d="M 105.1,23.0 L 96.1,29.5 L 93.5,39.3 L 102.5,45.4 L 111.3,51.8 L 119.4,59.9 L 125.7,68.7 L 131.1,78.0 L 134.7,88.0 L 136.5,98.7 L 131.7,105.0 L 121.1,107.0 L 111.6,111.7 L 102.6,117.6 L 94.2,124.7 L 87.6,133.6 L 82.1,142.7 L 78.0,152.5 L 74.2,162.4 L 71.5,172.8 L 68.4,183.0 L 66.2,193.6 L 63.1,203.7 L 61.1,214.4 L 57.7,224.4 L 53.2,234.0 L 48.3,243.5 L 43.6,253.0 L 37.6,262.0 L 31.6,271.0 L 26.6,280.4 L 21.0,289.6 L 16.2,299.1 L 11.4,308.5 L 7.4,318.4 L 4.8,328.8 L 2.6,339.3 L 1.9,350.5 L 0.1,361.0 L 1.7,371.9 L 3.5,382.6 L 6.0,393.1 L 9.5,403.1 L 14.2,412.7 L 19.8,421.8 L 25.7,430.9 L 33.2,439.2 L 41.3,447.4 L 50.0,454.0 L 59.0,460.0 L 68.4,465.1 L 77.8,470.0 L 88.3,472.5 L 99.0,474.3 L 110.6,474.5 L 121.0,472.0 L 131.0,468.4 L 141.4,465.7 L 152.8,465.5 L 163.3,467.7 L 173.2,471.4 L 183.5,474.2 L 195.0,474.2 L 205.8,472.6 L 216.4,470.5 L 226.0,465.8 L 235.4,461.0 L 244.6,455.4 L 253.3,448.6 L 261.3,440.3 L 269.4,432.3 L 275.4,423.3 L 280.8,414.1 L 285.6,404.6 L 289.5,394.7 L 292.1,384.3 L 294.1,373.7 L 295.8,362.9 L 295.8,351.4 L 294.0,340.7 L 286.2,336.0 L 275.1,335.0 L 265.5,330.4 L 257.9,322.0 L 253.0,313.0 L 242.3,310.8 L 234.2,302.5 L 231.0,292.4 L 226.0,284.2 L 217.6,277.1 L 211.9,268.0 L 211.8,256.5 L 216.7,247.1 L 218.8,237.9 L 215.3,227.9 L 217.1,217.2 L 222.0,207.7 L 230.2,200.6 L 230.3,192.3 L 227.5,182.0 L 224.8,171.7 L 221.2,161.7 L 218.0,151.5 L 213.2,142.0 L 208.0,132.7 L 200.7,124.3 L 192.5,117.2 L 183.4,111.4 L 173.8,106.9 L 163.2,104.7 L 152.2,103.4 L 147.6,94.9 L 145.2,84.4 L 143.1,73.8 L 139.1,63.9 L 134.5,54.4 L 128.8,45.3 L 122.2,36.6 L 114.1,28.4 L 105.1,23.0 Z" />
-                      <path fill="#000000" d="M 138.2,446.1 L 144.2,444.5 L 150.8,444.5 L 157.1,445.6 L 163.2,446.8 L 168.7,449.7 L 174.2,452.5 L 179.7,455.2 L 185.2,458.2 L 190.6,460.3 L 184.6,461.9 L 178.6,460.3 L 172.7,458.5 L 167.2,455.8 L 160.9,454.8 L 154.9,453.2 L 148.2,453.2 L 141.6,453.3 L 135.4,454.4 L 129.1,455.4 L 123.7,458.4 L 117.8,460.3 L 112.0,462.2 L 105.4,461.0 L 110.0,458.4 L 115.8,456.4 L 121.1,453.1 L 126.5,450.0 L 132.2,447.8 L 138.2,446.1 Z" />
-                      <path fill="#FFFFFF" d="M 236.4,0.2 L 229.7,1.7 L 222.8,2.7 L 216.1,4.2 L 209.7,6.4 L 203.4,8.8 L 197.4,11.9 L 191.7,15.8 L 185.9,19.4 L 180.6,24.1 L 175.4,29.3 L 171.0,34.8 L 167.7,40.7 L 164.4,46.7 L 161.3,52.7 L 159.3,59.1 L 158.5,66.1 L 157.4,72.9 L 157.0,80.2 L 157.6,86.0 L 161.2,87.7 L 168.2,87.5 L 175.2,86.8 L 181.6,84.5 L 188.0,82.3 L 194.4,80.2 L 200.1,76.3 L 205.8,72.5 L 211.3,68.4 L 216.8,63.5 L 220.9,57.9 L 225.4,52.4 L 228.3,46.3 L 231.4,40.3 L 233.7,34.0 L 235.9,27.6 L 236.1,20.4 L 238.1,13.9 L 237.9,6.6 L 236.4,0.2 Z" />
-                      <path fill="#FFFFFF" d="M 409.6,33.1 L 409.5,55.9 L 409.5,78.8 L 409.5,101.7 L 402.3,118.0 L 379.4,118.0 L 357.4,118.9 L 357.5,141.9 L 357.5,164.8 L 374.2,171.0 L 397.1,171.0 L 409.5,182.1 L 409.5,205.0 L 409.5,227.9 L 409.5,250.8 L 409.5,273.7 L 409.5,296.6 L 409.5,319.5 L 409.5,342.4 L 409.5,365.3 L 409.5,388.2 L 411.5,410.3 L 417.5,430.7 L 428.5,449.0 L 445.2,462.7 L 465.0,470.1 L 486.7,473.0 L 509.2,474.0 L 531.7,473.0 L 544.5,461.7 L 544.5,438.8 L 542.4,418.0 L 519.9,419.0 L 498.4,415.7 L 482.5,401.3 L 476.4,380.9 L 476.5,357.9 L 476.5,335.0 L 476.5,312.1 L 476.5,289.2 L 476.5,266.3 L 476.5,243.4 L 476.5,220.5 L 476.5,197.6 L 476.5,174.8 L 496.3,171.0 L 519.2,171.0 L 542.1,171.0 L 544.5,150.5 L 544.5,127.6 L 531.2,118.0 L 508.3,118.0 L 485.4,118.0 L 476.5,103.4 L 476.5,80.5 L 476.5,57.6 L 476.5,34.7 L 455.3,33.0 L 432.4,33.0 L 409.6,33.1 Z" />
-                      <path fill="#FFFFFF" d="M 580.6,118.0 L 589.3,142.8 L 598.5,167.4 L 607.5,192.1 L 616.4,216.9 L 625.2,241.7 L 634.5,266.3 L 643.5,291.0 L 652.3,315.8 L 661.1,340.6 L 669.9,365.4 L 679.4,389.9 L 688.2,414.7 L 697.0,439.5 L 705.7,464.3 L 728.1,472.0 L 756.5,472.0 L 781.5,468.0 L 790.5,443.3 L 799.5,418.6 L 808.5,393.8 L 817.5,369.1 L 826.5,344.4 L 835.5,319.7 L 844.5,295.0 L 853.3,270.2 L 862.1,245.4 L 870.9,220.6 L 879.7,195.8 L 889.2,171.3 L 898.0,146.5 L 906.8,121.7 L 884.5,118.0 L 856.0,118.0 L 835.5,127.7 L 827.5,152.8 L 819.5,177.9 L 811.4,203.0 L 802.7,227.8 L 794.6,252.9 L 786.5,278.0 L 778.5,303.1 L 770.5,328.3 L 762.5,353.4 L 754.2,378.4 L 746.2,403.4 L 736.5,382.1 L 728.5,357.0 L 719.7,332.2 L 711.6,307.1 L 703.5,282.0 L 695.5,256.9 L 687.5,231.7 L 679.5,206.6 L 671.6,181.5 L 663.1,156.5 L 655.0,131.5 L 637.4,118.0 L 608.9,118.0 L 580.6,118.0 Z" />
-                    </svg>
-                  </div>
-                  <div class="tv-splash-progress-track">
-                    <div id="tvSplashBar" class="tv-splash-progress-bar"></div>
-                  </div>
-                  <span id="tvSplashStatusText" class="tv-splash-status">Starting Pear TV…</span>
-                </div>
-              </div>
+        <div class="gallery-showcase-container" id="showcase">
+          <!-- Main Slide Viewport -->
+          <div class="gallery-viewport">
+            <div class="gallery-slide-stage">
+              <img id="galleryMainImg" src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." class="gallery-main-img">
+              <div class="gallery-img-glare"></div>
             </div>
 
-            <!-- TV Hardware Chin & Power LED -->
-            <div class="tv-chin">
-              <div class="tv-chin-brand">PEAR TV</div>
-              <div class="tv-power-led booting" id="tvPowerLed" title="TV Power Status"></div>
-            </div>
+            <!-- Controls: Prev / Next Buttons -->
+            <button class="gallery-nav-btn prev" id="galleryBtnPrev" aria-label="Previous slide">&#8249;</button>
+            <button class="gallery-nav-btn next" id="galleryBtnNext" aria-label="Next slide">&#8250;</button>
           </div>
 
-          <!-- TV Dual Feet Stand -->
-          <div class="tv-stand-row">
-            <div class="tv-stand-foot"></div>
-            <div class="tv-stand-foot"></div>
+          <!-- Meta Bar (Badge + Title + Dots) -->
+          <div class="gallery-meta-bar">
+            <div class="gallery-meta-text">
+              <span class="gallery-slide-badge" id="galleryBadge">MAIN TV LAUNCHER</span>
+              <h3 class="gallery-slide-title" id="galleryTitle">Pure television. Zero distractions.</h3>
+            </div>
+            <div class="gallery-dots-row" id="galleryDots"></div>
           </div>
 
-          <!-- Interactive TV View Controls -->
-          <div class="tv-controls-bar">
-            <button class="tv-control-btn active" id="btnViewHome">
-              <span>📺</span> Homescreen
+          <!-- Thumbnail Selector Tabs -->
+          <div class="gallery-thumbnails-strip">
+            <button class="thumb-pill active" data-index="0">
+              <span>📺</span> Pure TV
             </button>
-            <button class="tv-control-btn" id="btnViewQuickShare">
-              <span>⚡</span> Quick Share Dialog
+            <button class="thumb-pill" data-index="1">
+              <span>🍎</span> 4K Screensavers
             </button>
-            <button class="tv-control-btn" id="btnReplayBoot">
-              <span>🔄</span> Replay Boot Splash
+            <button class="thumb-pill" data-index="2">
+              <span>📲</span> Quick Share
             </button>
-            <div class="tv-badge-pill">
-              <span class="pulse-dot"></span> 100% Ad-Free • tvOS Motion
-            </div>
+            <button class="thumb-pill" data-index="3">
+              <span>⚡</span> Storage &amp; Speed
+            </button>
+            <button class="thumb-pill" data-index="4">
+              <span>📁</span> File System
+            </button>
+            <button class="thumb-pill" data-index="5">
+              <span>🎛️</span> Complete Suite
+            </button>
+            <button class="thumb-pill" data-index="6">
+              <span>🍐</span> Startup Splash
+            </button>
           </div>
         </div>
 
@@ -1050,63 +800,6 @@
           <div class="feature-icon-box">⚡</div>
           <h3>Pitch Black AMOLED</h3>
           <p>True #000000 dark canvas with zero sponsored banners, zero recommendation feeds, and zero telemetry. Instant remote responsiveness with tvOS-grade physics.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Official Listing Showcase & Gallery Section -->
-    <div class="gallery-section" id="gallery">
-      <div class="section-header">
-        <span class="section-pill">Visual Showcase</span>
-        <h2 class="section-title">Designed for Living Room Luxury</h2>
-        <p class="hero-subtitle" style="margin-bottom: 0;">Browse the official listing preview and experience the intuitive, distraction-free tvOS design language built for Android TV.</p>
-      </div>
-
-      <div class="gallery-showcase-container">
-        <!-- Main Slide Viewport -->
-        <div class="gallery-viewport">
-          <div class="gallery-slide-stage">
-            <img id="galleryMainImg" src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." class="gallery-main-img">
-            <div class="gallery-img-glare"></div>
-          </div>
-
-          <!-- Controls: Prev / Next Buttons -->
-          <button class="gallery-nav-btn prev" id="galleryBtnPrev" aria-label="Previous slide">&#8249;</button>
-          <button class="gallery-nav-btn next" id="galleryBtnNext" aria-label="Next slide">&#8250;</button>
-        </div>
-
-        <!-- Meta Bar (Badge + Title + Dots) -->
-        <div class="gallery-meta-bar">
-          <div class="gallery-meta-text">
-            <span class="gallery-slide-badge" id="galleryBadge">MAIN TV LAUNCHER</span>
-            <h3 class="gallery-slide-title" id="galleryTitle">Pure television. Zero distractions.</h3>
-          </div>
-          <div class="gallery-dots-row" id="galleryDots"></div>
-        </div>
-
-        <!-- Thumbnail Selector Tabs -->
-        <div class="gallery-thumbnails-strip">
-          <button class="thumb-pill active" data-index="0">
-            <span>📺</span> Pure TV
-          </button>
-          <button class="thumb-pill" data-index="1">
-            <span>🍎</span> 4K Screensavers
-          </button>
-          <button class="thumb-pill" data-index="2">
-            <span>📲</span> Quick Share
-          </button>
-          <button class="thumb-pill" data-index="3">
-            <span>⚡</span> Storage &amp; Speed
-          </button>
-          <button class="thumb-pill" data-index="4">
-            <span>📁</span> File System
-          </button>
-          <button class="thumb-pill" data-index="5">
-            <span>🎛️</span> Complete Suite
-          </button>
-          <button class="thumb-pill" data-index="6">
-            <span>🍐</span> Startup Splash
-          </button>
         </div>
       </div>
     </div>
@@ -1172,7 +865,7 @@
       <div class="footer-links">
         <a href="./">Home</a>
         <a href="#features">Features</a>
-        <a href="#gallery">Gallery</a>
+        <a href="#showcase">Showcase</a>
         <a href="#upstream">Open Source</a>
         <a href="privacy/">Privacy Policy</a>
         <a href="terms/">Terms &amp; Disclaimer</a>
@@ -1184,75 +877,8 @@
     </footer>
   </div>
 
-  <!-- Interactive TV Engine Script (Boot Splash -> Homescreen Transition) -->
+  <!-- Listing Showcase Slider Script -->
   <script>
-    const splash = document.getElementById("tvSplashScreen");
-    const splashBar = document.getElementById("tvSplashBar");
-    const splashStatus = document.getElementById("tvSplashStatusText");
-    const powerLed = document.getElementById("tvPowerLed");
-    const homeImg = document.getElementById("tvHomeScreenImg");
-    const qsImg = document.getElementById("tvQuickShareImg");
-    const btnHome = document.getElementById("btnViewHome");
-    const btnQs = document.getElementById("btnViewQuickShare");
-    const btnReplay = document.getElementById("btnReplayBoot");
-
-    let isBooting = false;
-
-    function runTvBootSequence() {
-      if (isBooting) return;
-      isBooting = true;
-
-      // Reset to boot state
-      splash.classList.remove("dismissed");
-      splashBar.style.width = "0%";
-      splashStatus.textContent = "Starting Pear TV…";
-      powerLed.className = "tv-power-led booting";
-
-      // Show homescreen underneath
-      showScreenView("home");
-
-      // Progress bar fill animation
-      setTimeout(() => {
-        splashBar.style.width = "65%";
-        splashStatus.textContent = "Loading System Apps…";
-      }, 350);
-
-      setTimeout(() => {
-        splashBar.style.width = "100%";
-        splashStatus.textContent = "Ready";
-      }, 1300);
-
-      // Dismiss splash with Apple-style smooth exit animation (scales up to 1.06x and fades)
-      setTimeout(() => {
-        splash.classList.add("dismissed");
-        powerLed.className = "tv-power-led";
-        isBooting = false;
-      }, 1900);
-    }
-
-    function showScreenView(view) {
-      if (view === "home") {
-        homeImg.classList.add("active");
-        qsImg.classList.remove("active");
-        btnHome.classList.add("active");
-        btnQs.classList.remove("active");
-      } else if (view === "qs") {
-        qsImg.classList.add("active");
-        homeImg.classList.remove("active");
-        btnQs.classList.add("active");
-        btnHome.classList.remove("active");
-      }
-    }
-
-    btnHome.addEventListener("click", () => showScreenView("home"));
-    btnQs.addEventListener("click", () => showScreenView("qs"));
-    btnReplay.addEventListener("click", () => runTvBootSequence());
-
-    // Auto-boot on page load
-    window.addEventListener("DOMContentLoaded", () => {
-      runTvBootSequence();
-    });
-
     // =========================================================
     // LISTING GALLERY SLIDER ENGINE
     // =========================================================

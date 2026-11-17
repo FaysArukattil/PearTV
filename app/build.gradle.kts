@@ -19,8 +19,8 @@ android {
         applicationId = "com.peartv.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.1.0"
+        versionCode = 6
+        versionName = "1.1.1"
 
         // Strip non-English locale strings from external libraries (shrinks resources.arsc table)
         resourceConfigurations += listOf("en")
@@ -55,7 +55,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             ndk {
                 abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-                debugSymbolLevel = "SYMBOL_TABLE"
+                debugSymbolLevel = "FULL"
             }
             signingConfig = if (keystoreProps.containsKey("storeFile")) {
                 signingConfigs.getByName("release")
