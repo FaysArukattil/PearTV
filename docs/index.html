@@ -382,31 +382,6 @@
       z-index: 5;
     }
 
-    .card-zoom-badge {
-      position: absolute;
-      bottom: 12px;
-      right: 12px;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      border-radius: 999px;
-      padding: 4px 12px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: #FFFFFF;
-      opacity: 0;
-      transform: translateY(4px);
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      pointer-events: none;
-    }
-    .store-card:hover .card-zoom-badge {
-      opacity: 1;
-      transform: translateY(0);
-    }
 
     /* Selected Screenshot Detail Panel (Only shows details for the selected screenshot) */
     .selected-detail-panel {
@@ -458,35 +433,6 @@
       color: var(--text-muted);
       line-height: 1.55;
     }
-    .detail-actions-col {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 14px;
-      flex-shrink: 0;
-    }
-    .btn-fullscreen {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      color: #FFFFFF;
-      font-family: inherit;
-      font-size: 0.88rem;
-      font-weight: 700;
-      padding: 9px 20px;
-      border-radius: 999px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      white-space: nowrap;
-    }
-    .btn-fullscreen:hover {
-      background: #FFFFFF;
-      color: #000000;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 18px rgba(255, 255, 255, 0.35);
-    }
     .detail-dots-row {
       display: flex;
       gap: 7px;
@@ -510,132 +456,7 @@
       box-shadow: 0 0 10px var(--primary);
     }
 
-    /* Lightbox Modal */
-    .lightbox-modal {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.94);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      z-index: 99999;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 30px;
-      opacity: 0;
-      transition: opacity 0.25s ease;
-    }
-    .lightbox-modal.active {
-      display: flex;
-      opacity: 1;
-    }
-    .lightbox-dialog {
-      max-width: 1160px;
-      width: 100%;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .lightbox-close {
-      position: absolute;
-      top: -48px;
-      right: 0;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #FFFFFF;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      font-size: 1.4rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .lightbox-close:hover {
-      background: #FFFFFF;
-      color: #000000;
-      transform: scale(1.08);
-    }
-    .lightbox-stage {
-      width: 100%;
-      aspect-ratio: 1024 / 571;
-      border-radius: 20px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: #000000;
-      box-shadow: 0 40px 100px rgba(0, 0, 0, 0.95), 0 0 60px rgba(10, 132, 255, 0.15);
-      position: relative;
-    }
-    .lightbox-img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-    .lightbox-nav-btn {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: rgba(10, 11, 16, 0.75);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      color: #FFFFFF;
-      font-size: 1.8rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      z-index: 10;
-    }
-    .lightbox-nav-btn:hover {
-      background: #FFFFFF;
-      color: #000000;
-      transform: translateY(-50%) scale(1.08);
-    }
-    .lightbox-nav-btn.prev { left: -25px; }
-    .lightbox-nav-btn.next { right: -25px; }
-    .lightbox-meta {
-      margin-top: 18px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-    }
-    .lightbox-badge {
-      font-size: 0.74rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--primary-light);
-      background: rgba(10, 132, 255, 0.12);
-      border: 1px solid rgba(10, 132, 255, 0.25);
-      padding: 3px 12px;
-      border-radius: 6px;
-    }
-    .lightbox-title {
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: #FFFFFF;
-    }
-    .lightbox-desc {
-      font-size: 0.94rem;
-      color: var(--text-muted);
-      max-width: 680px;
-    }
-
-/* =========================================================
+    /* =========================================================
        CORE ARCHITECTURE FEATURES
        ========================================================= */
     .features-section {
@@ -897,14 +718,6 @@
         gap: 16px;
         padding: 20px;
       }
-      .detail-actions-col {
-        align-items: flex-start;
-        flex-direction: row;
-        justify-content: space-between;
-        width: 100%;
-      }
-      .lightbox-nav-btn.prev { left: 10px; }
-      .lightbox-nav-btn.next { right: 10px; }
     }
 
     @media (max-width: 600px) {
@@ -984,52 +797,7 @@
       .detail-desc {
         font-size: 0.88rem;
       }
-      .detail-actions-col {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-      }
-      .btn-fullscreen {
-        justify-content: center;
-        width: 100%;
-      }
-      .detail-dots-row {
-        justify-content: center;
-        width: 100%;
-      }
-      .features-grid,
-      .upstream-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
-      }
-      .feature-card,
-      .upstream-card {
-        padding: 24px 20px;
-        border-radius: 18px;
-      }
-      .lightbox-modal {
-        padding: 14px;
-      }
-      .lightbox-nav-btn {
-        width: 40px;
-        height: 40px;
-        font-size: 1.4rem;
-      }
-      .lightbox-nav-btn.prev { left: 5px; }
-      .lightbox-nav-btn.next { right: 5px; }
-      .lightbox-close {
-        top: -38px;
-        width: 34px;
-        height: 34px;
-      }
-      footer {
-        padding: 30px 16px;
-      }
-      .footer-links {
-        gap: 16px;
-      }
-    }
-</style>
+  </style>
 </head>
 <body>
 
@@ -1133,43 +901,36 @@
           <!-- Card 1 -->
           <div class="store-card active" data-index="0" onclick="handleCardClick(0)">
             <img src="assets/listing/slide_02_pure_tv.webp" alt="Pear TV - Pure television. Zero distractions." loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 2 -->
           <div class="store-card" data-index="1" onclick="handleCardClick(1)">
             <img src="assets/listing/slide_07_screensavers.webp" alt="Pear TV - 40+ Aerial Screensavers" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 3 -->
           <div class="store-card" data-index="2" onclick="handleCardClick(2)">
             <img src="assets/listing/slide_03_quick_share.webp" alt="Pear TV - Built-in Quick Share" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 4 -->
           <div class="store-card" data-index="3" onclick="handleCardClick(3)">
             <img src="assets/listing/slide_05_storage.webp" alt="Pear TV - Storage &amp; Performance" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 5 -->
           <div class="store-card" data-index="4" onclick="handleCardClick(4)">
             <img src="assets/listing/slide_06_files.webp" alt="Pear TV - Built-in File System" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 6 -->
           <div class="store-card" data-index="5" onclick="handleCardClick(5)">
             <img src="assets/listing/slide_04_suite.webp" alt="Pear TV - Complete TV Suite" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
           <!-- Card 7 -->
           <div class="store-card" data-index="6" onclick="handleCardClick(6)">
             <img src="assets/listing/slide_01_splash.webp" alt="Pear TV - Minimalist Startup" loading="lazy">
-            <span class="card-zoom-badge">🔍 Expand</span>
           </div>
 
         </div>
@@ -1185,12 +946,7 @@
           <p class="detail-desc" id="detailDesc">Ad-free homescreen with customized rows, quick launches, and instant D-pad navigation.</p>
         </div>
 
-        <div class="detail-actions-col">
-          <button class="btn-fullscreen" onclick="openCurrentFullscreen()">
-            <span>🔍 View Fullscreen</span>
-          </button>
-          <div class="detail-dots-row" id="detailDotsRow"></div>
-        </div>
+        <div class="detail-dots-row" id="detailDotsRow"></div>
       </div>
     </div>
 
@@ -1311,24 +1067,9 @@
     </footer>
   </div>
 
-  <!-- Fullscreen Lightbox Modal -->
-  <div class="lightbox-modal" id="lightboxModal" onclick="closeLightbox(event)">
-    <div class="lightbox-dialog" onclick="event.stopPropagation()">
-      <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close modal">&times;</button>
-      <div class="lightbox-stage">
-        <img id="lightboxImg" src="" alt="Pear TV screenshot" class="lightbox-img">
-        <button class="lightbox-nav-btn prev" onclick="navigateLightbox(-1)" aria-label="Previous screenshot">&lsaquo;</button>
-        <button class="lightbox-nav-btn next" onclick="navigateLightbox(1)" aria-label="Next screenshot">&rsaquo;</button>
-      </div>
-      <div class="lightbox-meta">
-        <span class="lightbox-badge" id="lightboxBadge">MAIN TV LAUNCHER</span>
-        <h3 class="lightbox-title" id="lightboxTitle">Pure television. Zero distractions.</h3>
-        <p class="lightbox-desc" id="lightboxDesc"></p>
-      </div>
-    </div>
-  </div>
+  
 
-  <!-- Interactive Screenshot Reel & Lightbox Engine -->
+<!-- Interactive Screenshot Reel Engine -->
   <script>
     const slidesData = [
       {
@@ -1394,7 +1135,7 @@
       slidesData.forEach((_, idx) => {
         const dot = document.createElement('div');
         dot.className = 'detail-dot' + (idx === currentSlideIdx ? ' active' : '');
-        dot.setAttribute('title', 'Jump to screenshot ' + (idx + 1));
+        dot.setAttribute('title', 'Select screenshot ' + (idx + 1));
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
           selectSlide(idx);
@@ -1443,13 +1184,9 @@
       }
     }
 
-    // Handle Card Click: Select, or if already selected, open Lightbox
+    // Handle Card Click (Selects the card cleanly)
     function handleCardClick(idx) {
-      if (currentSlideIdx === idx) {
-        openLightbox(idx);
-      } else {
-        selectSlide(idx);
-      }
+      selectSlide(idx);
     }
 
     // Navigation Buttons
@@ -1464,51 +1201,10 @@
       });
     }
 
-    // Open Current Slide in Lightbox
-    function openCurrentFullscreen() {
-      openLightbox(currentSlideIdx);
-    }
-
-    // Lightbox Logic
-    const lightboxModal = document.getElementById('lightboxModal');
-    const lightboxImg = document.getElementById('lightboxImg');
-    const lightboxBadge = document.getElementById('lightboxBadge');
-    const lightboxTitle = document.getElementById('lightboxTitle');
-    const lightboxDesc = document.getElementById('lightboxDesc');
-
-    function openLightbox(idx) {
-      currentSlideIdx = (idx + slidesData.length) % slidesData.length;
-      updateLightboxDisplay();
-      lightboxModal.classList.add('active');
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeLightbox(e) {
-      if (e && e.target !== lightboxModal && !e.target.classList.contains('lightbox-close')) return;
-      lightboxModal.classList.remove('active');
-      document.body.style.overflow = '';
-    }
-
-    function navigateLightbox(dir) {
-      currentSlideIdx = (currentSlideIdx + dir + slidesData.length) % slidesData.length;
-      updateLightboxDisplay();
-      selectSlide(currentSlideIdx, true);
-    }
-
-    function updateLightboxDisplay() {
-      const data = slidesData[currentSlideIdx];
-      lightboxImg.src = data.src;
-      lightboxImg.alt = data.title;
-      lightboxBadge.textContent = data.badge + ' (' + (currentSlideIdx + 1) + ' of ' + slidesData.length + ')';
-      lightboxTitle.textContent = data.title;
-      if (lightboxDesc) lightboxDesc.textContent = data.desc;
-    }
-
+    // Keyboard navigation (Arrow keys)
     window.addEventListener('keydown', (e) => {
-      if (!lightboxModal.classList.contains('active')) return;
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') navigateLightbox(-1);
-      if (e.key === 'ArrowRight') navigateLightbox(1);
+      if (e.key === 'ArrowLeft') selectSlide(currentSlideIdx - 1);
+      if (e.key === 'ArrowRight') selectSlide(currentSlideIdx + 1);
     });
 
     // Initialize
